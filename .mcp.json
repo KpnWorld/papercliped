@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "paperclip": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/stdio.js"],
+      "env": {
+        "PAPERCLIP_API_URL": "${PAPERCLIP_API_URL:-http://localhost:3100}",
+        "PAPERCLIP_API_KEY": "${PAPERCLIP_API_KEY:-}",
+        "PAPERCLIP_COMPANY_ID": "${PAPERCLIP_COMPANY_ID:-}",
+        "PAPERCLIP_READ_ONLY": "${PAPERCLIP_READ_ONLY:-}"
+      }
+    }
+  }
+}

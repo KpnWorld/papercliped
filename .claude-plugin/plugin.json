@@ -1,0 +1,8 @@
+{
+  "name": "paperclip",
+  "version": "0.1.0",
+  "description": "Control Paperclip agents, sync with them, and pull reports from Claude.",
+  "author": { "name": "KpnWorld" },
+  "license": "MIT",
+  "keywords": ["paperclip", "agents", "orchestration", "mcp"]
+}

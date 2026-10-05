@@ -1,0 +1,11 @@
+{
+  "name": "papercliped",
+  "owner": { "name": "KpnWorld" },
+  "plugins": [
+    {
+      "name": "paperclip",
+      "source": "./",
+      "description": "Control Paperclip agents, sync with them, and pull reports from Claude."
+    }
+  ]
+}
