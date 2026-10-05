@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { readConfig, readDatabase, readHttpConfig } from "./config.js";
-import { migrate } from "./migrate.js";
+import { consolidatedSql, migrate } from "./migrate.js";
 import { OAuthProvider } from "./oauth/provider.js";
 import { createStore } from "./store-factory.js";
 
 const USAGE = `paperclip-bridge-admin <command>
 
+  schema-sql     print ONE paste-able SQL script (all migrations) for the Supabase SQL editor
   migrate        apply database migrations (uses DATABASE_MIGRATE_URL if set, else DATABASE_URL; needs a direct/session connection)
   grants         list live grants (no secrets are shown)
   revoke <id>    revoke one grant and delete its stored credential
@@ -16,6 +17,10 @@ const USAGE = `paperclip-bridge-admin <command>
 
 async function main() {
   const [cmd, arg] = process.argv.slice(2);
+  if (cmd === "schema-sql") {
+    process.stdout.write(consolidatedSql());
+    return;
+  }
   if (cmd === "migrate") {
     const url = process.env.DATABASE_MIGRATE_URL?.trim();
     const db = readDatabase(url ? { ...process.env, DATABASE_URL: url } : process.env);

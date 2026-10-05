@@ -78,6 +78,8 @@ Endpoints (all but `/healthz`, `/openapi.json` and the OAuth endpoints need `Aut
 | **HTTP + OAuth, `BRIDGE_MODE=single`** | a team fronting *their one* Paperclip | OAuth 2.1, scoped | JSON file or Postgres |
 | **HTTP + OAuth, `BRIDGE_MODE=multi`** | **a public service**: every user connects their own (publicly reachable, https) Paperclip | OAuth 2.1, scoped | Postgres (required) |
 
+**Live audit dashboard** (`/admin`): latency percentiles, bridge-vs-Paperclip time split, faults vs caller errors, slowest tenants, live tail — see [docs/DEPLOY-RENDER.md §4](docs/DEPLOY-RENDER.md); preview with `npm run demo`. **Supabase schema:** paste [docs/supabase-schema.sql](docs/supabase-schema.sql) into the SQL editor.
+
 Public hosting on Render + Supabase: **[docs/DEPLOY-RENDER.md](docs/DEPLOY-RENDER.md)** · threat model and residual risks: **[docs/SECURITY.md](docs/SECURITY.md)** · policy templates: [docs/legal/](docs/legal/).
 
 ### Connect claude.ai / Claude Desktop / ChatGPT apps (OAuth)
@@ -108,6 +110,7 @@ src/tools.ts      tool catalogue (schemas + Paperclip calls)     src/reports.ts 
 src/execute.ts    validation, read-only enforcement, errors      src/openapi.ts  OpenAPI from the catalogue
 src/mcp.ts        MCP server    src/stdio.ts   src/server.ts + http.ts  HTTP bridge
 src/oauth/        OAuth 2.1 server: provider, stores (memory/JSON + Postgres), crypto/key ring, scopes, consent pages, Paperclip login adapter
+src/telemetry/    audit events, batching recorder, system sampler, timing   src/admin/  dashboard (routes + self-contained page)
 src/net/          SSRF-safe fetch + instance URL validation (multi-tenant egress guard)
 migrations/       Postgres schema (dedicated `bridge` schema, RLS)   render.yaml   Render blueprint   src/cli.ts  admin CLI
 .claude-plugin/ .mcp.json skills/ commands/    Claude Code plugin

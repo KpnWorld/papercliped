@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PaperclipClient } from "./client.js";
+import { ToolInputError } from "./errors.js";
 import { activityDigest, agentPerformanceReport, costReport, statusReport } from "./reports.js";
 
 /** read: no side effects · write: mutates Paperclip · destructive: irreversible, needs confirm. */
@@ -295,6 +296,8 @@ export const tools: ToolDef[] = [
     }),
     run: async (c, i) => {
       const cid = c.resolveCompanyId(i.companyId);
+      const since = i.cursor ? Date.parse(i.cursor) : NaN;
+      if (i.cursor && Number.isNaN(since)) throw new ToolInputError("cursor must be an ISO timestamp"); // validate before spending an upstream call
       const raw = asArray(
         await c.get(`/companies/${cid}/activity`, {
           agentId: i.agentId,
@@ -302,8 +305,6 @@ export const tools: ToolDef[] = [
           limit: i.limit ?? 100,
         }),
       );
-      const since = i.cursor ? Date.parse(i.cursor) : NaN;
-      if (i.cursor && Number.isNaN(since)) throw new Error("cursor must be an ISO timestamp");
       const entries = raw
         .filter((e) => Number.isNaN(since) || Date.parse(e.createdAt) > since)
         .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
@@ -404,9 +405,9 @@ export const tools: ToolDef[] = [
     }),
     run: async (c, i) => {
       const cid = c.resolveCompanyId(i.companyId);
-      const raw = asArray(await c.get(`/companies/${cid}/activity`, { agentId: i.agentId, limit: i.limit ?? 200 }));
       const since = i.since ? Date.parse(i.since) : NaN;
-      if (i.since && Number.isNaN(since)) throw new Error("since must be an ISO timestamp");
+      if (i.since && Number.isNaN(since)) throw new ToolInputError("since must be an ISO timestamp");
+      const raw = asArray(await c.get(`/companies/${cid}/activity`, { agentId: i.agentId, limit: i.limit ?? 200 }));
       const entries = raw
         .filter((e) => Number.isNaN(since) || Date.parse(e.createdAt) >= since)
         .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
@@ -430,7 +431,7 @@ export const tools: ToolDef[] = [
     }),
     run: (c, i) => {
       if (i.method !== "GET" && i.confirm !== true) {
-        throw new Error(`${i.method} requires confirm=true; confirm the action with the human first`);
+        throw new ToolInputError(`${i.method} requires confirm=true; confirm the action with the human first`);
       }
       return c.request(i.method, i.path, { query: i.query, body: i.body });
     },

@@ -14,7 +14,10 @@ Only people whose Paperclip is on the **public internet over https** (Paperclip 
    - Prefer the pooler hosts over the direct `db.<ref>.supabase.co` host: direct connections may be IPv6-only unless you buy the IPv4 add-on (confirm in the dashboard).
 2. **TLS:** Database settings → *SSL Configuration* → download the CA certificate. Put its PEM in `DATABASE_CA` (Render accepts multi-line values; `\n` escapes also work). With `DATABASE_SSL=verify` the bridge refuses to talk to anything that doesn't present a chain to that CA. `DATABASE_SSL=require` encrypts but does **not** authenticate the server — acceptable only as a stop-gap.
 3. **Do not expose the schema through the Data API.** Settings → API → *Exposed schemas* must NOT include `bridge` (the default is `public`, `graphql_public`). The migration also enables RLS with no policies and revokes `anon`/`authenticated`, so the public key can't read it even if someone exposes it by mistake. Check: `select * from bridge.grants` with the anon key via REST must fail.
-4. Run the migration once (or let Render's pre-deploy do it): `DATABASE_URL=<session-pooler admin url> npm run migrate`, or paste `migrations/001_init.sql` into the SQL editor.
+4. Create the schema — pick ONE:
+   - **Paste into the SQL editor (simplest):** open [supabase-schema.sql](supabase-schema.sql) (all migrations in one script), copy it into Supabase → *SQL Editor* → *Run*. Safe to re-run; it also records the migrations so `npm run migrate` later says "up to date".
+   - **CLI / Render pre-deploy:** `DATABASE_URL=<session-pooler admin url> npm run migrate`.
+   Afterwards verify in *Table Editor* that the `bridge` schema has 8 tables, each showing **RLS enabled**.
 5. **Least-privilege role (recommended):** create `bridge_app` with a long random password, run [least-privilege.sql](least-privilege.sql) as admin, and use `bridge_app` in `DATABASE_URL`. The bridge then can't create/drop tables or read anything else. Re-run the file after future migrations.
 
 ## 2. Render
@@ -37,7 +40,17 @@ curl -s https://<your-url>/.well-known/oauth-authorization-server
 ```
 Then, with a real *test* Paperclip you control that is public over https: claude.ai → Settings → Connectors → *Add custom connector* → `https://<your-url>/mcp` → enter your Paperclip address → approve in Paperclip → choose **Read only** → ask Claude to run `paperclip_report_status`. Check Render logs show an `audit` line with your instance host, and that **no token or credential** appears in the logs.
 
-## 4. Operating it
+## 4. The live dashboard and audit log
+Set `BRIDGE_ADMIN_TOKEN` (the blueprint generates one) and open `https://<your-url>/admin`. It shows, live (3 s refresh): health (healthy / degraded / critical with the reasons), p50/p95/p99 latency, **where the time goes** (waiting on users' Paperclips vs. the bridge itself), throughput split into succeeded / rejected-by-caller / **system faults**, a latency histogram, per-tool and per-tenant tables (slowest tenants first), errors by class, OAuth/MCP endpoint timings, database round-trip, event-loop lag, and a live tail of calls. Every chart has a "View as table".
+
+- The audit trail stores **who/what/how long/outcome only** — never tool arguments, results, tokens or credentials. It does hold the tenant host and Paperclip user id, so it is deleted after `BRIDGE_AUDIT_RETENTION_DAYS` (30). Writes are batched off the request path; if Postgres is unreachable they are retried and the oldest are dropped before the service is affected.
+- The admin token is **separate from tool access** (it cannot call any Paperclip tool; `BRIDGE_TOKEN` cannot open the dashboard). Sessions are HMAC-signed, HttpOnly, SameSite=Strict, 8 h; sign-in is rate-limited to 5/min per IP. Put it behind your own IP allow-list or SSO as well if you can.
+- "System faults" means Paperclip 5xx / unreachable / bridge-internal errors. Caller mistakes (bad input, missing scope, read-only mode) are shown separately and don't degrade health.
+- With several bridge instances, history and tables aggregate across all of them (they share Postgres); the system tiles (DB ping, loop lag, memory) describe the instance that served the page.
+- Preview it with fake traffic, no setup: `npm run build && npm run demo` → http://127.0.0.1:3940/admin (token printed in the console).
+- Healthy vs degraded thresholds: p95 ≥ `BRIDGE_SLOW_MS` (1500 ms) degraded, ≥ 3× critical; ≥ 2% / 10% system faults; DB ping ≥ 250 / 1000 ms; loop lag p99 ≥ 100 / 500 ms. Fewer than 5 calls in the window is never judged.
+
+## 5. Operating it
 | Task | How |
 | --- | --- |
 | List connections (no secrets) | `npm run admin -- grants` (needs the production env vars) |
@@ -49,7 +62,7 @@ Then, with a real *test* Paperclip you control that is public over https: claude
 | Allow a non-443 port | `BRIDGE_ALLOWED_PORTS=443,8443` |
 | Backups | Supabase backups cover the data; the sealed credentials are useless without `BRIDGE_SECRET`, so back that up **separately** |
 
-## 5. Before listing publicly
+## 6. Before listing publicly
 - Publish a privacy policy and terms (templates in [legal/](legal/); replace placeholders, get them reviewed) at stable https URLs. Anthropic's directory and OpenAI's app review both ask for them, plus a test account that reviewers can use against a populated Paperclip.
 - Decide who answers security reports (see SECURITY.md) and a support address.
 - Keep `BRIDGE_OAUTH_REDIRECT_HOSTS` to the default list unless you have a reason; add ChatGPT's actual callback host only after confirming it.

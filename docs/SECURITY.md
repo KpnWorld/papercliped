@@ -31,6 +31,7 @@ AI client (claude.ai, ChatGPT)  ──OAuth, scoped, opaque tokens──▶  Bri
 | 12 | Brute force of the instance/consent/token endpoints | per-IP and per-grant limits in the shared store (work across several instances); client IP taken from the trusted-proxy position, not the forgeable left side of `X-Forwarded-For` | `multitenant.test.ts` |
 | 13 | Clickjacking / XSS on consent pages | CSP (`frame-ancestors 'none'`, nonce'd script, restricted `form-action`), `X-Frame-Options`, all dynamic text escaped | `oauth.test.ts` |
 | 14 | Operator error: unsafe public config | the process refuses to start for: http issuer, short secret, `BRIDGE_TOKEN` set in multi mode, static login in multi mode, no database in multi mode | `multitenant.test.ts` |
+| 16 | Telemetry becoming a data leak / a side door | audit rows hold only tool name, outcome, timings, grant id, client name, tenant host, user id (never arguments, results, tokens or credentials); retention 30 days; recorder can't block or fail a request; the dashboard has its own token that cannot call tools, signed HttpOnly SameSite=Strict sessions, rate-limited sign-in, strict CSP (no external loads), and renders all data with `textContent` | `audit.test.ts` |
 | 15 | Key compromise / rotation | key ring (`BRIDGE_SECRET_PREVIOUS`), `rotate-keys`, `revoke-all --yes` | `multitenant.test.ts` |
 
 ## Residual risks (not mitigated here)

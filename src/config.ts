@@ -61,6 +61,15 @@ export interface HttpConfig {
   publicUrl: string | null;
   /** Null unless BRIDGE_OAUTH=1. */
   oauth: OAuthConfig | null;
+  /** Operator dashboard at /admin. Null (disabled) unless BRIDGE_ADMIN_TOKEN is set. */
+  admin: { token: string; sessionHours: number } | null;
+  audit: {
+    retentionDays: number;
+    /** p95 above this marks the system "degraded" (3× = critical). */
+    slowMs: number;
+    /** Also print audit lines on stderr. */
+    stderr: boolean;
+  };
 }
 
 const nonEmpty = (v: string | undefined) => (v && v.trim() ? v.trim() : null);
@@ -154,12 +163,21 @@ export function readHttpConfig(env: NodeJS.ProcessEnv = process.env): HttpConfig
   const publicUrl = nonEmpty(env.BRIDGE_PUBLIC_URL)?.replace(/\/+$/, "") ?? null;
   const bridgeToken = nonEmpty(env.BRIDGE_TOKEN);
   const onPaas = !!nonEmpty(env.PORT); // Render/Heroku/Fly style: must bind all interfaces
+  const adminToken = nonEmpty(env.BRIDGE_ADMIN_TOKEN);
+  if (adminToken && adminToken.length < 24) throw new Error("BRIDGE_ADMIN_TOKEN must be at least 24 characters (`openssl rand -hex 32`)");
+  if (adminToken && bridgeToken && adminToken === bridgeToken) throw new Error("BRIDGE_ADMIN_TOKEN must differ from BRIDGE_TOKEN (the dashboard must not double as tool access)");
   return {
     host: nonEmpty(env.BRIDGE_HOST) ?? (onPaas ? "0.0.0.0" : "127.0.0.1"),
     port: posInt(env.BRIDGE_PORT ?? env.PORT, 3939),
     bridgeToken,
     publicUrl,
     oauth: readOAuthConfig(env, publicUrl, bridgeToken),
+    admin: adminToken ? { token: adminToken, sessionHours: posInt(env.BRIDGE_ADMIN_SESSION_HOURS, 8) } : null,
+    audit: {
+      retentionDays: posInt(env.BRIDGE_AUDIT_RETENTION_DAYS, 30),
+      slowMs: posInt(env.BRIDGE_SLOW_MS, 1500),
+      stderr: env.BRIDGE_AUDIT_STDERR === undefined ? true : truthy(env.BRIDGE_AUDIT_STDERR),
+    },
   };
 }
 

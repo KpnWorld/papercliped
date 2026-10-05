@@ -1,4 +1,5 @@
 import pg from "pg";
+import { FAULT_CLASSES, HIST_EDGES, type AuditRow, type BreakdownRow, type SeriesBucket, type Totals } from "../telemetry/types.js";
 import type { CodeRecord, CodeTake, Grant, OAuthClient, PendingRecord, Store, TokenRecord } from "./store.js";
 
 const MAX_CLIENTS = 1000;
@@ -201,6 +202,90 @@ export class PgStore implements Store {
     await this.q("delete from bridge.codes where expires_at <= $1", [t - CODE_REPLAY_WINDOW_MS]);
     await this.q("delete from bridge.rate_limits where reset_at <= $1", [t]);
     await this.pruneClients();
+  }
+
+  // ───────────── audit ─────────────
+
+  async insertAudit(rows: AuditRow[]) {
+    if (!rows.length) return;
+    const col = <T>(f: (r: AuditRow) => T) => rows.map(f);
+    await this.q(
+      `insert into bridge.audit_events (ts, node, kind, name, mutation, ok, status, error_class, total_ms, upstream_ms, upstream_calls, scope, grant_id, client, instance, user_id)
+       select * from unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::boolean[], $6::boolean[], $7::int[], $8::text[], $9::int[], $10::int[], $11::int[], $12::text[], $13::text[], $14::text[], $15::text[], $16::text[])`,
+      [col((r) => r.at), col((r) => r.node), col((r) => r.kind), col((r) => r.name), col((r) => r.mutation), col((r) => r.ok), col((r) => r.status), col((r) => r.errorClass), col((r) => r.totalMs), col((r) => r.upstreamMs), col((r) => r.upstreamCalls), col((r) => r.scope), col((r) => r.grantId), col((r) => r.client), col((r) => r.instance), col((r) => r.userId)],
+    );
+  }
+
+  private static readonly AGG = `
+    count(*)::int as count,
+    (count(*) filter (where not ok))::int as errors,
+    (count(*) filter (where error_class = any($FAULTS::text[])))::int as faults,
+    coalesce(percentile_cont(0.5)  within group (order by total_ms), 0)::float8 as p50,
+    coalesce(percentile_cont(0.95) within group (order by total_ms), 0)::float8 as p95,
+    coalesce(percentile_cont(0.99) within group (order by total_ms), 0)::float8 as p99,
+    coalesce(percentile_cont(0.95) within group (order by upstream_ms) filter (where upstream_calls > 0), 0)::float8 as upstream_p95,
+    coalesce(percentile_cont(0.95) within group (order by total_ms - coalesce(upstream_ms, 0)), 0)::float8 as bridge_p95`;
+  private agg = (faultsParam: number) => PgStore.AGG.replace("$FAULTS", `$${faultsParam}`);
+
+  async auditSeries(kind: "tool" | "http", from: number, to: number, bucketMs: number): Promise<SeriesBucket[]> {
+    const r = await this.q(
+      `select (ts / $3::bigint) * $3::bigint as t,
+              count(*)::int as count,
+              (count(*) filter (where not ok))::int as errors,
+              (count(*) filter (where error_class = any($5::text[])))::int as faults,
+              coalesce(percentile_cont(0.5)  within group (order by total_ms), 0)::float8 as p50,
+              coalesce(percentile_cont(0.95) within group (order by total_ms), 0)::float8 as p95,
+              coalesce(percentile_cont(0.99) within group (order by total_ms), 0)::float8 as p99,
+              coalesce(avg(coalesce(upstream_ms, 0)), 0)::float8 as avg_upstream,
+              coalesce(avg(total_ms - coalesce(upstream_ms, 0)), 0)::float8 as avg_bridge
+         from bridge.audit_events where kind = $4 and ts >= $1 and ts < $2 group by 1 order by 1`,
+      [from, to, bucketMs, kind, FAULT_CLASSES],
+    );
+    return r.rows.map((x) => ({ t: num(x.t), count: x.count, errors: x.errors, faults: x.faults, p50: x.p50, p95: x.p95, p99: x.p99, avgUpstream: x.avg_upstream, avgBridge: x.avg_bridge }));
+  }
+
+  async auditTotals(kind: "tool" | "http", from: number, to: number): Promise<Totals> {
+    const r = await this.q(
+      `select ${this.agg(4)}, (count(*) filter (where mutation))::int as mutations from bridge.audit_events where kind = $3 and ts >= $1 and ts < $2`,
+      [from, to, kind, FAULT_CLASSES],
+    );
+    const x = r.rows[0];
+    return { count: x.count, errors: x.errors, faults: x.faults, mutations: x.mutations, p50: x.p50, p95: x.p95, p99: x.p99, upstreamP95: x.upstream_p95, bridgeP95: x.bridge_p95 };
+  }
+
+  async auditBreakdown(kind: "tool" | "http", by: "name" | "instance" | "errorClass", from: number, to: number, limit: number): Promise<BreakdownRow[]> {
+    const col = by === "name" ? "name" : by === "instance" ? "instance" : "error_class";
+    const extra = by === "errorClass" ? "and not ok" : "";
+    const r = await this.q(
+      `select ${col} as key, ${this.agg(5)} from bridge.audit_events
+        where kind = $3 and ts >= $1 and ts < $2 and ${col} is not null ${extra}
+        group by ${col} order by count(*) desc limit $4`,
+      [from, to, kind, limit, FAULT_CLASSES],
+    );
+    return r.rows.map((x) => ({ key: x.key, count: x.count, errors: x.errors, faults: x.faults, p50: x.p50, p95: x.p95, upstreamP95: x.upstream_p95 }));
+  }
+
+  async auditHistogram(kind: "tool" | "http", from: number, to: number): Promise<number[]> {
+    const r = await this.q(
+      "select width_bucket(total_ms, $4::int[]) as b, count(*)::int as n from bridge.audit_events where kind = $3 and ts >= $1 and ts < $2 group by 1",
+      [from, to, kind, HIST_EDGES],
+    );
+    const out = new Array(HIST_EDGES.length + 1).fill(0);
+    for (const x of r.rows) out[x.b] = x.n;
+    return out;
+  }
+
+  private static toRow(x: any): AuditRow {
+    return { id: num(x.id), at: num(x.ts), node: x.node, kind: x.kind, name: x.name, mutation: x.mutation, ok: x.ok, status: x.status, errorClass: x.error_class, totalMs: x.total_ms, upstreamMs: x.upstream_ms, upstreamCalls: x.upstream_calls, scope: x.scope, grantId: x.grant_id, client: x.client, instance: x.instance, userId: x.user_id };
+  }
+  async auditSlowest(kind: "tool" | "http", from: number, to: number, limit: number) {
+    return (await this.q("select * from bridge.audit_events where kind = $3 and ts >= $1 and ts < $2 order by total_ms desc limit $4", [from, to, kind, limit])).rows.map(PgStore.toRow);
+  }
+  async auditRecent(afterId: number, limit: number, kind?: "tool" | "http") {
+    return (await this.q("select * from bridge.audit_events where id > $1 and ($3::text is null or kind = $3) order by id desc limit $2", [afterId, limit, kind ?? null])).rows.map(PgStore.toRow);
+  }
+  async pruneAudit(beforeMs: number) {
+    return (await this.q("delete from bridge.audit_events where ts < $1", [beforeMs])).rowCount ?? 0;
   }
 
   async ping() {

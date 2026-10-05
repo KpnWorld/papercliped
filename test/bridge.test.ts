@@ -112,7 +112,7 @@ describe("tool execution", () => {
   });
 
   it("raw API requires confirm for non-GET and rejects traversal", async () => {
-    expect(await executeTool(client(), "paperclip_api_request", { method: "DELETE", path: "/agents/a1" })).toMatchObject({ ok: false, status: 500 });
+    expect(await executeTool(client(), "paperclip_api_request", { method: "DELETE", path: "/agents/a1" })).toMatchObject({ ok: false, status: 400 });
     expect(await executeTool(client(), "paperclip_api_request", { method: "GET", path: "/../admin" })).toMatchObject({ ok: false });
   });
 

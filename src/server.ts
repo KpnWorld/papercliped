@@ -7,6 +7,8 @@ import { createMcpServer } from "./mcp.js";
 import { safeEqual } from "./oauth/crypto.js";
 import { OAuthProvider } from "./oauth/provider.js";
 import { buildOpenApi } from "./openapi.js";
+import type { AdminRoutes } from "./admin/routes.js";
+import type { AuditRecorder } from "./telemetry/recorder.js";
 
 const MAX_BODY_BYTES = 1_000_000;
 
@@ -14,9 +16,26 @@ export interface ServerOptions {
   client?: PaperclipClient;
   /** Inject a provider (tests). Created from `http.oauth` otherwise. */
   oauth?: OAuthProvider | null;
-  /** Audit sink. Default: one JSON line per tool call on stderr. */
+  /** Tool-call audit callback (tests, custom sinks). Without a recorder or callback, one JSON line per call goes to stderr. */
   audit?: (e: AuditEvent) => void;
+  /** Persists tool-call and HTTP events for the dashboard. */
+  recorder?: AuditRecorder;
+  /** Operator dashboard at /admin. */
+  admin?: AdminRoutes | null;
 }
+
+/** Route groups worth measuring. Health checks, discovery documents and the dashboard itself are excluded. */
+export function routeGroup(path: string): string | null {
+  if (path === "/register") return "oauth.register";
+  if (path === "/authorize" || path === "/authorize/instance" || path === "/authorize/decision") return "oauth.authorize";
+  if (path === "/token") return "oauth.token";
+  if (path === "/revoke") return "oauth.revoke";
+  if (path === "/mcp") return "mcp";
+  if (path.startsWith("/actions/")) return "actions";
+  return null;
+}
+
+const httpErrorClass = (status: number) => (status === 401 ? "unauthorized" : status === 429 ? "rate_limited" : status >= 500 ? "internal" : "invalid_input");
 
 const stderrAudit = (e: AuditEvent) => process.stderr.write(`${JSON.stringify({ audit: e })}\n`);
 
@@ -46,7 +65,11 @@ type Principal = { kind: "static" } | { kind: "oauth"; grantId: string; client: 
 
 export function createHttpServer(config: BridgeConfig, http: HttpConfig, opts: ServerOptions = {}): Server {
   const baseClient = opts.client ?? new PaperclipClient(config);
-  const audit = opts.audit ?? stderrAudit;
+  const audit = (e: AuditEvent) => {
+    opts.audit?.(e);
+    opts.recorder?.record(e);
+    if (!opts.audit && !opts.recorder) stderrAudit(e);
+  };
   const oauth =
     opts.oauth !== undefined ? opts.oauth : http.oauth ? new OAuthProvider({ config, oauth: http.oauth, bridgeToken: http.bridgeToken }) : null;
 
@@ -83,9 +106,21 @@ export function createHttpServer(config: BridgeConfig, http: HttpConfig, opts: S
   };
 
   return createServer(async (req, res) => {
+    const started = performance.now();
     try {
       const url = new URL(req.url ?? "/", "http://bridge");
       const path = url.pathname;
+
+      const group = routeGroup(path);
+      if (group && opts.recorder) {
+        res.once("finish", () => {
+          const status = res.statusCode;
+          // 3xx are the OAuth redirects back to the client — successful.
+          opts.recorder!.record({ ts: new Date().toISOString(), kind: "http", tool: group, mutation: false, ok: status < 400, status, errorClass: status < 400 ? undefined : httpErrorClass(status), actor: "http", totalMs: Math.round(performance.now() - started) });
+        });
+      }
+
+      if (opts.admin && (await opts.admin.handle(req, res, url))) return;
 
       if (path === "/healthz") return json(res, 200, { ok: true, readOnly: config.readOnly, oauth: !!oauth });
       if (path === "/readyz") {

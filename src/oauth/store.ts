@@ -1,5 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { HIST_EDGES, isFault, type AuditRow, type AuditStore, type BreakdownRow, type SeriesBucket, type Totals } from "../telemetry/types.js";
 
 export interface OAuthClient {
   id: string;
@@ -67,7 +68,7 @@ export type CodeTake = { status: "ok"; record: CodeRecord } | { status: "replay"
  * Persistence boundary. Implementations must be safe to share between processes (the Postgres one is);
  * the in-memory/JSON one is single-process. Raw tokens are never stored — only SHA-256 hashes.
  */
-export interface Store {
+export interface Store extends AuditStore {
   putClient(c: OAuthClient): Promise<void>;
   getClient(id: string): Promise<OAuthClient | undefined>;
   touchClient(id: string): Promise<void>;
@@ -120,6 +121,18 @@ const MAX_CLIENTS = 1000;
 const CLIENT_IDLE_MS = 7 * 24 * 3600 * 1000;
 const TOUCH_PERSIST_MS = 5 * 60_000;
 const CODE_REPLAY_WINDOW_MS = 5 * 60_000;
+
+/** Linear-interpolated percentile (same definition as Postgres percentile_cont). `sorted` must be ascending. */
+export function percentile(sorted: number[], p: number): number {
+  if (!sorted.length) return 0;
+  const pos = (sorted.length - 1) * p;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+const asc = (xs: number[]) => [...xs].sort((a, b) => a - b);
+const bridgeMs = (r: AuditRow) => r.totalMs - (r.upstreamMs ?? 0);
+const MAX_AUDIT_ROWS = 20_000;
 
 /** Memory store; with `file` it persists clients/grants/tokens as JSON (0600, atomic rename). Single process only. */
 export class MemoryStore implements Store {
@@ -285,6 +298,90 @@ export class MemoryStore implements Store {
     }
     cur.n += 1;
     return cur.n <= limit;
+  }
+
+  // ── audit (bounded ring; history is lost on restart — use Postgres for real retention) ──
+  private audit: AuditRow[] = [];
+  private auditSeq = 0;
+
+  async insertAudit(rows: AuditRow[]) {
+    for (const r of rows) this.audit.push({ ...r, id: ++this.auditSeq });
+    if (this.audit.length > MAX_AUDIT_ROWS) this.audit.splice(0, this.audit.length - MAX_AUDIT_ROWS);
+  }
+  private window(kind: string, from: number, to: number) {
+    return this.audit.filter((r) => r.kind === kind && r.at >= from && r.at < to);
+  }
+  private summarize(rows: AuditRow[]) {
+    const tot = asc(rows.map((r) => r.totalMs));
+    const up = asc(rows.filter((r) => (r.upstreamCalls ?? 0) > 0).map((r) => r.upstreamMs ?? 0));
+    return {
+      count: rows.length,
+      errors: rows.filter((r) => !r.ok).length,
+      faults: rows.filter((r) => isFault(r.errorClass)).length,
+      p50: percentile(tot, 0.5),
+      p95: percentile(tot, 0.95),
+      p99: percentile(tot, 0.99),
+      upstreamP95: percentile(up, 0.95),
+      bridgeP95: percentile(asc(rows.map(bridgeMs)), 0.95),
+    };
+  }
+  async auditSeries(kind: "tool" | "http", from: number, to: number, bucketMs: number): Promise<SeriesBucket[]> {
+    const groups = new Map<number, AuditRow[]>();
+    for (const r of this.window(kind, from, to)) {
+      const t = Math.floor(r.at / bucketMs) * bucketMs;
+      (groups.get(t) ?? groups.set(t, []).get(t)!).push(r);
+    }
+    return [...groups.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([t, rows]) => {
+        const s = this.summarize(rows);
+        return {
+          t,
+          count: s.count,
+          errors: s.errors,
+          faults: s.faults,
+          p50: s.p50,
+          p95: s.p95,
+          p99: s.p99,
+          avgUpstream: rows.reduce((a, r) => a + (r.upstreamMs ?? 0), 0) / rows.length,
+          avgBridge: rows.reduce((a, r) => a + bridgeMs(r), 0) / rows.length,
+        };
+      });
+  }
+  async auditTotals(kind: "tool" | "http", from: number, to: number): Promise<Totals> {
+    const rows = this.window(kind, from, to);
+    const s = this.summarize(rows);
+    return { count: s.count, errors: s.errors, faults: s.faults, mutations: rows.filter((r) => r.mutation).length, p50: s.p50, p95: s.p95, p99: s.p99, upstreamP95: s.upstreamP95, bridgeP95: s.bridgeP95 };
+  }
+  async auditBreakdown(kind: "tool" | "http", by: "name" | "instance" | "errorClass", from: number, to: number, limit: number): Promise<BreakdownRow[]> {
+    const groups = new Map<string, AuditRow[]>();
+    for (const r of this.window(kind, from, to)) {
+      const key = by === "name" ? r.name : by === "instance" ? r.instance : r.ok ? null : r.errorClass;
+      if (key) (groups.get(key) ?? groups.set(key, []).get(key)!).push(r);
+    }
+    return [...groups.entries()]
+      .map(([key, rows]) => {
+        const s = this.summarize(rows);
+        return { key, count: s.count, errors: s.errors, faults: s.faults, p50: s.p50, p95: s.p95, upstreamP95: s.upstreamP95 };
+      })
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit);
+  }
+  async auditHistogram(kind: "tool" | "http", from: number, to: number): Promise<number[]> {
+    const out = new Array(HIST_EDGES.length + 1).fill(0);
+    for (const r of this.window(kind, from, to)) out[HIST_EDGES.filter((e) => r.totalMs >= e).length] += 1;
+    return out;
+  }
+  async auditSlowest(kind: "tool" | "http", from: number, to: number, limit: number) {
+    return this.window(kind, from, to).sort((a, b) => b.totalMs - a.totalMs).slice(0, limit);
+  }
+  async auditRecent(afterId: number, limit: number, kind?: "tool" | "http") {
+    return this.audit.filter((r) => (r.id ?? 0) > afterId && (!kind || r.kind === kind)).slice(-limit).reverse();
+  }
+  async pruneAudit(beforeMs: number) {
+    const n = this.audit.length;
+    this.audit = this.audit.filter((r) => r.at >= beforeMs);
+    return n - this.audit.length;
   }
 
   async prune() {

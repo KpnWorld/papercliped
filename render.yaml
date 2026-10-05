@@ -32,6 +32,12 @@ services:
         sync: false
       - key: BRIDGE_PROXY_HOPS            # reverse proxies in front of the app; see docs/DEPLOY-RENDER.md before changing
         value: "1"
+      - key: BRIDGE_ADMIN_TOKEN           # enables the live dashboard at /admin. Operator-only; it can NOT be used for tool access.
+        generateValue: true
+      - key: BRIDGE_AUDIT_RETENTION_DAYS  # audit rows hold tenant host + user id: keep this short
+        value: "30"
+      - key: BRIDGE_SLOW_MS               # p95 above this marks the system "degraded" (3x = critical)
+        value: "1500"
       - key: BRIDGE_IDLE_REVOKE_DAYS
         value: "30"
       - key: BRIDGE_CALLS_PER_MINUTE

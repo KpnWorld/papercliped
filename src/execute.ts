@@ -1,26 +1,16 @@
 import { PaperclipApiError, PaperclipClient } from "./client.js";
+import { ToolInputError } from "./errors.js";
 import { requiredScope, scopeAllows, type Scope } from "./oauth/scopes.js";
+import { runTimed, unionMs, type CallTimer } from "./telemetry/timing.js";
+import type { AuditEvent } from "./telemetry/types.js";
 import { toolsByName, type ToolDef } from "./tools.js";
 
-export class ToolInputError extends Error {}
+export { ToolInputError };
+export type { AuditEvent };
 
 export function isMutation(tool: ToolDef, input: Record<string, unknown>): boolean {
   if (tool.name === "paperclip_api_request") return input.method !== "GET";
   return tool.access !== "read";
-}
-
-export interface AuditEvent {
-  ts: string;
-  tool: string;
-  mutation: boolean;
-  ok: boolean;
-  status?: number;
-  /** Who called: a grant id for OAuth clients, "static-token" for BRIDGE_TOKEN, "stdio" otherwise. */
-  actor: string;
-  client?: string;
-  userId?: string | null;
-  /** Tenant's Paperclip host (multi-tenant mode). */
-  instance?: string;
 }
 
 export interface ExecOptions {
@@ -32,54 +22,67 @@ export interface ExecOptions {
 
 export type ToolOutcome = { ok: true; result: unknown } | { ok: false; status: number; error: unknown };
 
-/** Validate, enforce scopes + read-only mode, run, audit. Never throws: callers map the outcome to their protocol. */
+const classifyStatus = (status: number): string => (status >= 500 ? "upstream_5xx" : "upstream_4xx");
+
+/** Validate, enforce scopes + read-only mode, run, time and audit. Never throws: callers map the outcome to their protocol. */
 export async function executeTool(
   client: PaperclipClient,
   name: string,
   rawInput: unknown,
   opts: ExecOptions = {},
 ): Promise<ToolOutcome> {
+  const started = performance.now();
+  const timer: CallTimer = { intervals: [] };
   const tool = toolsByName.get(name);
-  if (!tool) return { ok: false, status: 404, error: `Unknown tool: ${name}` };
+  let mutation = !!tool && tool.access !== "read";
+  let scope: string | undefined;
 
-  let mutation = tool.access !== "read";
-  const done = (out: ToolOutcome): ToolOutcome => {
+  const done = (out: ToolOutcome, errorClass?: string): ToolOutcome => {
     opts.audit?.({
       ts: new Date().toISOString(),
+      kind: "tool",
       tool: name,
       mutation,
       ok: out.ok,
       status: out.ok ? undefined : out.status,
+      errorClass: out.ok ? undefined : errorClass ?? "internal",
       actor: opts.actor?.id ?? "stdio",
       client: opts.actor?.client,
       userId: opts.actor?.userId,
       instance: opts.actor?.instance,
+      scope,
+      totalMs: Math.round(performance.now() - started),
+      upstreamMs: Math.round(unionMs(timer.intervals)),
+      upstreamCalls: timer.intervals.length,
     });
     return out;
   };
 
+  if (!tool) return done({ ok: false, status: 404, error: `Unknown tool: ${name}` }, "invalid_input");
+
   const parsed = tool.schema.safeParse(rawInput ?? {});
   if (!parsed.success) {
-    return done({ ok: false, status: 400, error: parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ") });
+    return done({ ok: false, status: 400, error: parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ") }, "invalid_input");
   }
   mutation = isMutation(tool, parsed.data);
-  if (opts.scopes) {
-    const needed: Scope = requiredScope(tool, parsed.data);
-    if (!scopeAllows(opts.scopes, needed)) {
-      return done({ ok: false, status: 403, error: { message: `This connection lacks the ${needed} scope required for ${name}. Reconnect and grant a higher access level.`, insufficient_scope: needed } });
-    }
+  const needed: Scope = requiredScope(tool, parsed.data);
+  scope = needed;
+  if (opts.scopes && !scopeAllows(opts.scopes, needed)) {
+    return done({ ok: false, status: 403, error: { message: `This connection lacks the ${needed} scope required for ${name}. Reconnect and grant a higher access level.`, insufficient_scope: needed } }, "insufficient_scope");
   }
   if (client.config.readOnly && mutation) {
-    return done({ ok: false, status: 403, error: "Bridge is in read-only mode (PAPERCLIP_READ_ONLY); this action was not sent to Paperclip." });
+    return done({ ok: false, status: 403, error: "Bridge is in read-only mode (PAPERCLIP_READ_ONLY); this action was not sent to Paperclip." }, "read_only");
   }
   try {
-    return done({ ok: true, result: await tool.run(client, parsed.data) });
+    return done({ ok: true, result: await runTimed(timer, () => tool.run(client, parsed.data)) });
   } catch (err) {
+    if (err instanceof ToolInputError) return done({ ok: false, status: 400, error: err.message }, "invalid_input");
     if (err instanceof PaperclipApiError) {
       const hint = err.status === 401 && opts.actor ? " The Paperclip credential behind this connection was rejected; disconnect and reconnect the connector." : "";
-      return done({ ok: false, status: err.status, error: { message: err.message + hint, status: err.status, body: err.body } });
+      return done({ ok: false, status: err.status, error: { message: err.message + hint, status: err.status, body: err.body } }, classifyStatus(err.status));
     }
-    return done({ ok: false, status: 500, error: err instanceof Error ? err.message : String(err) });
+    const msg = err instanceof Error ? err.message : String(err);
+    return done({ ok: false, status: msg.startsWith("Cannot reach Paperclip") ? 502 : 500, error: msg }, msg.startsWith("Cannot reach Paperclip") ? "upstream_unreachable" : "internal");
   }
 }
 
