@@ -65,7 +65,7 @@ beforeAll(async () => {
   paperclip = mockPaperclip();
   await new Promise<void>((r) => paperclip.listen(0, "127.0.0.1", r));
   paperclipUrl = `http://127.0.0.1:${(paperclip.address() as AddressInfo).port}`;
-  bridge = createHttpServer(config(), { host: "127.0.0.1", port: 0, bridgeToken: "secret", publicUrl: null });
+  bridge = createHttpServer(config(), { host: "127.0.0.1", port: 0, bridgeToken: "secret", publicUrl: null, oauth: null }, { audit: () => {} });
   await new Promise<void>((r) => bridge.listen(0, "127.0.0.1", r));
   bridgeUrl = `http://127.0.0.1:${(bridge.address() as AddressInfo).port}`;
 });

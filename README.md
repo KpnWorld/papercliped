@@ -67,10 +67,15 @@ export BRIDGE_PUBLIC_URL=https://bridge.example.com
 npm run start:http                               # 127.0.0.1:3939 — put TLS in front (Caddy, Cloudflare Tunnel, …)
 ```
 
-Endpoints (all but `/healthz` and `/openapi.json` need `Authorization: Bearer $BRIDGE_TOKEN`): `POST /mcp` (MCP Streamable HTTP, stateless), `POST /actions/{tool}` (JSON in/out), `GET /openapi.json`.
+Endpoints (all but `/healthz`, `/openapi.json` and the OAuth endpoints need `Authorization: Bearer <BRIDGE_TOKEN or OAuth access token>`): `POST /mcp` (MCP Streamable HTTP, stateless), `POST /actions/{tool}` (JSON in/out), `GET /openapi.json`. With `BRIDGE_OAUTH=1`: `/.well-known/oauth-*`, `/register`, `/authorize`, `/token`, `/revoke`.
+
+### Connect claude.ai / Claude Desktop / ChatGPT apps (OAuth)
+
+Set `BRIDGE_OAUTH=1`, `BRIDGE_PUBLIC_URL`, `BRIDGE_SECRET`, `BRIDGE_DATA_FILE` (see [.env.example](.env.example)), then add `https://<your bridge>/mcp` as a custom connector. Users sign in through Paperclip's own approval page and choose Read / Control / Admin. Full guide, scopes and security model: [docs/oauth.md](docs/oauth.md).
 
 ## Safety model
 
+- OAuth connections get scoped tokens (read/control/admin), enforced in the bridge, with every call audit-logged. See [docs/oauth.md](docs/oauth.md).
 - `PAPERCLIP_READ_ONLY=1` blocks every mutating tool (and non-GET `paperclip_api_request`) before anything is sent to Paperclip.
 - `paperclip_terminate_agent` needs `confirm: true`; non-GET raw API calls need it too. Tools carry MCP `destructiveHint`/`readOnlyHint`, and OpenAPI `x-openai-isConsequential`, so clients prompt before consequential calls.
 - The HTTP bridge binds to loopback by default, uses constant-time token comparison, caps bodies at 1 MB, and times out upstream calls (30 s).
@@ -79,7 +84,7 @@ Endpoints (all but `/healthz` and `/openapi.json` need `Authorization: Bearer $B
 ## Known limits — please read
 
 - **Tested against a mock of Paperclip's documented API, not a live instance.** Endpoint paths and fields were taken from Paperclip's docs and server source (`docs/api/*`, `server/src/routes/*`); report/sync code reads response fields defensively. Run it against your instance with `PAPERCLIP_READ_ONLY=1` first.
-- **claude.ai web connectors and ChatGPT's MCP-connector UI** authenticate with OAuth (or nothing), not a static bearer token, so they can't use `/mcp` as-is. Use Claude Code/Desktop (stdio) or ChatGPT Actions, or put an OAuth-capable proxy in front of `/mcp`.
+- **claude.ai web / Desktop / mobile connectors and ChatGPT MCP apps** need OAuth: set `BRIDGE_OAUTH=1` (see [docs/oauth.md](docs/oauth.md)). OAuth scopes limit *what* a connection may do, not *which company* it may touch (Paperclip board keys are user-wide). Not yet implemented: CIMD, multi-process deployment, grant admin UI.
 - `paperclip_sync_changes` polls the activity log (no push). Activity has no server-side `since` filter, so it fetches up to `limit` recent entries and filters locally; raise `limit` if you poll infrequently on a busy company.
 - ChatGPT Actions allow ~30 operations per GPT; the catalogue is at 29. Adding tools means removing some for that surface.
 
@@ -89,6 +94,7 @@ Endpoints (all but `/healthz` and `/openapi.json` need `Authorization: Bearer $B
 src/tools.ts      tool catalogue (schemas + Paperclip calls)     src/reports.ts  report builders
 src/execute.ts    validation, read-only enforcement, errors      src/openapi.ts  OpenAPI from the catalogue
 src/mcp.ts        MCP server    src/stdio.ts   src/server.ts + http.ts  HTTP bridge
+src/oauth/        OAuth 2.1 server: provider, store, crypto, scopes, consent pages, Paperclip login adapter
 .claude-plugin/ .mcp.json skills/ commands/    Claude Code plugin
 test/             end-to-end tests against a mock Paperclip
 ```
