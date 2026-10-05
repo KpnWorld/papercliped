@@ -92,3 +92,7 @@ src/mcp.ts        MCP server    src/stdio.ts   src/server.ts + http.ts  HTTP bri
 .claude-plugin/ .mcp.json skills/ commands/    Claude Code plugin
 test/             end-to-end tests against a mock Paperclip
 ```
+
+## Privacy
+
+This bridge has no telemetry and no backend of its own. It sends requests only to the Paperclip instance you configure (`PAPERCLIP_API_URL`) and returns the responses to the AI client that called it. It stores nothing on disk. Your Paperclip credential lives in environment variables on the machine running the bridge. Data you expose to Claude or ChatGPT is then subject to that provider's own terms and privacy policy. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the security model and distribution plan.
