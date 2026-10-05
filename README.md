@@ -69,6 +69,17 @@ npm run start:http                               # 127.0.0.1:3939 — put TLS in
 
 Endpoints (all but `/healthz`, `/openapi.json` and the OAuth endpoints need `Authorization: Bearer <BRIDGE_TOKEN or OAuth access token>`): `POST /mcp` (MCP Streamable HTTP, stateless), `POST /actions/{tool}` (JSON in/out), `GET /openapi.json`. With `BRIDGE_OAUTH=1`: `/.well-known/oauth-*`, `/register`, `/authorize`, `/token`, `/revoke`.
 
+### Three ways to run it
+
+| Mode | For | Auth | State |
+| --- | --- | --- | --- |
+| **stdio** (`node dist/stdio.js`) | you, on your machine (Claude Code/Desktop) | your env vars | none |
+| **HTTP + `BRIDGE_TOKEN`** | ChatGPT Actions, Claude Code headers, one instance | static bearer | none |
+| **HTTP + OAuth, `BRIDGE_MODE=single`** | a team fronting *their one* Paperclip | OAuth 2.1, scoped | JSON file or Postgres |
+| **HTTP + OAuth, `BRIDGE_MODE=multi`** | **a public service**: every user connects their own (publicly reachable, https) Paperclip | OAuth 2.1, scoped | Postgres (required) |
+
+Public hosting on Render + Supabase: **[docs/DEPLOY-RENDER.md](docs/DEPLOY-RENDER.md)** · threat model and residual risks: **[docs/SECURITY.md](docs/SECURITY.md)** · policy templates: [docs/legal/](docs/legal/).
+
 ### Connect claude.ai / Claude Desktop / ChatGPT apps (OAuth)
 
 Set `BRIDGE_OAUTH=1`, `BRIDGE_PUBLIC_URL`, `BRIDGE_SECRET`, `BRIDGE_DATA_FILE` (see [.env.example](.env.example)), then add `https://<your bridge>/mcp` as a custom connector. Users sign in through Paperclip's own approval page and choose Read / Control / Admin. Full guide, scopes and security model: [docs/oauth.md](docs/oauth.md).
@@ -84,7 +95,9 @@ Set `BRIDGE_OAUTH=1`, `BRIDGE_PUBLIC_URL`, `BRIDGE_SECRET`, `BRIDGE_DATA_FILE` (
 ## Known limits — please read
 
 - **Tested against a mock of Paperclip's documented API, not a live instance.** Endpoint paths and fields were taken from Paperclip's docs and server source (`docs/api/*`, `server/src/routes/*`); report/sync code reads response fields defensively. Run it against your instance with `PAPERCLIP_READ_ONLY=1` first.
-- **claude.ai web / Desktop / mobile connectors and ChatGPT MCP apps** need OAuth: set `BRIDGE_OAUTH=1` (see [docs/oauth.md](docs/oauth.md)). OAuth scopes limit *what* a connection may do, not *which company* it may touch (Paperclip board keys are user-wide). Not yet implemented: CIMD, multi-process deployment, grant admin UI.
+- **claude.ai web / Desktop / mobile connectors and ChatGPT MCP apps** need OAuth: set `BRIDGE_OAUTH=1` (see [docs/oauth.md](docs/oauth.md)). OAuth scopes limit *what* a connection may do, not *which company* it may touch (Paperclip board keys are user-wide; verified in its source). Not yet implemented: CIMD, a grant-admin web UI (use `npm run admin`).
+- **A public bridge holds other people's Paperclip keys.** A bridge compromise exposes all of them until revoked. Read [docs/SECURITY.md](docs/SECURITY.md) before opening it up. The code is unaudited and the Render/Supabase/claude.ai/ChatGPT specifics are untested against the live services.
+- **Hosted mode only reaches Paperclips on the public internet over https.** `localhost`/private-network instances use the local stdio plugin.
 - `paperclip_sync_changes` polls the activity log (no push). Activity has no server-side `since` filter, so it fetches up to `limit` recent entries and filters locally; raise `limit` if you poll infrequently on a busy company.
 - ChatGPT Actions allow ~30 operations per GPT; the catalogue is at 29. Adding tools means removing some for that surface.
 
@@ -94,11 +107,13 @@ Set `BRIDGE_OAUTH=1`, `BRIDGE_PUBLIC_URL`, `BRIDGE_SECRET`, `BRIDGE_DATA_FILE` (
 src/tools.ts      tool catalogue (schemas + Paperclip calls)     src/reports.ts  report builders
 src/execute.ts    validation, read-only enforcement, errors      src/openapi.ts  OpenAPI from the catalogue
 src/mcp.ts        MCP server    src/stdio.ts   src/server.ts + http.ts  HTTP bridge
-src/oauth/        OAuth 2.1 server: provider, store, crypto, scopes, consent pages, Paperclip login adapter
+src/oauth/        OAuth 2.1 server: provider, stores (memory/JSON + Postgres), crypto/key ring, scopes, consent pages, Paperclip login adapter
+src/net/          SSRF-safe fetch + instance URL validation (multi-tenant egress guard)
+migrations/       Postgres schema (dedicated `bridge` schema, RLS)   render.yaml   Render blueprint   src/cli.ts  admin CLI
 .claude-plugin/ .mcp.json skills/ commands/    Claude Code plugin
 test/             end-to-end tests against a mock Paperclip
 ```
 
 ## Privacy
 
-This bridge has no telemetry and no backend of its own. It sends requests only to the Paperclip instance you configure (`PAPERCLIP_API_URL`) and returns the responses to the AI client that called it. It stores nothing on disk. Your Paperclip credential lives in environment variables on the machine running the bridge. Data you expose to Claude or ChatGPT is then subject to that provider's own terms and privacy policy. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the security model and distribution plan.
+Local modes: no telemetry and no backend; the bridge sends requests only to the Paperclip instance you configure and returns responses to the AI client that called it. Your credential lives in environment variables on your machine. Hosted mode (OAuth) additionally stores, per connection, an encrypted Paperclip key, hashed tokens and an audit log — see [docs/legal/PRIVACY.md](docs/legal/PRIVACY.md) (template) and [docs/SECURITY.md](docs/SECURITY.md). Data you expose to Claude or ChatGPT is then subject to that provider's own terms and privacy policy. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the security model and distribution plan.

@@ -1,0 +1,38 @@
+# Render Blueprint for the public (multi-tenant) Paperclip Bridge.
+# Setup guide: docs/DEPLOY-RENDER.md
+services:
+  - type: web
+    name: paperclip-bridge
+    runtime: node
+    region: oregon            # Supabase us-west-2 is Oregon: keep the app next to the database
+    plan: starter             # free instances sleep, which breaks OAuth callbacks; pre-deploy hooks need a paid plan
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    preDeployCommand: npm run migrate     # uses DATABASE_MIGRATE_URL, else DATABASE_URL
+    healthCheckPath: /readyz              # checks the database, not just the process
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: BRIDGE_OAUTH
+        value: "1"
+      - key: BRIDGE_MODE
+        value: multi
+      - key: BRIDGE_PUBLIC_URL            # exactly the URL users reach, e.g. https://paperclip-bridge.onrender.com (no trailing slash/path)
+        sync: false
+      - key: BRIDGE_SECRET                # seals stored Paperclip credentials. BACK THIS UP: losing it disconnects every user.
+        generateValue: true
+      - key: DATABASE_URL                 # Supabase pooler (transaction mode, port 6543), preferably as the least-privilege role
+        sync: false
+      - key: DATABASE_MIGRATE_URL         # Supabase session-mode pooler (port 5432) as the admin role: migrations only
+        sync: false
+      - key: DATABASE_SSL
+        value: verify
+      - key: DATABASE_CA                  # Supabase "SSL certificate" PEM (see docs). If you cannot set it, DATABASE_SSL=require is the weaker fallback.
+        sync: false
+      - key: BRIDGE_PROXY_HOPS            # reverse proxies in front of the app; see docs/DEPLOY-RENDER.md before changing
+        value: "1"
+      - key: BRIDGE_IDLE_REVOKE_DAYS
+        value: "30"
+      - key: BRIDGE_CALLS_PER_MINUTE
+        value: "120"

@@ -19,12 +19,14 @@ export interface AuditEvent {
   actor: string;
   client?: string;
   userId?: string | null;
+  /** Tenant's Paperclip host (multi-tenant mode). */
+  instance?: string;
 }
 
 export interface ExecOptions {
   /** When set, the caller is limited to these scopes. Omitted = unrestricted (stdio / static token). */
   scopes?: readonly string[];
-  actor?: { id: string; client?: string; userId?: string | null };
+  actor?: { id: string; client?: string; userId?: string | null; instance?: string };
   audit?: (e: AuditEvent) => void;
 }
 
@@ -51,6 +53,7 @@ export async function executeTool(
       actor: opts.actor?.id ?? "stdio",
       client: opts.actor?.client,
       userId: opts.actor?.userId,
+      instance: opts.actor?.instance,
     });
     return out;
   };

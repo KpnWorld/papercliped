@@ -50,15 +50,13 @@ Each includes the lower ones. The user picks a level on the consent page (never 
 - Every tool call is audit-logged as a JSON line (tool, mutation, ok/status, grant id, client name, Paperclip user id) — never tokens or arguments.
 - Access tokens last 1 h, refresh 30 d (sliding). Operators can revoke a grant via `OAuthProvider.revokeGrant`; users via the client's "disconnect" (`/revoke`).
 
-## Hosting, Postgres and FastAPI
+## Single vs multi-tenant, and storage
 
-You run the bridge; nothing about it needs me (or Anthropic) to host it, and a Claude Code session's container is ephemeral. Options:
-
-- **Single node (today):** this Node service + `BRIDGE_DATA_FILE` on a persistent volume (Fly, Railway, Render, a VPS). Fine for a team's self-hosted instance. Limits: one process (the consent state and rate limiter live in memory) and a JSON file as the store.
-- **Postgres:** the right store once you want more than one process, backups, or a hosted multi-tenant bridge. `OAuthStore` is the only persistence boundary (clients, grants, token hashes); a `PgStore` with the same methods is a small change and I'd move the pending-consent map, auth codes and rate limiter there (or to Redis) at the same time. Keep the credential **sealed in the app** before it reaches the database, ideally with a KMS-held key rather than `BRIDGE_SECRET`.
-- **FastAPI:** possible, but it means rewriting the OAuth server and MCP layer in Python (the official Python MCP SDK exists), duplicating the tested logic here for no functional gain. I'd keep Node unless you have a Python-only constraint or want to share code with a Python backend. A Python service that only *manages* grants (admin UI, billing) next to this bridge is a reasonable split.
-- **Hosted for other people's Paperclip instances:** do not do this casually. You'd be storing board credentials for strangers. It needs per-tenant instance URLs with SSRF-safe validation, KMS envelope encryption, a security review, a privacy policy and an incident process. See `docs/ARCHITECTURE.md` §4–6.
+- `BRIDGE_MODE=single` (default): the bridge fronts the one Paperclip at `PAPERCLIP_API_URL`. State: a JSON file (`BRIDGE_DATA_FILE`, single process) or Postgres (`DATABASE_URL`).
+- `BRIDGE_MODE=multi`: a **public** service. The consent page first asks the user for *their* Paperclip address; the bridge validates it (https, public DNS name only — see `src/net/safe-fetch.ts`), probes `/api/health`, starts the Paperclip approval flow **on that instance**, and binds the grant to it. Requires Postgres, `BRIDGE_LOGIN=paperclip`, and no `BRIDGE_TOKEN`. Deployment: [DEPLOY-RENDER.md](DEPLOY-RENDER.md). Threat model: [SECURITY.md](SECURITY.md).
+- The Postgres store (`src/oauth/pg-store.ts`) is multi-process safe: consuming a code/refresh token and rate-limit counting are single atomic statements, and consent state lives in the database too. Migrations: `npm run migrate`.
+- FastAPI/Python: not needed — the Node service is the tested implementation; rewriting would duplicate the security-critical logic.
 
 ## Not implemented yet
 
-CIMD (Client ID Metadata Documents; needs SSRF-safe fetching), per-company scoping, multi-process deployment, an admin UI for listing/revoking grants, and Anthropic-held client credentials. DCR is the only registration path, so very busy public deployments will accumulate registered clients (idle ones are pruned after 7 days; capped at 1000).
+CIMD (Client ID Metadata Documents; the new SSRF-safe fetch makes it feasible), per-company scoping (blocked on Paperclip), a grant-admin web UI (CLI exists), and Anthropic-held client credentials. DCR is the only registration path, so very busy public deployments will accumulate registered clients (idle ones are pruned after 7 days; capped at 1000).

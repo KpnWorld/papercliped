@@ -6,10 +6,12 @@
   "type": "module",
   "bin": {
     "paperclip-bridge": "./dist/stdio.js",
-    "paperclip-bridge-http": "./dist/http.js"
+    "paperclip-bridge-http": "./dist/http.js",
+    "paperclip-bridge-admin": "./dist/cli.js"
   },
   "files": [
     "dist",
+    "migrations",
     "plugin",
     "docs",
     "README.md"
@@ -21,19 +23,25 @@
     "test": "vitest run",
     "start:stdio": "node dist/stdio.js",
     "start:http": "node dist/http.js",
-    "openapi": "node dist/openapi-cli.js > openapi.json"
+    "openapi": "node dist/openapi-cli.js > openapi.json",
+    "migrate": "node dist/cli.js migrate",
+    "start": "node dist/http.js",
+    "admin": "node dist/cli.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
+    "pg": "^8.23.1",
+    "undici": "^7.30.0",
     "zod": "^3.25.0",
     "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.18"
   }
 }

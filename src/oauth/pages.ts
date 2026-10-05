@@ -34,6 +34,34 @@ export interface ConsentView {
   approved: boolean;
   nonce: string;
   error?: string;
+  /** Multi-tenant: the Paperclip host this grant will be bound to. */
+  instanceHost?: string;
+}
+
+export interface InstanceView {
+  rid: string;
+  csrf: string;
+  clientName: string;
+  redirectHost: string;
+  error?: string;
+  value?: string;
+}
+
+export function instancePage(v: InstanceView): string {
+  return shell(
+    "Connect your Paperclip",
+    `<h1>Connect <em>${esc(v.clientName)}</em> to your Paperclip</h1>
+     <p>Enter the address of your Paperclip instance. It must be reachable on the public internet over <code>https://</code> — instances on <code>localhost</code> or a private network can't be used with this service (use the local plugin instead).</p>
+     <p>The bridge will contact this address to sign you in, and later to run the actions you allow. Only enter an address you own.</p>
+     ${v.error ? `<div class="err">${esc(v.error)}</div>` : ""}
+     <form method="post" action="/authorize/instance">
+       <input type="hidden" name="rid" value="${esc(v.rid)}"><input type="hidden" name="csrf" value="${esc(v.csrf)}">
+       <p><label for="inst"><strong>Paperclip address</strong></label>
+          <input id="inst" name="instance" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://paperclip.example.com" value="${esc(v.value ?? "")}" required style="width:100%;padding:.5rem;box-sizing:border-box"></p>
+       <div class="row"><button class="go" name="action" value="continue">Continue</button><button name="action" value="deny" formnovalidate>Cancel</button></div>
+     </form>
+     <p><small>After you finish you will be sent back to <code>${esc(v.redirectHost)}</code>.</small></p>`,
+  );
 }
 
 export function consentPage(v: ConsentView): string {
@@ -60,7 +88,7 @@ export function consentPage(v: ConsentView): string {
   return shell(
     "Authorize access to Paperclip",
     `<h1>Authorize <em>${esc(v.clientName)}</em></h1>
-     <p>This app wants to access your Paperclip instance through the bridge. Choose how much to allow:</p>
+     <p>This app wants to access ${v.instanceHost ? `the Paperclip instance at <strong><code>${esc(v.instanceHost)}</code></strong>` : "your Paperclip instance"} through the bridge. Choose how much to allow:</p>
      ${v.error ? `<div class="err">${esc(v.error)}</div>` : ""}
      <form method="post" action="/authorize/decision">
        <input type="hidden" name="rid" value="${esc(v.rid)}"><input type="hidden" name="csrf" value="${esc(v.csrf)}">

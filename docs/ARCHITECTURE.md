@@ -59,6 +59,7 @@ claude.ai / ChatGPT ──OAuth 2.1 + PKCE──▶ bridge (AS + resource server
 | --- | --- | --- | --- |
 | 1 | stdio MCP + Claude Code plugin + Actions bridge, read‑only mode, confirm gates | git marketplace now; npm publish; submit **Plugin bundle** to Anthropic's directory | **Done** (needs live-instance test, then submit) |
 | 2 | OAuth 2.1 AS in the bridge (§4), scopes, token store, audit log | custom connector by URL on claude.ai; ChatGPT app (dev mode → submission) | **Done** (self-hosted; DCR only; see `docs/oauth.md`). Untested against real claude.ai/ChatGPT clients |
+| 2b | **Multi-tenant public service**: per-user instance URL with SSRF-safe egress, Postgres store, key ring/rotation, idle revocation, Render blueprint, threat model | hosted bridge | **Built, untested live** (see SECURITY.md) |
 | 3 | Upstream: (i) PR/issue for **scoped board API keys**; (ii) optional Paperclip‑native plugin hosting the MCP endpoint behind Paperclip's own session auth | `paperclipai plugin install`; image catalog (`distribution/catalog.json`) | Later |
 
 Phase 3(ii) caveat **[unverified]**: plugin routes live only under `/api/plugins/:id/api/*` and can't claim root paths, while OAuth discovery wants `/.well-known/*` at the origin root (Claude lets the `401` point `resource_metadata` anywhere, but AS metadata must be at the issuer's well‑known path). A reverse‑proxy rule or a core change would be needed — test before committing to it.

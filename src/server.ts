@@ -42,7 +42,7 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
 }
 
 /** Who is calling the protected endpoints. */
-type Principal = { kind: "static" } | { kind: "oauth"; grantId: string; client: string; userId: string | null; scopes: string[]; paperclip: PaperclipClient };
+type Principal = { kind: "static" } | { kind: "oauth"; grantId: string; client: string; userId: string | null; instance?: string; scopes: string[]; paperclip: PaperclipClient };
 
 export function createHttpServer(config: BridgeConfig, http: HttpConfig, opts: ServerOptions = {}): Server {
   const baseClient = opts.client ?? new PaperclipClient(config);
@@ -50,20 +50,32 @@ export function createHttpServer(config: BridgeConfig, http: HttpConfig, opts: S
   const oauth =
     opts.oauth !== undefined ? opts.oauth : http.oauth ? new OAuthProvider({ config, oauth: http.oauth, bridgeToken: http.bridgeToken }) : null;
 
-  function authenticate(req: IncomingMessage): Principal | null {
+  async function authenticate(req: IncomingMessage): Promise<Principal | null> {
     const m = /^Bearer (.+)$/i.exec(req.headers.authorization ?? "");
     if (!m) return null;
     const token = m[1].trim();
     if (http.bridgeToken && safeEqual(token, http.bridgeToken)) return { kind: "static" };
-    const grant = oauth?.authenticate(token);
+    const grant = oauth ? await oauth.authenticate(token) : null;
     if (!grant || !oauth) return null;
-    return { kind: "oauth", grantId: grant.id, client: grant.clientName, userId: grant.userId, scopes: grant.scopes, paperclip: oauth.clientFor(grant) };
+    let paperclip: PaperclipClient;
+    try {
+      paperclip = oauth.clientFor(grant);
+    } catch {
+      return null; // unreadable credential or instance no longer allowed: treat as an invalid token
+    }
+    let instance: string | undefined;
+    try {
+      instance = grant.instanceUrl ? new URL(grant.instanceUrl).host : undefined;
+    } catch {
+      instance = undefined;
+    }
+    return { kind: "oauth", grantId: grant.id, client: grant.clientName, userId: grant.userId, instance, scopes: grant.scopes, paperclip };
   }
 
   const execFor = (p: Principal): { client: PaperclipClient; exec: ExecOptions } =>
     p.kind === "static"
       ? { client: baseClient, exec: { actor: { id: "static-token" }, audit } }
-      : { client: p.paperclip, exec: { scopes: p.scopes, actor: { id: p.grantId, client: p.client, userId: p.userId }, audit } };
+      : { client: p.paperclip, exec: { scopes: p.scopes, actor: { id: p.grantId, client: p.client, userId: p.userId, instance: p.instance }, audit } };
 
   const unauthorized = (res: ServerResponse, invalid: boolean) => {
     const challenge = oauth ? oauth.challengeHeader(invalid ? "invalid_token" : undefined) : "Bearer";
@@ -76,6 +88,14 @@ export function createHttpServer(config: BridgeConfig, http: HttpConfig, opts: S
       const path = url.pathname;
 
       if (path === "/healthz") return json(res, 200, { ok: true, readOnly: config.readOnly, oauth: !!oauth });
+      if (path === "/readyz") {
+        try {
+          await oauth?.store.ping();
+          return json(res, 200, { ready: true });
+        } catch {
+          return json(res, 503, { ready: false });
+        }
+      }
 
       if (path === "/openapi.json" && req.method === "GET") {
         const host = req.headers.host ?? `${http.host}:${http.port}`;
@@ -84,8 +104,11 @@ export function createHttpServer(config: BridgeConfig, http: HttpConfig, opts: S
 
       if (oauth && (await oauth.handle(req, res, url))) return;
 
-      const principal = authenticate(req);
+      const principal = await authenticate(req);
       if (!principal) return unauthorized(res, !!req.headers.authorization);
+      if (principal.kind === "oauth" && oauth && !(await oauth.allowCall(principal.grantId))) {
+        return json(res, 429, { error: "Too many requests for this connection; slow down." }, { "Retry-After": "30" });
+      }
       const { client, exec } = execFor(principal);
 
       // Stateless Streamable HTTP: a fresh server+transport per request, so no session affinity is needed.

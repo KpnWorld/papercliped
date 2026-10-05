@@ -103,7 +103,13 @@ async function rig(over: Partial<OAuthConfig> = {}, extra: { dataFile?: string; 
     accessTtlSec: 3600,
     refreshTtlSec: 86400,
     redirectHosts: ["claude.ai", "chatgpt.com"],
-    trustProxy: false,
+    previousSecrets: [],
+    mode: "single",
+    database: null,
+    idleRevokeDays: 30,
+    callsPerMinute: 120,
+    proxyHops: 0,
+    instance: { allowedPorts: [443], denyHosts: [], allowHosts: null },
     ...over,
   };
   const bridgeToken = extra.bridgeToken === undefined ? "static-secret" : extra.bridgeToken;
@@ -473,8 +479,8 @@ describe("revocation", () => {
   it("operator can revoke a grant programmatically", async () => {
     const r = await rig();
     const { tokens } = await connect(r);
-    const [g] = r.provider.listGrants();
-    r.provider.revokeGrant(g.id);
+    const [g] = await r.provider.listGrants();
+    await r.provider.revokeGrant(g.id);
     expect((await act(r, tokens.access_token, "paperclip_list_agents")).status).toBe(401);
     r.close();
   });
@@ -545,16 +551,16 @@ describe("coexistence and persistence", () => {
     const r2 = await rig({}, { dataFile: file });
     // fresh provider over the same file + same secret
     const store = new OAuthStore(file);
-    expect(store.listGrants()).toHaveLength(1);
+    expect(await store.listGrants()).toHaveLength(1);
     const p2 = new OAuthProvider({ config, oauth: r2.oauth, bridgeToken: "x", store });
-    const g = p2.authenticate(tokens.access_token);
+    const g = await p2.authenticate(tokens.access_token);
     expect(g).not.toBeNull();
     seenAuth.length = 0;
     await p2.clientFor(g!).get(`/companies/${CID}/agents`);
     expect(seenAuth.at(-1)).toMatch(/^Bearer board-tok-/);
     // a different secret cannot unseal it
     const p3 = new OAuthProvider({ config, oauth: { ...r2.oauth, secret: "z".repeat(40) }, bridgeToken: "x", store });
-    expect(() => p3.clientFor(p3.authenticate(tokens.access_token)!)).toThrow();
+    expect(() => p3.clientFor((g as any))).toThrow(/no longer has/);
     r2.close();
   });
 });
