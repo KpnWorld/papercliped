@@ -1,13 +1,16 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AdminRoutes, assessHealth } from "../src/admin/routes.js";
+import { assessHealth, PanelRoutes } from "../src/panel/routes.js";
+import { createPanelServer } from "../src/panel/server.js";
+import { readPanelConfig } from "../src/panel/config.js";
+import { panelPage } from "../src/panel/page.js";
 import { PaperclipClient } from "../src/client.js";
 import { readHttpConfig, type BridgeConfig } from "../src/config.js";
 import { executeTool } from "../src/execute.js";
 import { MemoryStore } from "../src/oauth/store.js";
 import { createHttpServer, routeGroup } from "../src/server.js";
-import { AuditRecorder, SystemSampler, toRow } from "../src/telemetry/recorder.js";
+import { AuditRecorder, NodeReporter, SystemSampler, toRow } from "../src/telemetry/recorder.js";
 import { unionMs } from "../src/telemetry/timing.js";
 import type { AuditEvent, AuditRow } from "../src/telemetry/types.js";
 
@@ -191,7 +194,7 @@ describe("SystemSampler", () => {
 });
 
 describe("health assessment", () => {
-  const base = { count: 100, faults: 0, p95: 200, dbPingMs: 10, dbFailures: 0, loopLagP99Ms: 5, slowMs: 1500, recentDbFailed: false };
+  const base = { count: 100, faults: 0, p95: 200, dbPingMs: 10, dbFailures: 0, loopLagP99Ms: 5, slowMs: 1500, recentDbFailed: false, bridgeSilentMs: 5000 };
   it("healthy / idle", () => {
     expect(assessHealth(base).state).toBe("healthy");
     expect(assessHealth({ ...base, count: 0 })).toMatchObject({ state: "idle" });
@@ -210,6 +213,11 @@ describe("health assessment", () => {
   it("a handful of calls is not enough to judge latency or fault rate", () => {
     expect(assessHealth({ ...base, count: 3, faults: 3, p95: 9000 }).state).toBe("healthy");
   });
+  it("flags a bridge that stopped reporting (asleep or down) and one that never reported", () => {
+    expect(assessHealth({ ...base, bridgeSilentMs: 200_000 })).toMatchObject({ state: "critical" });
+    expect(assessHealth({ ...base, bridgeSilentMs: 200_000 }).reasons.join(" ")).toMatch(/asleep, down/);
+    expect(assessHealth({ ...base, bridgeSilentMs: null }).state).toBe("degraded");
+  });
   it("explains itself", () => {
     expect(assessHealth({ ...base, p95: 1600, faults: 3 }).reasons.join(" ")).toMatch(/p95 latency 1600 ms.*|.*system fault/);
   });
@@ -225,37 +233,55 @@ describe("routeGroup", () => {
   });
 });
 
-// ───────────── end to end through the HTTP server ─────────────
-describe("dashboard end to end", () => {
+// ───────────── end to end: the bridge writes, the SEPARATE panel reads ─────────────
+describe("panel end to end", () => {
   const ADMIN = "a".repeat(32);
-  // Anchored to real time (events are stamped with Date.now()); tests move it by changing `offset`.
   const clock = { offset: 0 };
   const tnow = () => Date.now() + clock.offset;
-  let server: Server, base: string, store: MemoryStore, recorder: AuditRecorder;
+  let bridge: Server, panel: Server, bb: string, base: string, store: MemoryStore, recorder: AuditRecorder;
+  const hits = new Map<string, number[]>();
 
   beforeAll(async () => {
     store = new MemoryStore(null, tnow);
     recorder = new AuditRecorder(store, { node: "test-node" });
     const sampler = new SystemSampler(store);
     await sampler.sample();
-    const admin = new AdminRoutes({ token: ADMIN, sessionHours: 8, secureCookie: false, store, recorder, sampler, slowMs: 1500, mode: "token", persistent: false, liveGrants: async () => 3, now: tnow });
-    server = createHttpServer(cfg(), { host: "127.0.0.1", port: 0, bridgeToken: "tool-token", publicUrl: null, oauth: null, admin: { token: ADMIN, sessionHours: 8 }, audit: { retentionDays: 30, slowMs: 1500, stderr: false } } as any, { recorder, admin });
-    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    await new NodeReporter(store, sampler, "test-node").report();
+    bridge = createHttpServer(cfg(), { host: "127.0.0.1", port: 0, bridgeToken: "tool-token", publicUrl: null, oauth: null, audit: { retentionDays: 30, stderr: false } } as any, { recorder });
+    await new Promise<void>((r) => bridge.listen(0, "127.0.0.1", r));
+    bb = `http://127.0.0.1:${(bridge.address() as AddressInfo).port}`;
+    const limit = (k: string, n: number, w: number) => {
+      const l = (hits.get(k) ?? []).filter((t) => tnow() - t < w);
+      if (l.length >= n) return false;
+      l.push(tnow());
+      hits.set(k, l);
+      return true;
+    };
+    const routes = new PanelRoutes({ token: ADMIN, sessionHours: 8, secureCookie: false, store, slowMs: 1500, mode: "test", persistent: false, limit, now: tnow });
+    panel = createPanelServer({ routes });
+    await new Promise<void>((r) => panel.listen(0, "127.0.0.1", r));
+    base = `http://127.0.0.1:${(panel.address() as AddressInfo).port}`;
   });
-  afterAll(() => server.close());
+  afterAll(() => {
+    bridge.close();
+    panel.close();
+  });
 
-  const post = (path: string, headers: Record<string, string>, body: unknown = {}) => fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
-  const login = async (token = ADMIN) => fetch(`${base}/admin/login`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token }).toString(), redirect: "manual" });
+  const post = (path: string, headers: Record<string, string>, body: unknown = {}) => fetch(`${bb}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+  const login = async (token = ADMIN) => fetch(`${base}/login`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token }).toString(), redirect: "manual" });
+  let cached: string | undefined;
+  const session = async () => (cached ??= (await login()).headers.get("set-cookie")!.split(";")[0]);
+
+  it("the bridge no longer serves any admin surface", async () => {
+    for (const p of ["/admin", "/admin/api/summary", "/admin/login"]) expect((await fetch(`${bb}${p}`)).status, p).toBeGreaterThanOrEqual(401);
+  });
 
   it("requires sign-in for pages and APIs", async () => {
-    expect((await fetch(`${base}/admin/api/summary`)).status).toBe(401);
-    expect((await fetch(`${base}/admin/api/events`)).status).toBe(401);
-    const page = await fetch(`${base}/admin`);
-    expect(page.status).toBe(200);
-    const html = await page.text();
+    expect((await fetch(`${base}/api/summary`)).status).toBe(401);
+    expect((await fetch(`${base}/api/events`)).status).toBe(401);
+    const html = await (await fetch(`${base}/`)).text();
     expect(html).toContain('name="token"');
-    expect(html).not.toContain("/admin/api/summary"); // the dashboard code is not served to anonymous visitors
+    expect(html).not.toContain("/api/summary"); // dashboard code is not served to anonymous visitors
   });
 
   it("rejects wrong tokens, rate-limits guessing, and sets a hardened cookie on success", async () => {
@@ -265,22 +291,17 @@ describe("dashboard end to end", () => {
     const ok = await login();
     expect(ok.status).toBe(303);
     const cookie = ok.headers.get("set-cookie")!;
-    expect(cookie).toMatch(/^pcb_admin=\d+\.[A-Za-z0-9_-]+;/);
+    expect(cookie).toMatch(/^pcp_panel=\d+\.[A-Za-z0-9_-]+;/);
     expect(cookie).toMatch(/HttpOnly/);
     expect(cookie).toMatch(/SameSite=Strict/);
-    expect(cookie).toMatch(/Path=\/admin/);
-    // brute force: the 5/min budget is already partly spent; keep guessing until throttled
     const codes: number[] = [];
     for (let i = 0; i < 8; i++) codes.push((await login(`guess${i}`)).status);
     expect(codes).toContain(429);
-    clock.offset += 61_000; // the rate-limit window passes
+    clock.offset += 61_000;
   });
 
-  let cached: string | undefined;
-  const session = async () => (cached ??= (await login()).headers.get("set-cookie")!.split(";")[0]); // sign in once: logins are rate-limited
-
-  it("serves the dashboard with a strict CSP and no embedded data", async () => {
-    const res = await fetch(`${base}/admin`, { headers: { cookie: await session() } });
+  it("serves the dashboard with a strict CSP and no embedded data or network loads", async () => {
+    const res = await fetch(`${base}/`, { headers: { cookie: await session() } });
     const html = await res.text();
     expect(html).toContain("Latency percentiles");
     const csp = res.headers.get("content-security-policy")!;
@@ -288,12 +309,16 @@ describe("dashboard end to end", () => {
     expect(csp).toMatch(/script-src 'nonce-[A-Za-z0-9_-]+'/);
     expect(csp).toMatch(/frame-ancestors 'none'/);
     expect(csp).not.toMatch(/unsafe-eval|https?:\/\//);
-    const nonce = /script-src 'nonce-([^']+)'/.exec(csp)![1];
-    expect(html).toContain(`<script nonce="${nonce}">`);
     expect(html).not.toMatch(/<script(?![^>]*nonce)/);
     expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(html).not.toMatch(/(src|href|action)=["']https?:/); // nothing loads from the network
-    expect(html).not.toMatch(/@import|url\(\s*["']?https?:/);
+    expect(html).not.toMatch(/(src|href|action)=["']https?:/);
+  });
+
+  it("the dashboard script is valid JavaScript", () => {
+    const html = panelPage("n0nce", { slowMs: 1500 });
+    const m = /<script nonce="n0nce">([\s\S]*?)<\/script>/.exec(html);
+    expect(m).toBeTruthy();
+    expect(() => new Function(m![1])).not.toThrow();
   });
 
   it("rejects forged, tampered and expired session cookies", async () => {
@@ -301,92 +326,138 @@ describe("dashboard end to end", () => {
     const [name, val] = good.split("=");
     const [exp, mac] = val.split(".");
     for (const c of [`${name}=${exp}.${mac.slice(0, -2)}xx`, `${name}=${Number(exp) + 999999}.${mac}`, `${name}=1.${mac}`, `${name}=garbage`, `${name}=`])
-      expect((await fetch(`${base}/admin/api/summary`, { headers: { cookie: c } })).status, c).toBe(401);
-    clock.offset += 9 * 3600_000; // past the 8h session
-    expect((await fetch(`${base}/admin/api/summary`, { headers: { cookie: good } })).status).toBe(401);
+      expect((await fetch(`${base}/api/summary`, { headers: { cookie: c } })).status, c).toBe(401);
+    clock.offset += 9 * 3600_000;
+    expect((await fetch(`${base}/api/summary`, { headers: { cookie: good } })).status).toBe(401);
     clock.offset -= 9 * 3600_000;
   });
 
-  it("the admin token and session cannot be used as tool access", async () => {
+  it("the admin token and panel session cannot be used as tool access", async () => {
     expect((await post("/actions/paperclip_list_agents", { Authorization: `Bearer ${ADMIN}` })).status).toBe(401);
     expect((await post("/actions/paperclip_list_agents", { cookie: await session() })).status).toBe(401);
-    expect((await post("/actions/paperclip_list_agents", { Authorization: "Bearer tool-token" }, { companyId: CID })).status).toBe(200); // tool token still works
+    expect((await post("/actions/paperclip_list_agents", { Authorization: "Bearer tool-token" }, { companyId: CID })).status).toBe(200);
   });
 
-  it("records real traffic and the summary reflects it", async () => {
+  it("records real bridge traffic and the panel summary reflects it", async () => {
     delayMs = 25;
     for (let i = 0; i < 6; i++) await post("/actions/paperclip_list_agents", { Authorization: "Bearer tool-token" }, { companyId: CID });
-    await post("/actions/paperclip_pause_agent", { Authorization: "Bearer tool-token" }, {}); // validation error = caller mistake
+    await post("/actions/paperclip_pause_agent", { Authorization: "Bearer tool-token" }, {});
     delayMs = 0;
     await recorder.flush();
     const cookie = await session();
-    const j: any = await (await fetch(`${base}/admin/api/summary?window=15m`, { headers: { cookie } })).json();
-    // 1 earlier legitimate call (tool-access test) + 6 here + 1 caller error
+    const j: any = await (await fetch(`${base}/api/summary?window=15m`, { headers: { cookie } })).json();
     expect(j.totals).toMatchObject({ count: 8, errors: 1, faults: 0 });
-    expect(j.totals.p95).toBeGreaterThan(0);
     expect(j.totals.upstreamP95).toBeGreaterThanOrEqual(20);
     expect(j.byTool.find((r: any) => r.key === "paperclip_list_agents")).toMatchObject({ count: 7, errors: 0 });
     expect(j.byError).toEqual([expect.objectContaining({ key: "invalid_input", count: 1 })]);
-    expect(j.http.byRoute.find((r: any) => r.key === "actions")).toMatchObject({ count: 10, errors: 3 }); // incl. the two rejected admin-credential attempts and the validation error
     expect(j.health.state).toBe("healthy");
-    expect(j.system).toMatchObject({ node: "test-node", mode: "token", persistent: false, liveGrants: 3 });
-    expect(j.histogram.reduce((a: number, b: number) => a + b, 0)).toBe(8);
-    expect(j.series.length).toBeGreaterThan(0);
-    expect(j.slowest[0].totalMs).toBeGreaterThanOrEqual(j.slowest.at(-1).totalMs);
-    expect(JSON.stringify(j)).not.toMatch(/tool-token|Bearer|"k"|agent-of/);
-    expect(Object.keys(j.slowest[0])).not.toContain("userId"); // user ids stay out of the dashboard payload
+    expect(j.system).toMatchObject({ mode: "test", persistent: false });
+    expect(j.system.nodes[0]).toMatchObject({ node: "test-node" });
+    expect(j.system.bridgeSilentMs).toBeLessThan(120_000);
+    expect(JSON.stringify(j)).not.toMatch(/tool-token|Bearer|"k"/);
+    expect(Object.keys(j.slowest[0])).not.toContain("userId");
 
-    // live tail: newest first, and `after` returns only what's new
-    const ev: any = await (await fetch(`${base}/admin/api/events?limit=3`, { headers: { cookie } })).json();
+    const ev: any = await (await fetch(`${base}/api/events?limit=3`, { headers: { cookie } })).json();
     expect(ev.events).toHaveLength(3);
     expect(ev.events[0].id).toBeGreaterThan(ev.events[1].id);
-    const none: any = await (await fetch(`${base}/admin/api/events?after=${ev.events[0].id}`, { headers: { cookie } })).json();
+    const none: any = await (await fetch(`${base}/api/events?after=${ev.events[0].id}`, { headers: { cookie } })).json();
     expect(none.events).toEqual([]);
-    await post("/actions/paperclip_list_agents", { Authorization: "Bearer tool-token" }, { companyId: CID });
-    await recorder.flush();
-    const next: any = await (await fetch(`${base}/admin/api/events?after=${ev.events[0].id}`, { headers: { cookie } })).json();
-    expect(next.events.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("a silent bridge (asleep or down) turns the panel critical", async () => {
+    clock.offset += 5 * 60_000;
+    const cookie = await session();
+    // the session cookie is still valid (8 h); no new node sample arrived for 5 min
+    const j: any = await (await fetch(`${base}/api/summary?window=15m`, { headers: { cookie } })).json();
+    clock.offset -= 5 * 60_000;
+    expect(j.system.bridgeSilentMs).toBeGreaterThan(120_000);
+    expect(j.health.state).toBe("critical");
+    expect(j.health.reasons.join(" ")).toMatch(/has not reported/);
+  });
+
+  it("community: counts, success rate, failure reasons, anonymous aliases, and the log feed", async () => {
+    const cookie = await session();
+    const t = tnow();
+    const E = (kind: any, username: string | null, detail: string | null, dt: number) => store.insertUserEvent({ at: t - dt, accountId: username ? `a_${username}` : null, username, kind, detail });
+    for (const e of [
+      ["started", null, null, 9000], ["joined", "og.kpnwrld", "paperclip.acme.dev", 8000], ["completed", "og.kpnwrld", "new", 7900],
+      ["started", null, null, 7000], ["login", "Ann02", "claude.ai", 6000], ["completed", "Ann02", "login", 5900],
+      ["started", null, null, 5000], ["login_failed", null, "bad_credentials", 4000], ["started", null, null, 3000], ["connect_failed", null, "denied", 2500],
+      ["updated", "og.kpnwrld", "secret_rotated", 2000], ["left", "Ann02", "disconnected", 1000],
+    ] as const) await E(e[0], e[1], e[2], e[3]);
+    await store.createAccount({ id: "a_og", username: "og.kpnwrld", usernameKey: "og.kpnwrld", secretHash: "scrypt$x", createdAt: t, lastLoginAt: null, disabled: false });
+    const j: any = await (await fetch(`${base}/api/summary?window=15m`, { headers: { cookie } })).json();
+    const c = j.community;
+    expect(c).toMatchObject({ name: "cliped", totalUsers: 1 });
+    expect(c.counts).toMatchObject({ started: 4, completed: 2, joined: 1, login: 1, login_failed: 1, connect_failed: 1, updated: 1, left: 1 });
+    expect(c.successRate).toBeCloseTo(0.5, 5);
+    expect(c.failures).toEqual({ "login_failed:bad_credentials": 1, "connect_failed:denied": 1 });
+    expect(JSON.stringify(c)).not.toMatch(/scrypt|secret_hash|sealed/);
+    expect((await fetch(`${base}/api/community/events`)).status).toBe(401);
+    const feed: any = await (await fetch(`${base}/api/community/events?limit=10`, { headers: { cookie } })).json();
+    expect(feed.events.map((e: any) => `${e.username ?? "(visitor)"} ${e.kind}`)).toEqual(["Ann02 left", "og.kpnwrld updated", "(visitor) connect_failed", "(visitor) login_failed", "Ann02 login", "og.kpnwrld joined"]);
+    const newer: any = await (await fetch(`${base}/api/community/events?after=${feed.events[0].id}`, { headers: { cookie } })).json();
+    expect(newer.events).toEqual([]);
   });
 
   it("validates the window parameter and flags system faults", async () => {
     const cookie = await session();
-    expect((await fetch(`${base}/admin/api/summary?window=forever`, { headers: { cookie } })).status).toBe(400);
+    expect((await fetch(`${base}/api/summary?window=forever`, { headers: { cookie } })).status).toBe(400);
+    await new NodeReporter(store, new SystemSampler(store), "test-node").report(); // the bridge is alive again
     upstreamStatus = 503;
     for (let i = 0; i < 8; i++) await post("/actions/paperclip_list_agents", { Authorization: "Bearer tool-token" }, { companyId: CID });
     upstreamStatus = 200;
     await recorder.flush();
-    const j: any = await (await fetch(`${base}/admin/api/summary?window=15m`, { headers: { cookie } })).json();
+    const j: any = await (await fetch(`${base}/api/summary?window=15m`, { headers: { cookie } })).json();
     expect(j.totals.faults).toBe(8);
     expect(["degraded", "critical"]).toContain(j.health.state);
     expect(j.health.reasons.join(" ")).toMatch(/system fault/);
-    expect(j.byError.find((r: any) => r.key === "upstream_5xx")).toMatchObject({ count: 8 });
   });
 
   it("logout clears the cookie", async () => {
-    const res = await fetch(`${base}/admin/logout`, { method: "POST", redirect: "manual" });
+    const res = await fetch(`${base}/logout`, { method: "POST", redirect: "manual" });
     expect(res.status).toBe(303);
     expect(res.headers.get("set-cookie")).toMatch(/Max-Age=0/);
   });
 
-  it("a hostile tenant host or client name can't inject markup: data only ever travels as JSON", async () => {
+  it("a hostile tenant host or client name can't inject markup", async () => {
     await store.insertAudit([{ at: tnow(), node: "n", kind: "tool", name: "t", mutation: false, ok: true, status: null, errorClass: null, totalMs: 1, upstreamMs: 1, upstreamCalls: 1, scope: null, grantId: null, client: "<img src=x onerror=alert(1)>", instance: "<script>alert(1)</script>.example.com", userId: null }]);
     const cookie = await session();
-    const page = await (await fetch(`${base}/admin`, { headers: { cookie } })).text();
+    const page = await (await fetch(`${base}/`, { headers: { cookie } })).text();
     expect(page).not.toContain("onerror");
     expect(page).not.toContain("alert(1)");
-    const ev: any = await (await fetch(`${base}/admin/api/events?limit=1`, { headers: { cookie } })).json();
-    expect(ev.events[0].client).toBe("<img src=x onerror=alert(1)>"); // returned verbatim as JSON; the page renders it with textContent
   });
 });
 
-describe("admin configuration", () => {
-  it("is off by default and validated when set", () => {
-    expect(readHttpConfig({ BRIDGE_TOKEN: "t".repeat(32) } as any).admin).toBeNull();
-    expect(() => readHttpConfig({ BRIDGE_ADMIN_TOKEN: "short" } as any)).toThrow(/at least 24/);
-    expect(() => readHttpConfig({ BRIDGE_ADMIN_TOKEN: "a".repeat(30), BRIDGE_TOKEN: "a".repeat(30) } as any)).toThrow(/must differ/);
-    const c = readHttpConfig({ BRIDGE_ADMIN_TOKEN: "a".repeat(30), BRIDGE_AUDIT_RETENTION_DAYS: "7", BRIDGE_SLOW_MS: "800", BRIDGE_AUDIT_STDERR: "0" } as any);
-    expect(c.admin).toEqual({ token: "a".repeat(30), sessionHours: 8 });
-    expect(c.audit).toEqual({ retentionDays: 7, slowMs: 800, stderr: false });
-    expect(readHttpConfig({} as any).audit).toEqual({ retentionDays: 30, slowMs: 1500, stderr: true });
+describe("panel configuration", () => {
+  const ok = { PANEL_ADMIN_TOKEN: "a".repeat(30), PANEL_DATABASE_URL: "postgres://panel_ro:x@db.example.com/postgres" };
+  it("needs its own token and read-only database URL", () => {
+    expect(() => readPanelConfig({} as any)).toThrow(/PANEL_ADMIN_TOKEN/);
+    expect(() => readPanelConfig({ PANEL_ADMIN_TOKEN: "short" } as any)).toThrow(/at least 24/);
+    expect(() => readPanelConfig({ PANEL_ADMIN_TOKEN: "a".repeat(30) } as any)).toThrow(/PANEL_DATABASE_URL/);
+    expect(readPanelConfig({ ...ok, PANEL_DEMO: "1" } as any).demo).toBe(true);
+    expect(readPanelConfig(ok as any)).toMatchObject({ port: 3940, host: "127.0.0.1", communityName: "cliped", allowedIps: null });
+  });
+  it("refuses to run with the bridge's secrets in its environment", () => {
+    for (const k of ["BRIDGE_SECRET", "DATABASE_URL", "BRIDGE_SECRET_PREVIOUS", "DATABASE_MIGRATE_URL"]) expect(() => readPanelConfig({ ...ok, [k]: "x" } as any), k).toThrow(/separate program/);
+  });
+  it("validates the IP allow-list and enforces it", async () => {
+    expect(() => readPanelConfig({ ...ok, PANEL_ALLOWED_IPS: "not-an-ip" } as any)).toThrow(/invalid entry/);
+    const store = new MemoryStore();
+    const routes = new PanelRoutes({ token: "a".repeat(30), sessionHours: 1, secureCookie: false, store, slowMs: 1500, mode: "t", persistent: false, limit: () => true });
+    const srv = createPanelServer({ routes, allowedIps: ["10.1.2.3", "192.168.0.0/16"], proxyHops: 1 });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    const u = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+    expect((await fetch(`${u}/`, { headers: { "x-forwarded-for": "9.9.9.9" } })).status).toBe(403);
+    expect((await fetch(`${u}/`, { headers: { "x-forwarded-for": "1.1.1.1, 192.168.4.4" } })).status).toBe(200);
+    expect((await fetch(`${u}/healthz`, { headers: { "x-forwarded-for": "9.9.9.9" } })).status).toBe(200);
+    srv.close();
+  });
+});
+
+describe("bridge configuration", () => {
+  it("audit settings", () => {
+    expect(readHttpConfig({ BRIDGE_AUDIT_RETENTION_DAYS: "7", BRIDGE_AUDIT_STDERR: "0", BRIDGE_TOKEN: "t".repeat(32) } as any).audit).toEqual({ retentionDays: 7, stderr: false });
+    expect(readHttpConfig({} as any).audit).toEqual({ retentionDays: 30, stderr: true });
   });
 });

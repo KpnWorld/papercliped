@@ -1,24 +1,29 @@
 {
-  "name": "paperclip-bridge",
-  "version": "0.1.0",
-  "description": "Claude (MCP) and ChatGPT (Actions / MCP) plugin to control, sync with and report on a Paperclip instance via its REST API.",
+  "name": "papercliped",
+  "version": "1.0.0-beta.1",
+  "description": "Papercliped \u2014 connect Claude and ChatGPT to your Paperclip: control agents, sync, report. MCP server + hosted multi-tenant OAuth bridge + separate operator panel.",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "paperclip-bridge": "./dist/stdio.js",
-    "paperclip-bridge-http": "./dist/http.js",
-    "paperclip-bridge-admin": "./dist/cli.js"
+    "papercliped": "./dist/stdio.js",
+    "papercliped-bridge": "./dist/http.js",
+    "papercliped-panel": "./dist/panel/main.js",
+    "papercliped-admin": "./dist/cli.js"
   },
   "files": [
     "dist",
     "migrations",
-    "plugin",
+    ".claude-plugin",
+    ".mcp.json",
+    "skills",
+    "commands",
     "docs",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc",
-    "prepare": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "start:stdio": "node dist/stdio.js",
@@ -28,7 +33,10 @@
     "start": "node dist/http.js",
     "admin": "node dist/cli.js",
     "demo": "node dist/demo.js",
-    "schema:sql": "node dist/cli.js schema-sql > docs/supabase-schema.sql"
+    "schema:sql": "node dist/cli.js schema-sql > docs/supabase-schema.sql",
+    "panel": "node dist/panel/main.js",
+    "start:panel": "node dist/panel/main.js",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
@@ -45,5 +53,22 @@
   },
   "engines": {
     "node": ">=20.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KpnWorld/papercliped.git"
+  },
+  "homepage": "https://papercliped.kpnsolute.com",
+  "keywords": [
+    "paperclip",
+    "mcp",
+    "claude",
+    "chatgpt",
+    "agents",
+    "oauth"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

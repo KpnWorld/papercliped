@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { HIST_EDGES, isFault, type AuditRow, type AuditStore, type BreakdownRow, type SeriesBucket, type Totals } from "../telemetry/types.js";
+import { AliasTakenError, type Account, type AccountLink, type NodeSample, type PrivacyChange, type UserEvent, type UserEventBucket } from "../accounts/types.js";
+import { HIST_EDGES, isFault, type AuditReader, type AuditRow, type AuditStore, type BreakdownRow, type SeriesBucket, type Totals } from "../telemetry/types.js";
 
 export interface OAuthClient {
   id: string;
@@ -19,8 +20,11 @@ export interface Grant {
   resource: string;
   /** Origin of the user's Paperclip instance (multi-tenant mode); null in single-instance mode. */
   instanceUrl: string | null;
-  /** Sealed Paperclip credential (null when Paperclip needs none, or after revocation). */
+  /** Sealed Paperclip credential (null when Paperclip needs none, after revocation, or when the account link holds it). */
   sealedCredential: string | null;
+  /** Papercliped account (multi-tenant mode): the credential then lives on the account's link, not here. */
+  accountId?: string | null;
+  username?: string | null;
   createdAt: number;
   lastUsedAt: number;
   revoked: boolean;
@@ -47,6 +51,14 @@ export interface PendingRecord {
   sealedChallenge?: string;
   /** Instance-step attempts, to bound probing through the bridge. */
   attempts: number;
+  /** Account flow: where the user is in the sign-in. */
+  stage?: string;
+  accountId?: string;
+  username?: string;
+  /** The Paperclip user id learned from the approved challenge. */
+  paperclipUserId?: string;
+  /** login = signed in with the secret key; connect = via Paperclip approval. */
+  path?: "login" | "connect" | "new";
   expiresAt: number;
 }
 
@@ -59,6 +71,10 @@ export interface CodeRecord {
   userId: string | null;
   instanceUrl: string | null;
   sealedCredential: string | null;
+  accountId?: string | null;
+  username?: string | null;
+  /** How the user got here: new | connect | login (for the community log). */
+  path?: string | null;
   expiresAt: number;
 }
 
@@ -68,7 +84,70 @@ export type CodeTake = { status: "ok"; record: CodeRecord } | { status: "replay"
  * Persistence boundary. Implementations must be safe to share between processes (the Postgres one is);
  * the in-memory/JSON one is single-process. Raw tokens are never stored — only SHA-256 hashes.
  */
-export interface Store extends AuditStore {
+export interface UserCounts {
+  /** event kind → count in the window */
+  byKind: Record<string, number>;
+  /** failure reasons: `${kind}:${detail}` → count */
+  failures: Record<string, number>;
+}
+
+export interface AccountStore {
+  /** False if the username (case-insensitively) is taken. Throws AliasTakenError if the alias is. */
+  createAccount(a: Account): Promise<boolean>;
+  /** Turn anonymity on/off: updates the account and rewrites what logs, grants and audit rows show. */
+  setAccountPrivacy(id: string, change: PrivacyChange): Promise<"ok" | "alias_taken" | "missing">;
+  getAccountByKey(usernameKey: string): Promise<Account | undefined>;
+  getAccount(id: string): Promise<Account | undefined>;
+  setAccountSecret(id: string, secretHash: string): Promise<void>;
+  touchAccountLogin(id: string, at: number): Promise<void>;
+  countAccounts(): Promise<number>;
+  listAccounts(limit: number): Promise<Account[]>;
+  /** Removes the account, its link and its grants/tokens. Returns what was stored so the caller can revoke upstream. */
+  deleteAccount(id: string): Promise<{ sealedCredential: string | null; instanceUrl: string | null } | null>;
+
+  /** Insert or replace the account's link. False if another account already owns that Paperclip identity. */
+  putLink(l: AccountLink): Promise<boolean>;
+  getLink(accountId: string): Promise<AccountLink | undefined>;
+  getLinkByIdentity(instanceUrl: string, paperclipUserId: string): Promise<AccountLink | undefined>;
+  touchLink(accountId: string): Promise<void>;
+  /** Forget the stored credential (keeps the account). Returns the sealed credential that was dropped. */
+  dropLinkCredential(accountId: string): Promise<string | null>;
+  listIdleLinks(cutoff: number): Promise<AccountLink[]>;
+  /** Revoke every live grant (and their tokens) of an account. Returns how many. */
+  revokeAccountGrants(accountId: string): Promise<number>;
+  countLiveGrants(accountId: string): Promise<number>;
+
+  insertUserEvent(e: UserEvent): Promise<void>;
+  /** Newest first; with afterId only newer ones. */
+  userEventsRecent(afterId: number, limit: number): Promise<UserEvent[]>;
+  userEventCounts(from: number, to: number): Promise<UserCounts>;
+  userEventSeries(from: number, to: number, bucketMs: number): Promise<UserEventBucket[]>;
+
+  /** Rewrites one row so a free-tier database sees steady write activity. */
+  heartbeat(): Promise<void>;
+
+  recordNodeSample(s: NodeSample): Promise<void>;
+  /** Samples at or after `since`, newest first. */
+  nodeSamples(since: number): Promise<NodeSample[]>;
+  liveGrantCount(): Promise<number>;
+}
+
+/**
+ * Everything the SEPARATE operator panel may do: read telemetry and a few safe aggregates. Deliberately no writes and nothing
+ * that touches credentials or secret hashes. The panel's Postgres role can't do more than this even if the panel is compromised.
+ */
+export interface PanelData extends AuditReader {
+  userEventsRecent(afterId: number, limit: number): Promise<UserEvent[]>;
+  userEventCounts(from: number, to: number): Promise<UserCounts>;
+  userEventSeries(from: number, to: number, bucketMs: number): Promise<UserEventBucket[]>;
+  countAccounts(): Promise<number>;
+  liveGrantCount(): Promise<number>;
+  nodeSamples(since: number): Promise<NodeSample[]>;
+  ping(): Promise<void>;
+  close(): Promise<void>;
+}
+
+export interface Store extends AuditStore, AccountStore {
   putClient(c: OAuthClient): Promise<void>;
   getClient(id: string): Promise<OAuthClient | undefined>;
   touchClient(id: string): Promise<void>;
@@ -115,8 +194,11 @@ interface Persisted {
   grants: Record<string, Grant>;
   access: Record<string, TokenRecord>;
   refresh: Record<string, TokenRecord>;
+  accounts?: Record<string, Account>;
+  links?: Record<string, AccountLink>;
 }
 
+const MAX_USER_EVENTS = 20_000;
 const MAX_CLIENTS = 1000;
 const CLIENT_IDLE_MS = 7 * 24 * 3600 * 1000;
 const TOUCH_PERSIST_MS = 5 * 60_000;
@@ -136,7 +218,9 @@ const MAX_AUDIT_ROWS = 20_000;
 
 /** Memory store; with `file` it persists clients/grants/tokens as JSON (0600, atomic rename). Single process only. */
 export class MemoryStore implements Store {
-  private d: Persisted = { version: 1, clients: {}, grants: {}, access: {}, refresh: {} };
+  private d: Persisted = { version: 1, clients: {}, grants: {}, access: {}, refresh: {}, accounts: {}, links: {} };
+  private events: UserEvent[] = [];
+  private eventSeq = 0;
   private pending = new Map<string, PendingRecord>();
   private codes = new Map<string, { rec: CodeRecord; used: boolean; grantId?: string }>();
   private rates = new Map<string, { n: number; resetAt: number }>();
@@ -150,7 +234,13 @@ export class MemoryStore implements Store {
       const parsed = JSON.parse(readFileSync(file, "utf8")) as Persisted;
       if (parsed?.version === 1) {
         this.d = parsed;
-        for (const g of Object.values(this.d.grants)) g.instanceUrl ??= null;
+        for (const g of Object.values(this.d.grants)) {
+          g.instanceUrl ??= null;
+          g.accountId ??= null;
+          g.username ??= null;
+        }
+        this.d.accounts ??= {};
+        this.d.links ??= {};
       }
     }
   }
@@ -300,6 +390,162 @@ export class MemoryStore implements Store {
     return cur.n <= limit;
   }
 
+  // ── accounts ──
+  private get accts() {
+    return (this.d.accounts ??= {});
+  }
+  private get lnks() {
+    return (this.d.links ??= {});
+  }
+  async createAccount(a: Account) {
+    if (Object.values(this.accts).some((x) => x.usernameKey === a.usernameKey)) return false;
+    if (a.alias && Object.values(this.accts).some((x) => x.alias?.toLowerCase() === a.alias!.toLowerCase())) throw new AliasTakenError(a.alias);
+    this.accts[a.id] = { anonymous: false, alias: null, ...a };
+    this.save();
+    return true;
+  }
+  async setAccountPrivacy(id: string, c: PrivacyChange) {
+    const a = this.accts[id];
+    if (!a) return "missing" as const;
+    if (Object.values(this.accts).some((x) => x.id !== id && x.alias?.toLowerCase() === c.alias.toLowerCase())) return "alias_taken" as const;
+    a.anonymous = c.anonymous;
+    a.alias = c.alias;
+    const l = this.lnks[id];
+    if (l) l.instanceLabel = c.instanceLabel;
+    for (const g of Object.values(this.d.grants)) if (g.accountId === id) g.username = c.display;
+    for (const e of this.events) {
+      if (e.accountId !== id) continue;
+      e.username = c.display;
+      if (e.detail === c.prevInstanceLabel) e.detail = c.instanceLabel; // e.g. the host recorded when they joined
+    }
+    for (const r of this.audit) if (r.username === c.prevDisplay) {
+      r.username = c.display;
+      if (r.instance === c.prevInstanceLabel) r.instance = c.instanceLabel;
+    }
+    this.save();
+    return "ok" as const;
+  }
+  async getAccountByKey(usernameKey: string) {
+    return Object.values(this.accts).find((x) => x.usernameKey === usernameKey);
+  }
+  async getAccount(id: string) {
+    return this.accts[id];
+  }
+  async setAccountSecret(id: string, secretHash: string) {
+    if (this.accts[id]) this.accts[id].secretHash = secretHash;
+    this.save();
+  }
+  async touchAccountLogin(id: string, at: number) {
+    if (this.accts[id]) this.accts[id].lastLoginAt = at;
+    this.save();
+  }
+  async countAccounts() {
+    return Object.keys(this.accts).length;
+  }
+  async listAccounts(limit: number) {
+    return Object.values(this.accts).sort((a, b) => a.createdAt - b.createdAt).slice(0, limit);
+  }
+  async deleteAccount(id: string) {
+    const acct = this.accts[id];
+    if (!acct) return null;
+    const link = this.lnks[id];
+    await this.revokeAccountGrants(id);
+    delete this.lnks[id];
+    delete this.accts[id];
+    this.save();
+    return { sealedCredential: link?.sealedCredential ?? null, instanceUrl: link?.instanceUrl ?? null };
+  }
+  async putLink(l: AccountLink) {
+    const clash = l.paperclipUserId && Object.values(this.lnks).some((x) => x.accountId !== l.accountId && x.instanceUrl === l.instanceUrl && x.paperclipUserId === l.paperclipUserId);
+    if (clash) return false;
+    this.lnks[l.accountId] = { ...l };
+    this.save();
+    return true;
+  }
+  async getLink(accountId: string) {
+    return this.lnks[accountId];
+  }
+  async getLinkByIdentity(instanceUrl: string, paperclipUserId: string) {
+    return Object.values(this.lnks).find((x) => x.instanceUrl === instanceUrl && x.paperclipUserId === paperclipUserId);
+  }
+  async touchLink(accountId: string) {
+    const l = this.lnks[accountId];
+    if (!l) return;
+    l.lastUsedAt = this.now();
+    if (this.now() - (this.lastPersist.get(`link:${accountId}`) ?? 0) > TOUCH_PERSIST_MS) {
+      this.lastPersist.set(`link:${accountId}`, this.now());
+      this.save();
+    }
+  }
+  async dropLinkCredential(accountId: string) {
+    const l = this.lnks[accountId];
+    if (!l) return null;
+    const old = l.sealedCredential;
+    l.sealedCredential = null;
+    this.save();
+    return old;
+  }
+  async listIdleLinks(cutoff: number) {
+    return Object.values(this.lnks).filter((l) => l.sealedCredential && l.lastUsedAt < cutoff);
+  }
+  async revokeAccountGrants(accountId: string) {
+    let n = 0;
+    for (const g of Object.values(this.d.grants)) {
+      if (g.accountId === accountId && !g.revoked) {
+        await this.revokeGrant(g.id);
+        n += 1;
+      }
+    }
+    return n;
+  }
+  async countLiveGrants(accountId: string) {
+    return Object.values(this.d.grants).filter((g) => g.accountId === accountId && !g.revoked).length;
+  }
+
+  async insertUserEvent(e: UserEvent) {
+    this.events.push({ ...e, id: ++this.eventSeq });
+    if (this.events.length > MAX_USER_EVENTS) this.events.splice(0, this.events.length - MAX_USER_EVENTS);
+  }
+  async userEventsRecent(afterId: number, limit: number) {
+    return this.events.filter((e) => (e.id ?? 0) > afterId).slice(-limit).reverse();
+  }
+  async userEventCounts(from: number, to: number): Promise<UserCounts> {
+    const byKind: Record<string, number> = {};
+    const failures: Record<string, number> = {};
+    for (const e of this.events) {
+      if (e.at < from || e.at >= to) continue;
+      byKind[e.kind] = (byKind[e.kind] ?? 0) + 1;
+      if (e.kind === "connect_failed" || e.kind === "login_failed") failures[`${e.kind}:${e.detail ?? "unknown"}`] = (failures[`${e.kind}:${e.detail ?? "unknown"}`] ?? 0) + 1;
+    }
+    return { byKind, failures };
+  }
+  async userEventSeries(from: number, to: number, bucketMs: number): Promise<UserEventBucket[]> {
+    const m = new Map<number, UserEventBucket>();
+    for (const e of this.events) {
+      if (e.at < from || e.at >= to || !["completed", "connect_failed", "login_failed", "joined"].includes(e.kind)) continue;
+      const t = Math.floor(e.at / bucketMs) * bucketMs;
+      const b = m.get(t) ?? { t, completed: 0, failed: 0, joined: 0 };
+      if (e.kind === "completed") b.completed += 1;
+      else if (e.kind === "joined") b.joined += 1;
+      else b.failed += 1;
+      m.set(t, b);
+    }
+    return [...m.values()].sort((a, b) => a.t - b.t);
+  }
+  async heartbeat() {}
+
+  private samples: NodeSample[] = [];
+  async recordNodeSample(s: NodeSample) {
+    this.samples.push(s);
+    if (this.samples.length > 5000) this.samples.splice(0, this.samples.length - 5000);
+  }
+  async nodeSamples(since: number) {
+    return this.samples.filter((x) => x.at >= since).sort((a, b) => b.at - a.at);
+  }
+  async liveGrantCount() {
+    return Object.values(this.d.grants).filter((g) => !g.revoked).length;
+  }
+
   // ── audit (bounded ring; history is lost on restart — use Postgres for real retention) ──
   private audit: AuditRow[] = [];
   private auditSeq = 0;
@@ -353,10 +599,10 @@ export class MemoryStore implements Store {
     const s = this.summarize(rows);
     return { count: s.count, errors: s.errors, faults: s.faults, mutations: rows.filter((r) => r.mutation).length, p50: s.p50, p95: s.p95, p99: s.p99, upstreamP95: s.upstreamP95, bridgeP95: s.bridgeP95 };
   }
-  async auditBreakdown(kind: "tool" | "http", by: "name" | "instance" | "errorClass", from: number, to: number, limit: number): Promise<BreakdownRow[]> {
+  async auditBreakdown(kind: "tool" | "http", by: "name" | "instance" | "errorClass" | "username", from: number, to: number, limit: number): Promise<BreakdownRow[]> {
     const groups = new Map<string, AuditRow[]>();
     for (const r of this.window(kind, from, to)) {
-      const key = by === "name" ? r.name : by === "instance" ? r.instance : r.ok ? null : r.errorClass;
+      const key = by === "name" ? r.name : by === "instance" ? r.instance : by === "username" ? r.username : r.ok ? null : r.errorClass;
       if (key) (groups.get(key) ?? groups.set(key, []).get(key)!).push(r);
     }
     return [...groups.entries()]
@@ -378,9 +624,14 @@ export class MemoryStore implements Store {
   async auditRecent(afterId: number, limit: number, kind?: "tool" | "http") {
     return this.audit.filter((r) => (r.id ?? 0) > afterId && (!kind || r.kind === kind)).slice(-limit).reverse();
   }
+  async auditActiveUsers(from: number, to: number) {
+    return new Set(this.audit.filter((r) => r.at >= from && r.at < to && r.username).map((r) => r.username)).size;
+  }
   async pruneAudit(beforeMs: number) {
     const n = this.audit.length;
     this.audit = this.audit.filter((r) => r.at >= beforeMs);
+    this.events = this.events.filter((e) => e.at >= beforeMs);
+    this.samples = this.samples.filter((x) => x.at >= beforeMs);
     return n - this.audit.length;
   }
 

@@ -70,6 +70,11 @@ th.n,td.n{text-align:right;font-variant-numeric:tabular-nums}th[tabindex]{cursor
 .chip{display:inline-flex;align-items:center;gap:4px;font-weight:600}.chip.ok{color:var(--goodink)}.chip.rej{color:var(--ink2)}.chip.fault{color:var(--critink)}.chip.slow{color:var(--warnink)}
 .split{display:inline-flex;height:6px;width:44px;border-radius:3px;overflow:hidden;gap:2px;vertical-align:middle;background:var(--hair)}.split i{display:block;height:100%}
 .empty{color:var(--ink2);padding:18px 4px}
+h2.sect{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);margin:22px 2px 10px}
+ul.logfeed{list-style:none;margin:0;padding:0;font:12.5px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace}
+ul.logfeed li{padding:1px 4px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ul.logfeed .t{color:var(--ink3)}ul.logfeed .u{font-weight:600}ul.logfeed .d{color:var(--ink3)}
+ul.logfeed .k-joined{color:var(--goodink)}ul.logfeed .k-left{color:var(--ink2)}ul.logfeed .k-failed{color:var(--critink)}ul.logfeed .k-updated{color:var(--ink)}
 footer{color:var(--ink3);font-size:12px;margin:14px 0 4px}footer b{color:var(--ink2);font-weight:600}
 .ln{display:block}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 .err{background:var(--wash);border:1px solid var(--hair2);padding:8px 10px;border-radius:8px;color:var(--critink);margin:10px 0}
@@ -79,21 +84,21 @@ form.login button{border:1px solid var(--ink);background:var(--ink);color:var(--
 `;
 
 export function loginPage(_nonce: string, error?: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bridge status — sign in</title><style>${CSS}</style></head><body>
-<form class="login" method="post" action="/admin/login"><h1>Paperclip Bridge</h1><p style="color:var(--ink2);margin:6px 0 0">Operator sign-in</p>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Papercliped panel — sign in</title><style>${CSS}</style></head><body>
+<form class="login" method="post" action="/login"><h1>Papercliped panel</h1><p style="color:var(--ink2);margin:6px 0 0">Operator sign-in</p>
 ${error ? `<div class="err" role="alert">${esc(error)}</div>` : ""}
 <label for="t" style="display:block;margin-top:12px">Admin token</label><input id="t" name="token" type="password" autocomplete="off" required autofocus><button type="submit">Sign in</button></form></body></html>`;
 }
 
-export function adminPage(nonce: string, o: { slowMs: number }): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bridge status — live</title><style>${CSS}</style></head>
+export function panelPage(nonce: string, o: { slowMs: number }): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Papercliped panel — live</title><style>${CSS}</style></head>
 <body data-slow="${Number(o.slowMs) || 1500}"><div class="wrap">
-<header><h1>Paperclip Bridge<small id="where"></small></h1>
+<header><h1>Papercliped panel<small id="where"></small></h1>
 <div class="ctl"><span id="pill" class="pill idle"><span class="ic">•</span><span>Loading…</span></span>
 <span class="live"><span id="dot" class="dot stale"></span><span id="age">connecting…</span></span>
 <div class="seg" id="win" role="group" aria-label="Time window"></div>
 <button class="plain" id="pause" type="button" aria-pressed="false">Pause</button>
-<form class="signout" method="post" action="/admin/logout"><button type="submit">Sign out</button></form></div></header>
+<form class="signout" method="post" action="/logout"><button type="submit">Sign out</button></form></div></header>
 <div id="banner" class="banner" role="status"></div>
 <main id="main">
 <p id="reasons" class="reasons"></p>
@@ -104,7 +109,16 @@ export function adminPage(nonce: string, o: { slowMs: number }): string {
 <div class="card"><h2>Where the time goes</h2><p class="sub">Average per call: waiting on the user's Paperclip vs. the bridge itself</p><div id="c-split"></div></div>
 <div class="card"><h2>Latency distribution</h2><p class="sub">How many calls finished within each time band (axis shows each band's upper bound, in ms unless marked s)</p><div id="c-hist"></div></div>
 </section>
-<section class="grid two" style="margin-top:12px">
+<h2 class="sect" id="community-h">Community</h2>
+<section class="grid tiles" id="ctiles" aria-label="Community numbers"></section>
+<section class="grid two">
+<div class="card"><h2>Connections over time</h2><p class="sub">Clients that finished connecting vs. connection attempts that failed</p><div id="c-conn"></div></div>
+<div class="card"><h2>Community log</h2><p class="sub">Newest first. <span id="feed-note"></span></p><div class="tbl tail" id="t-feed"></div></div>
+<div class="card"><h2>Why connections fail</h2><p class="sub">Failed or abandoned sign-ins in this window</p><div class="tbl" id="t-fail"></div></div>
+<div class="card"><h2>Most active users</h2><p class="sub">By tool calls in this window</p><div class="tbl" id="t-users"></div></div>
+</section>
+<h2 class="sect">Performance detail</h2>
+<section class="grid two">
 <div class="card"><h2>Tools</h2><p class="sub">Click a column to sort. "Wait" = time waiting on the user's Paperclip</p><div class="tbl" id="t-tools"></div></div>
 <div class="card"><h2>Tenants — slowest Paperclip instances</h2><p class="sub">Sorted by "Wait p95": time spent waiting on that tenant's Paperclip</p><div class="tbl" id="t-inst"></div></div>
 <div class="card"><h2>Errors by class</h2><p class="sub">Caller mistakes are not system faults</p><div class="tbl" id="t-err"></div></div>
@@ -122,7 +136,7 @@ export function adminPage(nonce: string, o: { slowMs: number }): string {
 var SLOW = Number(document.body.getAttribute('data-slow')) || 1500;
 var WINDOWS = ['5m', '15m', '1h', '6h', '24h', '7d'];
 var WIN_MS = { '5m': 300000, '15m': 900000, '1h': 3600000, '6h': 21600000, '24h': 86400000, '7d': 604800000 };
-var state = { win: '15m', paused: false, data: null, lastOk: 0, err: null, events: [], lastId: 0, sort: {}, open: {}, hovering: false };
+var state = { win: '15m', paused: false, data: null, lastOk: 0, err: null, events: [], lastId: 0, sort: {}, open: {}, hovering: false, feed: [], lastFeedId: 0, cname: 'cliped' };
 var hash = (location.hash || '').replace('#', '');
 if (WINDOWS.indexOf(hash) >= 0) state.win = hash;
 
@@ -143,6 +157,8 @@ function fmtTime(t, sec) { var d = new Date(t); return pad(d.getHours()) + ':' +
 function fmtDay(t) { var d = new Date(t); return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + fmtTime(t); }
 function niceStep(v) { if (v <= 0) return 1; var p = Math.pow(10, Math.floor(Math.log(v) / Math.LN10)), f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; }
 function short(n) { return String(n).replace(/^paperclip_/, ''); }
+var ALIAS = /^[A-Z][a-z]{1,2}[0-9]{2}$/;
+function nameCell(n) { if (n && ALIAS.test(n)) return el('span', { title: 'Anonymous user (shown as an alias)' }, [el('span', { 'aria-hidden': 'true', text: '◌ ' }), n]); return n || '—'; }
 function cls(name) { return 'fill:var(' + name + ')'; }
 
 // ───────── status chips (colour never carries meaning alone: icon + label) ─────────
@@ -341,7 +357,8 @@ function render() {
   var pill = $('pill'), h = d.health, icons = { healthy: '✓', degraded: '▲', critical: '✕', idle: '•' }, names = { healthy: 'Healthy', degraded: 'Degraded', critical: 'Critical', idle: 'Idle' };
   pill.className = 'pill ' + h.state; pill.textContent = ''; pill.appendChild(el('span', { class: 'ic', 'aria-hidden': 'true', text: icons[h.state] })); pill.appendChild(el('span', { text: names[h.state] }));
   $('reasons').textContent = h.reasons.length ? (h.state === 'idle' ? h.reasons[0] : 'Why: ' + h.reasons.join(' · ')) : '';
-  $('where').textContent = sys.node + ' · ' + sys.mode;
+  var nodes = sys.nodes || [], lead = nodes[0] || null;
+  $('where').textContent = sys.mode + ' · ' + (nodes.length ? nodes.length + ' bridge node' + (nodes.length > 1 ? 's' : '') : 'no bridge reporting');
   // tiles
   var tiles = $('tiles'); tiles.textContent = '';
   var faultRate = t.count ? t.faults / t.count * 100 : 0, rejRate = t.count ? (t.errors - t.faults) / t.count * 100 : 0;
@@ -351,8 +368,12 @@ function render() {
   tiles.appendChild(tile('Rejected', t.count ? fmtPct(rejRate) : '—', 'Caller mistakes: bad input, missing scope, read-only'));
   tiles.appendChild(tile('Paperclip wait p95', t.count ? fmtMs(t.upstreamP95) : '—', 'Time spent waiting on users\' Paperclips'));
   tiles.appendChild(tile('Bridge overhead p95', t.count ? fmtMs(t.bridgeP95) : '—', 'Everything that isn\'t waiting on Paperclip', { cls: t.bridgeP95 >= SLOW ? 'warn' : '', icon: t.bridgeP95 >= SLOW ? '▲' : '' }));
-  tiles.appendChild(tile('Database ping', sys.dbPingMs == null ? 'failing' : fmtMs(sys.dbPingMs), sys.dbPingP95Ms == null ? 'no samples yet' : 'p95 ' + fmtMs(sys.dbPingP95Ms) + ' · last minute', { cls: sys.dbPingMs == null ? 'bad' : sys.dbPingMs >= 250 ? 'warn' : '', icon: sys.dbPingMs == null ? '✕' : sys.dbPingMs >= 250 ? '▲' : '', spark: spark(sys.recentPing) }));
-  tiles.appendChild(tile('Event-loop lag p99', fmtMs(sys.loopLagP99Ms), 'This process · memory ' + Math.round(sys.rssMb) + ' MB', { cls: sys.loopLagP99Ms >= 100 ? 'warn' : '', icon: sys.loopLagP99Ms >= 100 ? '▲' : '' }));
+  var silent = sys.bridgeSilentMs, down = silent == null || silent > sys.bridgeSilentAfterMs;
+  tiles.appendChild(tile('Bridge', silent == null ? 'never reported' : down ? 'not reporting' : 'reporting', silent == null ? 'No bridge has written a health sample yet' : down ? 'Last heard ' + Math.round(silent / 1000) + ' s ago — asleep, down, or cannot reach the database' : nodes.length + ' node' + (nodes.length > 1 ? 's' : '') + ' · last sample ' + Math.round(silent / 1000) + ' s ago' + (lead ? ' · v' + lead.version : ''), { cls: down ? 'bad' : 'good', icon: down ? '✕' : '✓' }));
+  var ping = lead ? lead.dbPingMs : null;
+  tiles.appendChild(tile('Bridge → database', ping == null ? (lead ? 'failing' : '—') : fmtMs(ping), 'Round-trip measured by the bridge' + (sys.panelPingMs != null ? ' · panel ' + fmtMs(sys.panelPingMs) : ''), { cls: lead && ping == null ? 'bad' : ping != null && ping >= 250 ? 'warn' : '', icon: lead && ping == null ? '✕' : ping != null && ping >= 250 ? '▲' : '', spark: spark(sys.recentPing || []) }));
+  var lag = lead ? lead.loopLagP99Ms : null;
+  tiles.appendChild(tile('Event-loop lag p99', lag == null ? '—' : fmtMs(lag), lead ? 'Bridge process · memory ' + Math.round(lead.rssMb) + ' MB' : 'No data', { cls: lag != null && lag >= 100 ? 'warn' : '', icon: lag != null && lag >= 100 ? '▲' : '' }));
   tiles.appendChild(tile('Live connections', sys.liveGrants == null ? '—' : fmtInt(sys.liveGrants), 'Active OAuth grants'));
   // charts
   var common = { from: d.from, to: d.to, bucketMs: d.bucketMs };
@@ -373,6 +394,7 @@ function render() {
     var cats = ['≤25', '≤50', '≤100', '≤200', '≤400', '≤800', '≤1.6s', '≤3.2s', '>3.2s'], catsLong = ['under 25 ms', '25–50 ms', '50–100 ms', '100–200 ms', '200–400 ms', '400–800 ms', '0.8–1.6 s', '1.6–3.2 s', '3.2 s or more'];
     drawChart($('c-hist'), { title: 'Latency distribution', type: 'bars', cats: cats, catsLong: catsLong, rows: d.histogram.map(function (n) { return { n: n }; }), valueLabels: true, intTicks: true, yFmt: fmtInt, valFmt: fmtInt, series: [{ label: 'Calls', color: '--s1', get: function (b) { return b.n; } }] });
   }
+  renderCommunity();
   // tables
   var num = function (k, f) { return function (r) { return r[k] == null ? '—' : f(r[k]); }; };
   table($('t-tools'), 'tools', [
@@ -402,12 +424,74 @@ function render() {
     { key: 'totalMs', label: 'Total', num: 1, cell: msCell('totalMs') }, { key: 'upstreamMs', label: 'Wait', num: 1, cell: function (r) { return r.upstreamMs == null ? '—' : fmtMs(r.upstreamMs); } },
     { key: 'ok', label: 'Result', cell: outcome }, { key: 'instance', label: 'Tenant', cell: function (r) { return r.instance || '—'; } }], slowRows, { key: 'totalMs' }, 'No calls in this window.');
   // footer
-  var rec = d.recorder;
   $('foot').textContent = '';
   $('foot').appendChild(document.createTextNode('Times are in your local time zone. '));
-  $('foot').appendChild(el('b', { text: sys.persistent ? 'History is stored in Postgres and survives restarts.' : 'History is held in memory and is lost on restart (set DATABASE_URL for durable history).' }));
-  $('foot').appendChild(document.createTextNode(' Audit writer: ' + fmtInt(rec.flushed) + ' written, ' + fmtInt(rec.buffered) + ' buffered, ' + fmtInt(rec.dropped) + ' dropped' + (rec.lastError ? ' — last error: ' + rec.lastError : '') + '. Process up ' + Math.round(sys.uptimeS / 60) + ' min. System tiles describe the instance that served this page.'));
+  $('foot').appendChild(el('b', { text: sys.persistent ? "History is read from the bridge's Postgres database." : 'This panel is showing in-memory demo data.' }));
+  $('foot').appendChild(document.createTextNode(' This panel is a separate program with a read-only database role: it cannot see Paperclip credentials, secret keys or the real usernames of anonymous users (they appear as aliases like Ann02).'));
   renderStatus();
+}
+
+
+var FAILWHY = { 'connect_failed:denied': 'Cancelled by the user', 'connect_failed:expired': 'Paperclip approval expired or was cancelled', 'connect_failed:unreachable': 'Paperclip unreachable or not a Paperclip', 'connect_failed:invalid_instance': 'Invalid or blocked Paperclip address', 'connect_failed:too_many_attempts': 'Too many addresses tried', 'login_failed:bad_credentials': 'Wrong username or secret key', 'login_failed:rate_limited': 'Locked out by the rate limit' };
+function renderCommunity() {
+  var d = state.data; if (!d || !d.community) return;
+  var c = d.community, k = c.counts || {}, started = k.started || 0, completed = k.completed || 0;
+  state.cname = c.name || 'cliped';
+  var ct = $('ctiles'); ct.textContent = '';
+  var rate = c.successRate, rateTxt = rate == null ? '—' : fmtPct(rate * 100), poor = started >= 5 && rate != null;
+  ct.appendChild(tile('Users', fmtInt(c.totalUsers), 'All accounts ever created'));
+  ct.appendChild(tile('Active users', fmtInt(c.activeUsers), 'Made tool calls in this window'));
+  ct.appendChild(tile('New users', fmtInt(k.joined || 0), fmtInt(k.login || 0) + ' sign-ins · ' + fmtInt(k.updated || 0) + ' updates'));
+  ct.appendChild(tile('Connection success', rateTxt, started ? fmtInt(completed) + ' of ' + fmtInt(started) + ' sign-ins completed' : 'No sign-ins started yet', { cls: !poor ? '' : rate >= 0.8 ? 'good' : rate >= 0.5 ? 'warn' : 'bad', icon: !poor ? '' : rate >= 0.8 ? '✓' : rate >= 0.5 ? '▲' : '✕' }));
+  var failN = 0; Object.keys(c.failures || {}).forEach(function (x) { failN += c.failures[x]; });
+  ct.appendChild(tile('Failed sign-ins', fmtInt(failN), 'Wrong keys, lockouts, unreachable Paperclips, cancels', { cls: failN > 0 && started >= 5 && failN / Math.max(started, 1) > 0.3 ? 'warn' : '', icon: failN > 0 && started >= 5 && failN / Math.max(started, 1) > 0.3 ? '▲' : '' }));
+  ct.appendChild(tile('Left', fmtInt(k.left || 0), 'Disconnected, expired for inactivity, or deleted'));
+  if (!state.hovering) {
+    var any = (c.series || []).length;
+    if (!any) { var e = $('c-conn'); e.textContent = ''; e.appendChild(el('div', { class: 'empty', text: 'No sign-ins in this window yet.' })); }
+    else drawChart($('c-conn'), { title: 'Connections', type: 'bars', rows: c.series, from: d.from, to: d.to, bucketMs: d.bucketMs, intTicks: true, yFmt: fmtInt, valFmt: fmtInt, series: [
+      { label: 'Connected', color: '--s1', get: function (b) { return b.completed; } },
+      { label: 'Failed ✕', color: '--crit', get: function (b) { return b.failed; } }] });
+  }
+  var fr = Object.keys(c.failures || {}).map(function (key) { return { key: key, why: FAILWHY[key] || key, count: c.failures[key] }; });
+  table($('t-fail'), 'fail', [{ key: 'why', label: 'Reason' }, { key: 'count', label: 'Count', num: 1, cell: function (r) { return fmtInt(r.count); } }], fr, { key: 'count' }, 'No failed sign-ins in this window.');
+  table($('t-users'), 'users', [
+    { key: 'key', label: 'User', cell: function (r) { return nameCell(r.key); } }, { key: 'count', label: 'Calls', num: 1, cell: function (r) { return fmtInt(r.count); } },
+    { key: 'faults', label: 'Faults', num: 1, cell: function (r) { return r.faults ? chip('fault', fmtInt(r.faults)) : '0'; } },
+    { key: 'p95', label: 'p95', num: 1, cell: msCell('p95') }], c.byUser || [], { key: 'count' }, 'No user activity in this window yet.');
+}
+var VERB = { joined: 'joined', left: 'left', updated: 'updated', login: 'signed in', login_failed: 'failed to sign in', connect_failed: 'could not connect' };
+function feedLine(e) {
+  var li = el('li', { class: e._new ? 'flash' : '' });
+  var cls = e.kind === 'joined' ? 'k-joined' : e.kind === 'left' ? 'k-left' : (e.kind === 'login_failed' || e.kind === 'connect_failed') ? 'k-failed' : 'k-updated';
+  var icon = e.kind === 'joined' ? '+' : e.kind === 'left' ? '−' : e.kind === 'updated' ? '↻' : e.kind === 'login' ? '→' : '✕';
+  var verb = (VERB[e.kind] || e.kind) + ((e.kind === 'joined' || e.kind === 'left' || e.kind === 'updated') ? ' ' + state.cname : '');
+  li.appendChild(el('span', { class: 't', text: fmtTime(e.at, true) + ' ' }));
+  li.appendChild(el('span', { class: cls, 'aria-hidden': 'true', text: icon + ' ' }));
+  var u = el('span', { class: 'u' }); u.appendChild(e.username ? nameCell(e.username) : document.createTextNode('(visitor)')); li.appendChild(u);
+  li.appendChild(document.createTextNode(' - '));
+  li.appendChild(el('span', { class: cls, text: verb }));
+  if (e.detail && e.kind !== 'joined') li.appendChild(el('span', { class: 'd', text: ' (' + String(e.detail).replace(/_/g, ' ') + ')' }));
+  return li;
+}
+function renderFeed() {
+  var host = $('t-feed'); host.textContent = '';
+  if (!state.feed.length) { host.appendChild(el('div', { class: 'empty', text: 'Waiting for the first user event…' })); return; }
+  var ul = el('ul', { class: 'logfeed' }); state.feed.forEach(function (e) { ul.appendChild(feedLine(e)); }); host.appendChild(ul);
+  state.feed.forEach(function (e) { e._new = false; });
+}
+async function loadFeed() {
+  clearTimeout(feedTimer);
+  try {
+    var r = await fetch('/api/community/events?limit=40&after=' + state.lastFeedId, { credentials: 'same-origin', cache: 'no-store' });
+    if (r.status === 401) { location.reload(); return; }
+    if (r.ok) {
+      var j = await r.json(); state.cname = j.name || state.cname;
+      if (j.events.length) { var first = state.lastFeedId === 0; j.events.forEach(function (e) { e._new = !first; }); state.feed = j.events.concat(state.feed).slice(0, 40); state.lastFeedId = Math.max(state.lastFeedId, j.events[0].id || 0); renderFeed(); }
+      else if (!state.feed.length) renderFeed();
+    }
+  } catch (e) { /* the summary loop reports connectivity */ }
+  finally { if (!state.paused && !document.hidden) feedTimer = setTimeout(loadFeed, 2500); }
 }
 
 function renderLive() {
@@ -432,11 +516,11 @@ function renderStatus() {
 }
 
 // ───────── data loop ─────────
-var timer, evTimer, main = $('main');
+var timer, evTimer, feedTimer, main = $('main');
 async function load() {
   clearTimeout(timer); main.classList.add('loading');
   try {
-    var r = await fetch('/admin/api/summary?window=' + state.win, { credentials: 'same-origin', cache: 'no-store' });
+    var r = await fetch('/api/summary?window=' + state.win, { credentials: 'same-origin', cache: 'no-store' });
     if (r.status === 401) { location.reload(); return; }
     if (!r.ok) { var j = await r.json().catch(function () { return {}; }); throw new Error(j.error || 'HTTP ' + r.status); }
     state.data = await r.json(); state.lastOk = Date.now(); state.err = null; render();
@@ -446,7 +530,7 @@ async function load() {
 async function loadEvents() {
   clearTimeout(evTimer);
   try {
-    var r = await fetch('/admin/api/events?limit=40&after=' + state.lastId, { credentials: 'same-origin', cache: 'no-store' });
+    var r = await fetch('/api/events?limit=40&after=' + state.lastId, { credentials: 'same-origin', cache: 'no-store' });
     if (r.status === 401) { location.reload(); return; }
     if (r.ok) {
       var j = await r.json();
@@ -456,13 +540,13 @@ async function loadEvents() {
   } catch (e) { /* the summary loop reports connectivity */ }
   finally { if (!state.paused && !document.hidden) evTimer = setTimeout(loadEvents, 2000); }
 }
-function kick() { clearTimeout(timer); clearTimeout(evTimer); load(); loadEvents(); }
+function kick() { clearTimeout(timer); clearTimeout(evTimer); clearTimeout(feedTimer); load(); loadEvents(); loadFeed(); }
 
 // controls
 var seg = $('win');
 WINDOWS.forEach(function (w) { var b = el('button', { type: 'button', 'aria-pressed': String(w === state.win), text: w }); b.addEventListener('click', function () { state.win = w; location.hash = w; Array.prototype.forEach.call(seg.children, function (c) { c.setAttribute('aria-pressed', String(c.textContent === w)); }); state.sort = {}; kick(); }); seg.appendChild(b); });
-$('pause').addEventListener('click', function () { state.paused = !state.paused; this.setAttribute('aria-pressed', String(state.paused)); this.textContent = state.paused ? 'Resume' : 'Pause'; if (state.paused) { clearTimeout(timer); clearTimeout(evTimer); renderStatus(); } else kick(); });
-document.addEventListener('visibilitychange', function () { if (document.hidden) { clearTimeout(timer); clearTimeout(evTimer); } else if (!state.paused) kick(); });
+$('pause').addEventListener('click', function () { state.paused = !state.paused; this.setAttribute('aria-pressed', String(state.paused)); this.textContent = state.paused ? 'Resume' : 'Pause'; if (state.paused) { clearTimeout(timer); clearTimeout(evTimer); clearTimeout(feedTimer); renderStatus(); } else kick(); });
+document.addEventListener('visibilitychange', function () { if (document.hidden) { clearTimeout(timer); clearTimeout(evTimer); clearTimeout(feedTimer); } else if (!state.paused) kick(); });
 setInterval(renderStatus, 1000);
 var rz; window.addEventListener('resize', function () { cancelAnimationFrame(rz); rz = requestAnimationFrame(function () { if (state.data) render(); }); });
 kick();

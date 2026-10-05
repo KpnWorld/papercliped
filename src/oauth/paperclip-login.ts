@@ -29,7 +29,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const APPROVAL_PATH = /^\/cli-auth\/[0-9a-f-]{36}\?token=[A-Za-z0-9_\-.~%]{8,300}$/i;
 const TOKENISH = /^[\x21-\x7e]{8,600}$/; // printable ASCII, no whitespace
 
-export class LoginError extends Error {}
+export class LoginError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+  }
+}
 
 async function json(res: Response): Promise<any> {
   const text = await res.text();
@@ -39,7 +46,7 @@ async function json(res: Response): Promise<any> {
   } catch {
     throw new LoginError(`Paperclip returned a non-JSON response (${res.status})`);
   }
-  if (!res.ok) throw new LoginError(typeof body?.error === "string" ? body.error.slice(0, 200) : `Paperclip responded ${res.status}`);
+  if (!res.ok) throw new LoginError(typeof body?.error === "string" ? body.error.slice(0, 200) : `Paperclip responded ${res.status}`, res.status);
   return body;
 }
 

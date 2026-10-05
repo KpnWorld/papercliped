@@ -5,7 +5,8 @@ import { executeTool, renderForModel, type ExecOptions } from "./execute.js";
 import { requiredScope, scopeAllows } from "./oauth/scopes.js";
 import { tools } from "./tools.js";
 
-export const SERVER_VERSION = "0.1.0";
+export { VERSION as SERVER_VERSION } from "./version.js";
+import { VERSION } from "./version.js";
 
 /** Tools above the caller's scope are not advertised (they would only fail). The raw API tool stays: its GETs need only read. */
 export function visibleTools(scopes?: readonly string[]) {
@@ -14,7 +15,7 @@ export function visibleTools(scopes?: readonly string[]) {
 }
 
 export function createMcpServer(config: BridgeConfig = readConfig(), client = new PaperclipClient(config), exec: ExecOptions = {}) {
-  const server = new McpServer({ name: "paperclip-bridge", version: SERVER_VERSION });
+  const server = new McpServer({ name: "papercliped", version: VERSION });
 
   for (const tool of visibleTools(exec.scopes)) {
     server.registerTool(

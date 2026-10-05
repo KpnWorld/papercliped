@@ -136,6 +136,133 @@ begin
   end loop;
 end $$;
 
+-- ───── 003_accounts.sql ─────
+-- Papercliped accounts: username + secret key, one stored Paperclip connection per account, and the user event log.
+-- Nothing here stores a plaintext secret: `secret_hash` is a salted scrypt hash, `sealed_credential` is AES-GCM sealed in the app.
+
+create table if not exists bridge.accounts (
+  id            text   primary key,
+  username      text   not null,               -- as typed; shown only in the operator's logs
+  username_key  text   not null,               -- lowercased; unique
+  secret_hash   text   not null,               -- scrypt$N$r$p$salt$hash of the generated secret key
+  created_at    bigint not null,
+  last_login_at bigint,
+  disabled      boolean not null default false
+);
+create unique index if not exists accounts_username_key_idx on bridge.accounts (username_key);
+
+-- One connection per account. A given Paperclip identity (instance + user id) can belong to only one account.
+create table if not exists bridge.account_links (
+  account_id         text   primary key references bridge.accounts (id) on delete cascade,
+  instance_url       text   not null,
+  paperclip_user_id  text,
+  sealed_credential  text,                      -- null once dropped (idle expiry / disconnect)
+  created_at         bigint not null,
+  connected_at       bigint not null,
+  last_used_at       bigint not null
+);
+create unique index if not exists account_links_identity_idx on bridge.account_links (instance_url, paperclip_user_id) where paperclip_user_id is not null;
+create index if not exists account_links_idle_idx on bridge.account_links (last_used_at) where sealed_credential is not null;
+
+-- The community log: joined / left / updated / login / ... (see src/accounts/types.ts). `detail` is a short non-sensitive reason.
+create table if not exists bridge.user_events (
+  id          bigint generated always as identity primary key,
+  ts          bigint not null,
+  account_id  text,
+  username    text,
+  kind        text   not null,
+  detail      text
+);
+create index if not exists user_events_ts_idx   on bridge.user_events (ts desc);
+create index if not exists user_events_kind_idx on bridge.user_events (kind, ts desc);
+
+-- A row the app rewrites on a timer so a free-tier Supabase project always sees recent write activity.
+create table if not exists bridge.heartbeat (
+  id integer primary key,
+  at bigint  not null
+);
+
+alter table bridge.grants       add column if not exists account_id text;
+alter table bridge.grants       add column if not exists username   text;
+alter table bridge.audit_events add column if not exists username   text;
+create index if not exists grants_account_idx on bridge.grants (account_id) where not revoked;
+create index if not exists audit_username_idx on bridge.audit_events (username, ts desc) where username is not null;
+
+alter table bridge.accounts      enable row level security;
+alter table bridge.account_links enable row level security;
+alter table bridge.user_events   enable row level security;
+alter table bridge.heartbeat     enable row level security;
+revoke all on bridge.accounts, bridge.account_links, bridge.user_events, bridge.heartbeat from public;
+
+do $$
+declare r text;
+begin
+  foreach r in array array['anon', 'authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('revoke all on bridge.accounts, bridge.account_links, bridge.user_events, bridge.heartbeat from %I', r);
+    end if;
+  end loop;
+end $$;
+
+-- ───── 004_privacy_panel.sql ─────
+-- Privacy (anonymous display names) and the separate operator panel.
+--
+--  * Accounts can opt in to appear in logs and the panel as a generated alias ("Ann02") and with an anonymous label instead of
+--    their Paperclip's hostname. Events and audit rows store only the DISPLAY name, so the panel's database role never sees the
+--    real username of an anonymous account. (The service operator with admin access to the base tables still can; see docs/SECURITY.md.)
+--  * The bridge writes periodic health samples; the panel reads them, so it can tell when the bridge is down or asleep.
+--  * The panel connects with a read-only role that can see only the views and telemetry tables below — never the credential,
+--    the secret hash, or real usernames.
+
+alter table bridge.accounts      add column if not exists anonymous boolean not null default false;
+alter table bridge.accounts      add column if not exists alias     text;
+alter table bridge.account_links add column if not exists instance_label text;   -- the host, or "anon-xxxxxx" for anonymous accounts
+create unique index if not exists accounts_alias_idx on bridge.accounts (lower(alias)) where alias is not null;
+
+create table if not exists bridge.node_samples (
+  id               bigint generated always as identity primary key,
+  ts               bigint not null,
+  node             text   not null,
+  db_ping_ms       real,
+  loop_lag_p99_ms  real,
+  rss_mb           real,
+  heap_mb          real,
+  uptime_s         integer,
+  version          text
+);
+create index if not exists node_samples_ts_idx   on bridge.node_samples (ts desc);
+create index if not exists node_samples_node_idx on bridge.node_samples (node, ts desc);
+alter table bridge.node_samples enable row level security;
+revoke all on bridge.node_samples from public;
+
+-- Views run with the rights of the role that owns them (the migration role), so the panel role needs no access to the base tables.
+create or replace view bridge.panel_accounts as
+  select id,
+         case when anonymous and alias is not null then alias else username end as display_name,
+         (anonymous and alias is not null) as anonymous,
+         created_at, last_login_at, disabled
+    from bridge.accounts;
+
+create or replace view bridge.panel_grants as
+  select id, client_name, scopes, created_at, last_used_at, revoked, account_id, username as display_name
+    from bridge.grants;
+
+create or replace view bridge.panel_links as
+  select account_id, coalesce(instance_label, 'unknown') as instance_label, connected_at, last_used_at, (sealed_credential is not null) as has_credential
+    from bridge.account_links;
+
+revoke all on bridge.panel_accounts, bridge.panel_grants, bridge.panel_links from public;
+
+do $$
+declare r text;
+begin
+  foreach r in array array['anon', 'authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('revoke all on bridge.node_samples, bridge.panel_accounts, bridge.panel_grants, bridge.panel_links from %I', r);
+    end if;
+  end loop;
+end $$;
+
 -- ───── migration bookkeeping ─────
 create table if not exists bridge.schema_migrations (version text primary key, applied_at timestamptz not null default now());
 alter table bridge.schema_migrations enable row level security;
@@ -145,6 +272,6 @@ do $$ declare r text; begin
     if exists (select 1 from pg_roles where rolname = r) then execute format('revoke all on bridge.schema_migrations from %I', r); end if;
   end loop;
 end $$;
-insert into bridge.schema_migrations (version) values ('001_init.sql'), ('002_audit.sql') on conflict (version) do nothing;
+insert into bridge.schema_migrations (version) values ('001_init.sql'), ('002_audit.sql'), ('003_accounts.sql'), ('004_privacy_panel.sql') on conflict (version) do nothing;
 
 commit;

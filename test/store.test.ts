@@ -3,7 +3,9 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { consolidatedSql, migrate } from "../src/migrate.js";
 import { PgStore, sslOption } from "../src/oauth/pg-store.js";
+import { AliasTakenError, type Account, type AccountLink, type UserEvent } from "../src/accounts/types.js";
 import { HIST_EDGES, type AuditRow } from "../src/telemetry/types.js";
+import { PgPanelStore } from "../src/oauth/pg-store.js";
 import { MemoryStore, type CodeRecord, type Grant, type PendingRecord, type Store } from "../src/oauth/store.js";
 
 const DB = process.env.TEST_DATABASE_URL;
@@ -39,7 +41,7 @@ function contract(name: string, make: () => Promise<Store>) {
 
     it("grants round-trip, including the tenant instance", async () => {
       await s.putGrant(grant("g1"));
-      expect(await s.getGrant("g1")).toEqual(grant("g1"));
+      expect(await s.getGrant("g1")).toMatchObject(grant("g1"));
       expect((await s.listGrants()).map((g) => g.id)).toContain("g1");
     });
 
@@ -134,7 +136,7 @@ function contract(name: string, make: () => Promise<Store>) {
 const T0 = 1_900_000_020_000; // fixed, aligned to a minute (divisible by 60_000)
 const row = (o: Partial<AuditRow>): AuditRow => ({
   at: T0, node: "n1", kind: "tool", name: "t1", mutation: false, ok: true, status: null, errorClass: null, totalMs: 10, upstreamMs: 5, upstreamCalls: 1,
-  scope: "paperclip:read", grantId: "g", client: "Claude", instance: "a.example.com", userId: "u", ...o,
+  scope: "paperclip:read", grantId: "g", client: "Claude", instance: "a.example.com", userId: "u", username: null, ...o,
 });
 
 function auditContract(name: string, make: () => Promise<Store>) {
@@ -221,6 +223,13 @@ function auditContract(name: string, make: () => Promise<Store>) {
       expect((await s.auditTotals("tool", T0, T0 + 120_000)).count).toBe(12);
     });
 
+    it("breaks down by username (and ignores calls with none)", async () => {
+      const W = T0 + 5_000_000; // an isolated window, so the shared dataset above is untouched
+      await s.insertAudit([row({ at: W + 10, name: "u1", username: "og.kpnwrld", totalMs: 40 }), row({ at: W + 11, name: "u1", username: "og.kpnwrld", totalMs: 60, ok: false, errorClass: "upstream_5xx", status: 502 }), row({ at: W + 12, name: "u1", username: "second.user2", totalMs: 10 }), row({ at: W + 13, name: "u1", username: null, totalMs: 10 })]);
+      const by = await s.auditBreakdown("tool", "username", W, W + 1000, 10);
+      expect(by.map((x) => [x.key, x.count, x.faults])).toEqual([["og.kpnwrld", 2, 1], ["second.user2", 1, 0]]);
+    });
+
     it("an empty window is all zeros, not an error", async () => {
       expect(await s.auditTotals("tool", 1, 2)).toMatchObject({ count: 0, p95: 0, upstreamP95: 0 });
       expect(await s.auditSeries("tool", 1, 2, 1000)).toEqual([]);
@@ -234,8 +243,215 @@ describe("docs/supabase-schema.sql", () => {
   });
 });
 
+const acct = (id: string, username: string, o: Partial<Account> = {}): Account => ({ id, username, usernameKey: username.toLowerCase(), secretHash: "scrypt$16384$8$1$c2FsdA==$aGFzaA==", createdAt: T0, lastLoginAt: null, disabled: false, ...o });
+const link = (accountId: string, o: Partial<AccountLink> = {}): AccountLink => ({ accountId, instanceUrl: "https://p.example.com", paperclipUserId: `pu-${accountId}`, sealedCredential: "kid.sealed", createdAt: T0, connectedAt: T0, lastUsedAt: T0, ...o });
+const ev = (o: Partial<UserEvent> = {}): UserEvent => ({ at: T0, accountId: "a1", username: "og.kpnwrld", kind: "joined", detail: null, ...o });
+
+function accountContract(name: string, make: () => Promise<Store>) {
+  describe(`Account contract: ${name}`, () => {
+    let s: Store;
+    beforeAll(async () => {
+      s = await make();
+    });
+    afterAll(async () => s.close());
+
+    it("usernames are unique case-insensitively, even under a race", async () => {
+      const wins = await Promise.all(Array.from({ length: 8 }, (_, i) => s.createAccount(acct(`race${i}`, i % 2 ? "Race.User1" : "race.user1"))));
+      expect(wins.filter(Boolean)).toHaveLength(1);
+      expect(await s.createAccount(acct("x", "RACE.USER1"))).toBe(false);
+      const found = await s.getAccountByKey("race.user1");
+      expect(found?.usernameKey).toBe("race.user1");
+      expect(await s.getAccountByKey("nobody.1")).toBeUndefined();
+    });
+
+    it("accounts round-trip and update", async () => {
+      expect(await s.createAccount(acct("a1", "og.kpnwrld"))).toBe(true);
+      expect(await s.getAccount("a1")).toMatchObject({ username: "og.kpnwrld", usernameKey: "og.kpnwrld", lastLoginAt: null, disabled: false });
+      await s.setAccountSecret("a1", "scrypt$16384$8$1$bmV3$aGFzaDI=");
+      await s.touchAccountLogin("a1", T0 + 5);
+      expect(await s.getAccount("a1")).toMatchObject({ secretHash: "scrypt$16384$8$1$bmV3$aGFzaDI=", lastLoginAt: T0 + 5 });
+      expect(await s.countAccounts()).toBeGreaterThanOrEqual(2);
+      expect((await s.listAccounts(100)).map((a) => a.id)).toContain("a1");
+      expect(await s.getAccount("nope")).toBeUndefined();
+    });
+
+    it("one link per account; a Paperclip identity can belong to only one account", async () => {
+      await s.createAccount(acct("a2", "second.user2"));
+      expect(await s.putLink(link("a1", { paperclipUserId: "pu-shared" }))).toBe(true);
+      expect(await s.getLink("a1")).toMatchObject({ instanceUrl: "https://p.example.com", paperclipUserId: "pu-shared", sealedCredential: "kid.sealed" });
+      expect((await s.getLinkByIdentity("https://p.example.com", "pu-shared"))?.accountId).toBe("a1");
+      expect(await s.getLinkByIdentity("https://p.example.com", "other")).toBeUndefined();
+      expect(await s.getLinkByIdentity("https://other.example.com", "pu-shared")).toBeUndefined();
+      // another account may not claim the same identity
+      expect(await s.putLink(link("a2", { paperclipUserId: "pu-shared" }))).toBe(false);
+      expect(await s.getLink("a2")).toBeUndefined();
+      // same identity on a different instance is a different identity
+      expect(await s.putLink(link("a2", { instanceUrl: "https://elsewhere.example.com", paperclipUserId: "pu-shared" }))).toBe(true);
+      // replacing your own link works (reconnect)
+      expect(await s.putLink(link("a1", { paperclipUserId: "pu-shared", sealedCredential: "kid.newkey", connectedAt: T0 + 9 }))).toBe(true);
+      expect(await s.getLink("a1")).toMatchObject({ sealedCredential: "kid.newkey", connectedAt: T0 + 9 });
+    });
+
+    it("links with no known identity don't collide", async () => {
+      await s.createAccount(acct("a3", "third.user33"));
+      await s.createAccount(acct("a4", "fourth.user4"));
+      expect(await s.putLink(link("a3", { paperclipUserId: null }))).toBe(true);
+      expect(await s.putLink(link("a4", { paperclipUserId: null }))).toBe(true);
+    });
+
+    it("drops credentials without deleting the account, and finds idle links", async () => {
+      // relative to the store's own clock (touchLink stamps "now")
+      await s.putLink(link("a3", { paperclipUserId: "pu-3", lastUsedAt: clock.t - 40 * 86_400_000 }));
+      await s.putLink(link("a4", { paperclipUserId: "pu-4", lastUsedAt: clock.t }));
+      expect((await s.listIdleLinks(clock.t - 30 * 86_400_000)).map((l) => l.accountId)).toEqual(["a3"]);
+      await s.touchLink("a3");
+      expect(await s.listIdleLinks(clock.t - 30 * 86_400_000)).toEqual([]);
+      expect(await s.dropLinkCredential("a3")).toBe("kid.sealed");
+      expect(await s.dropLinkCredential("a3")).toBeNull();
+      expect((await s.getLink("a3"))?.sealedCredential).toBeNull();
+      expect(await s.getAccount("a3")).toBeDefined();
+      expect(await s.dropLinkCredential("ghost")).toBeNull();
+    });
+
+    it("grants carry their account; revoking an account's grants leaves others alone", async () => {
+      const g = (id: string, accountId: string | null, username: string | null): Grant => ({ ...grant(id), accountId, username, sealedCredential: null });
+      await s.putGrant(g("ga1", "a1", "og.kpnwrld"));
+      await s.putGrant(g("ga2", "a1", "og.kpnwrld"));
+      await s.putGrant(g("gb1", "a2", "second.user2"));
+      expect(await s.getGrant("ga1")).toMatchObject({ accountId: "a1", username: "og.kpnwrld", sealedCredential: null });
+      await s.putAccess("tok-a1", { grantId: "ga1", expiresAt: clock.t + 1e9 });
+      await s.putRefresh("ref-a2", { grantId: "ga2", expiresAt: clock.t + 1e9 });
+      await s.putAccess("tok-b1", { grantId: "gb1", expiresAt: clock.t + 1e9 });
+      expect(await s.countLiveGrants("a1")).toBe(2);
+      expect(await s.revokeAccountGrants("a1")).toBe(2);
+      expect(await s.countLiveGrants("a1")).toBe(0);
+      expect(await s.getAccess("tok-a1")).toBeUndefined();
+      expect(await s.getRefresh("ref-a2")).toBeUndefined();
+      expect(await s.getAccess("tok-b1")).toBeDefined();
+      expect(await s.countLiveGrants("a2")).toBe(1);
+      expect(await s.revokeAccountGrants("a1")).toBe(0);
+    });
+
+    it("deleting an account removes everything and returns the credential to revoke upstream", async () => {
+      await s.createAccount(acct("a9", "deleteme.99"));
+      await s.putLink(link("a9", { paperclipUserId: "pu-9", sealedCredential: "kid.todelete" }));
+      await s.putGrant({ ...grant("g9"), accountId: "a9", username: "deleteme.99", sealedCredential: null });
+      await s.putAccess("tok-9", { grantId: "g9", expiresAt: clock.t + 1e9 });
+      expect(await s.deleteAccount("a9")).toEqual({ sealedCredential: "kid.todelete", instanceUrl: "https://p.example.com" });
+      expect(await s.getAccount("a9")).toBeUndefined();
+      expect(await s.getLink("a9")).toBeUndefined();
+      expect(await s.getAccountByKey("deleteme.99")).toBeUndefined();
+      expect((await s.getGrant("g9"))?.revoked).toBe(true);
+      expect(await s.getAccess("tok-9")).toBeUndefined();
+      expect(await s.createAccount(acct("a9b", "deleteme.99"))).toBe(true); // the name is free again
+      expect(await s.deleteAccount("a9")).toBeNull();
+    });
+
+    it("user events: newest first, incremental, counted by kind with failure reasons", async () => {
+      await s.insertUserEvent(ev({ kind: "started", username: null, accountId: null, at: T0 + 1000 }));
+      await s.insertUserEvent(ev({ kind: "joined", at: T0 + 2000 }));
+      await s.insertUserEvent(ev({ kind: "completed", detail: "new", at: T0 + 3000 }));
+      await s.insertUserEvent(ev({ kind: "connect_failed", detail: "denied", username: null, accountId: null, at: T0 + 4000 }));
+      await s.insertUserEvent(ev({ kind: "login_failed", detail: "bad_secret", username: null, accountId: null, at: T0 + 5000 }));
+      await s.insertUserEvent(ev({ kind: "login_failed", detail: "bad_secret", username: null, accountId: null, at: T0 + 5500 }));
+      await s.insertUserEvent(ev({ kind: "left", detail: "idle", at: T0 + 6000 }));
+      const recent = await s.userEventsRecent(0, 3);
+      expect(recent.map((e) => e.kind)).toEqual(["left", "login_failed", "login_failed"]);
+      expect(recent[0]).toMatchObject({ username: "og.kpnwrld", detail: "idle", accountId: "a1" });
+      const after = await s.userEventsRecent(recent[2].id!, 50);
+      expect(after.map((e) => e.id)).toEqual(recent.slice(0, 2).map((e) => e.id));
+      const c = await s.userEventCounts(T0, T0 + 10_000);
+      expect(c.byKind).toMatchObject({ started: 1, joined: 1, completed: 1, connect_failed: 1, login_failed: 2, left: 1 });
+      expect(c.failures).toEqual({ "connect_failed:denied": 1, "login_failed:bad_secret": 2 });
+      expect((await s.userEventCounts(T0 + 7000, T0 + 8000)).byKind).toEqual({});
+    });
+
+    it("event series buckets completed / failed / joined", async () => {
+      const b = await s.userEventSeries(T0, T0 + 120_000, 60_000);
+      expect(b).toEqual([{ t: T0, completed: 1, failed: 3, joined: 1 }]);
+    });
+
+    it("heartbeat is repeatable", async () => {
+      await s.heartbeat();
+      await s.heartbeat();
+    });
+
+    it("counts distinct active usernames from the audit trail", async () => {
+      await s.insertAudit([row({ at: T0 + 1, username: "og.kpnwrld" }), row({ at: T0 + 2, username: "og.kpnwrld" }), row({ at: T0 + 3, username: "second.user2" }), row({ at: T0 + 4, username: null }), row({ at: T0 + 9_000_000, username: "far.future9" })]);
+      expect(await s.auditActiveUsers(T0, T0 + 1000)).toBe(2);
+      expect(await s.auditActiveUsers(T0, T0 + 10_000_000)).toBe(3);
+      expect(await s.auditActiveUsers(T0 + 100_000_000, T0 + 200_000_000)).toBe(0);
+    });
+
+    it("anonymity: toggling rewrites what logs, grants, audit rows and the instance label show — for that account only", async () => {
+      const W = T0 + 8_000_000; // an isolated window (other tests use +5M and +9M)
+      const mkAudit = (username: string, instance: string, i: number) => row({ at: W + i, name: "pv", username, instance });
+      await s.createAccount(acct("pv1", "private.user1"));
+      await s.createAccount(acct("pv2", "other.person2"));
+      await s.putLink(link("pv1", { paperclipUserId: "pu-pv1", instanceLabel: "acme.paperclip.dev" }));
+      await s.putLink(link("pv2", { paperclipUserId: "pu-pv2", instanceLabel: "other.example.com" }));
+      await s.putGrant({ ...grant("gpv1"), accountId: "pv1", username: "private.user1", sealedCredential: null });
+      await s.putGrant({ ...grant("gpv2"), accountId: "pv2", username: "other.person2", sealedCredential: null });
+      await s.insertUserEvent(ev({ at: W, accountId: "pv1", username: "private.user1", kind: "joined", detail: "acme.paperclip.dev" }));
+      await s.insertUserEvent(ev({ at: W + 1, accountId: "pv2", username: "other.person2", kind: "login" }));
+      await s.insertAudit([mkAudit("private.user1", "acme.paperclip.dev", 1), mkAudit("other.person2", "other.example.com", 2)]);
+
+      expect(await s.setAccountPrivacy("pv1", { anonymous: true, alias: "Ann02", display: "Ann02", prevDisplay: "private.user1", instanceLabel: "anon-3f9a1c", prevInstanceLabel: "acme.paperclip.dev" })).toBe("ok");
+      expect(await s.getAccount("pv1")).toMatchObject({ username: "private.user1", anonymous: true, alias: "Ann02" }); // the real name is kept for login
+      expect((await s.getLink("pv1"))?.instanceLabel).toBe("anon-3f9a1c");
+      expect((await s.getGrant("gpv1"))?.username).toBe("Ann02");
+      const seen = JSON.stringify([await s.userEventsRecent(0, 500), await s.auditRecent(0, 500)]);
+      expect(seen).not.toContain("private.user1");
+      expect(seen).not.toContain("acme.paperclip.dev");
+      expect(seen).toContain("Ann02");
+      expect(seen).toContain("anon-3f9a1c");
+      // another account is untouched
+      expect((await s.getGrant("gpv2"))?.username).toBe("other.person2");
+      expect(seen).toContain("other.person2");
+      expect(seen).toContain("other.example.com");
+      expect(await s.auditActiveUsers(W, W + 1000)).toBe(2);
+      const by = (await s.auditBreakdown("tool", "username", W, W + 1000, 10)).map((x) => x.key).sort();
+      expect(by).toEqual(["Ann02", "other.person2"]);
+
+      // and back: the alias is stable, history follows
+      expect(await s.setAccountPrivacy("pv1", { anonymous: false, alias: "Ann02", display: "private.user1", prevDisplay: "Ann02", instanceLabel: "acme.paperclip.dev", prevInstanceLabel: "anon-3f9a1c" })).toBe("ok");
+      expect(await s.getAccount("pv1")).toMatchObject({ anonymous: false, alias: "Ann02" });
+      expect(JSON.stringify(await s.auditRecent(0, 500))).toContain("private.user1");
+    });
+
+    it("aliases are unique (case-insensitively) and a clash is reported, not swallowed", async () => {
+      await s.createAccount(acct("al1", "alias.holder1", { anonymous: true, alias: "Bob07" }));
+      await expect(s.createAccount(acct("al2", "alias.holder2", { anonymous: true, alias: "bob07" }))).rejects.toBeInstanceOf(AliasTakenError);
+      expect(await s.getAccount("al2")).toBeUndefined();
+      await s.createAccount(acct("al3", "alias.holder3"));
+      expect(await s.setAccountPrivacy("al3", { anonymous: true, alias: "BOB07", display: "BOB07", prevDisplay: "alias.holder3", instanceLabel: "anon-1", prevInstanceLabel: "x" })).toBe("alias_taken");
+      expect((await s.getAccount("al3"))?.anonymous).toBeFalsy(); // nothing half-applied
+      expect(await s.setAccountPrivacy("nope", { anonymous: true, alias: "Zed99", display: "Zed99", prevDisplay: "a", instanceLabel: "b", prevInstanceLabel: "c" })).toBe("missing");
+    });
+
+    it("node samples and the live grant count", async () => {
+      await s.recordNodeSample({ at: T0 + 100, node: "n1", dbPingMs: 4.5, loopLagP99Ms: 2, rssMb: 90, heapMb: 40, uptimeS: 10, version: "1.0.0" });
+      await s.recordNodeSample({ at: T0 + 200, node: "n1", dbPingMs: null, loopLagP99Ms: 3, rssMb: 91, heapMb: 41, uptimeS: 40, version: "1.0.0" });
+      const got = await s.nodeSamples(T0);
+      expect(got.map((x) => x.at)).toEqual([T0 + 200, T0 + 100]); // newest first
+      expect(got[1]).toMatchObject({ node: "n1", dbPingMs: 4.5, rssMb: 90, version: "1.0.0" });
+      expect(got[0].dbPingMs).toBeNull();
+      expect(await s.nodeSamples(T0 + 150)).toHaveLength(1);
+      expect(await s.liveGrantCount()).toBeGreaterThanOrEqual(0);
+    });
+
+    it("prune removes old events along with old audit rows", async () => {
+      await s.insertUserEvent(ev({ at: T0 - 90 * 86_400_000, kind: "joined", username: "ancient.1" }));
+      await s.pruneAudit(T0 - 30 * 86_400_000);
+      const all = await s.userEventCounts(T0 - 100 * 86_400_000, T0 - 80 * 86_400_000);
+      expect(all.byKind).toEqual({});
+    });
+  });
+}
+
 contract("memory", async () => new MemoryStore(null, now));
 auditContract("memory", async () => new MemoryStore(null, now));
+accountContract("memory", async () => new MemoryStore(null, now));
 
 describe.skipIf(!DB)("Postgres", () => {
   const opts = { connectionString: DB!, ssl: "off" as const };
@@ -250,7 +466,7 @@ describe.skipIf(!DB)("Postgres", () => {
 
   it("migrates once, idempotently", async () => {
     await reset();
-    expect(await migrate(opts)).toEqual(["001_init.sql", "002_audit.sql"]);
+    expect(await migrate(opts)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql"]);
     expect(await migrate(opts)).toEqual([]);
   });
 
@@ -302,6 +518,25 @@ describe.skipIf(!DB)("Postgres", () => {
     return new PgStore(opts, now);
   });
 
+  accountContract("postgres", async () => {
+    await reset();
+    await migrate(opts);
+    return new PgStore(opts, now);
+  });
+
+  accountContract("postgres as least-privilege role", async () => {
+    await reset();
+    await migrate(opts);
+    const admin = new pg.Client({ connectionString: DB });
+    await admin.connect();
+    await admin.query("do $$ begin if not exists (select 1 from pg_roles where rolname='bridge_app') then create role bridge_app login; end if; end $$");
+    await admin.query(readFileSync(new URL("../docs/least-privilege.sql", import.meta.url), "utf8"));
+    await admin.end();
+    const appUrl = new URL(DB!);
+    appUrl.username = "bridge_app";
+    return new PgStore({ connectionString: appUrl.toString(), ssl: "off" }, now);
+  });
+
   auditContract("postgres as least-privilege role", async () => {
     await reset();
     await migrate(opts);
@@ -322,15 +557,15 @@ describe.skipIf(!DB)("Postgres", () => {
     const sql = readFileSync(new URL("../docs/supabase-schema.sql", import.meta.url), "utf8");
     await c.query(sql);
     await c.query(sql); // re-run
-    expect((await c.query("select version from bridge.schema_migrations order by 1")).rows.map((r) => r.version)).toEqual(["001_init.sql", "002_audit.sql"]);
+    expect((await c.query("select version from bridge.schema_migrations order by 1")).rows.map((r) => r.version)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql"]);
     for (const role of ["anon", "authenticated"]) {
       await c.query(`set role ${role}`);
-      for (const t of ["grants", "tokens", "codes", "pending", "clients", "rate_limits", "audit_events", "schema_migrations"])
+      for (const t of ["grants", "tokens", "codes", "pending", "clients", "rate_limits", "audit_events", "schema_migrations", "accounts", "account_links", "user_events", "heartbeat", "node_samples", "panel_accounts", "panel_grants", "panel_links"])
         await expect(c.query(`select * from bridge.${t}`), `${role}.${t}`).rejects.toThrow(/permission denied/);
       await c.query("reset role");
     }
     const rls = await c.query("select relname, relrowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'bridge' and relkind = 'r'");
-    expect(rls.rows.map((r) => r.relname).sort()).toEqual(["audit_events", "clients", "codes", "grants", "pending", "rate_limits", "schema_migrations", "tokens"]);
+    expect(rls.rows.map((r) => r.relname).sort()).toEqual(["account_links", "accounts", "audit_events", "clients", "codes", "grants", "heartbeat", "node_samples", "pending", "rate_limits", "schema_migrations", "tokens", "user_events"]);
     expect(rls.rows.every((r) => r.relrowsecurity)).toBe(true);
     await c.end();
     expect(await migrate(opts)).toEqual([]); // nothing left to apply
@@ -342,7 +577,7 @@ describe.skipIf(!DB)("Postgres", () => {
 
   it("the audit table is locked against anon/authenticated and idempotently migrated", async () => {
     await reset();
-    expect(await migrate(opts)).toEqual(["001_init.sql", "002_audit.sql"]);
+    expect(await migrate(opts)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql"]);
     const c = new pg.Client({ connectionString: DB });
     await c.connect();
     for (const role of ["anon", "authenticated"]) {
@@ -353,6 +588,83 @@ describe.skipIf(!DB)("Postgres", () => {
     const rls = await c.query("select relrowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'bridge' and relname = 'audit_events'");
     expect(rls.rows[0].relrowsecurity).toBe(true);
     await c.end();
+  });
+
+  describe("the panel's read-only database role", () => {
+    const panelUrl = () => {
+      const u = new URL(DB!);
+      u.username = "panel_ro";
+      return u.toString();
+    };
+    let admin: pg.Client;
+    let panel: pg.Client;
+
+    it("is set up from docs/panel-role.sql", async () => {
+      await reset();
+      await migrate(opts);
+      admin = new pg.Client({ connectionString: DB });
+      await admin.connect();
+      await admin.query("do $$ begin if not exists (select 1 from pg_roles where rolname='panel_ro') then create role panel_ro login; end if; end $$");
+      await admin.query(readFileSync(new URL("../docs/panel-role.sql", import.meta.url), "utf8"));
+      // an anonymous account with a stored credential, events and audit rows
+      const store = new PgStore(opts, now);
+      await store.createAccount(acct("pa1", "real.person42", { anonymous: true, alias: "Eve31", secretHash: "scrypt$16384$8$1$c2VjcmV0c2FsdA==$VERYSECRETHASH" }));
+      await store.putLink(link("pa1", { paperclipUserId: "pu-secret-id", sealedCredential: "kid.VERYSECRETCREDENTIAL", instanceLabel: "anon-9c1d77", instanceUrl: "https://real-host.example.com" }));
+      await store.putGrant({ ...grant("gpa1"), accountId: "pa1", username: "Eve31", sealedCredential: null, instanceUrl: "https://real-host.example.com" });
+      await store.insertUserEvent(ev({ accountId: "pa1", username: "Eve31", kind: "joined", detail: "anon-9c1d77" }));
+      await store.insertAudit([row({ username: "Eve31", instance: "anon-9c1d77" })]);
+      await store.recordNodeSample({ at: T0, node: "n1", dbPingMs: 3, loopLagP99Ms: 1, rssMb: 80, heapMb: 30, uptimeS: 5, version: "1.0.0" });
+      await store.close();
+      panel = new pg.Client({ connectionString: panelUrl() });
+      await panel.connect();
+    });
+
+    it("reads the safe views and telemetry", async () => {
+      expect((await panel.query("select display_name, anonymous from bridge.panel_accounts")).rows).toEqual([{ display_name: "Eve31", anonymous: true }]);
+      expect((await panel.query("select display_name, client_name from bridge.panel_grants")).rows[0].display_name).toBe("Eve31");
+      expect((await panel.query("select instance_label, has_credential from bridge.panel_links")).rows).toEqual([{ instance_label: "anon-9c1d77", has_credential: true }]);
+      for (const t of ["audit_events", "user_events", "node_samples"]) expect((await panel.query(`select count(*)::int as n from bridge.${t}`)).rows[0].n).toBe(1);
+    });
+
+    it("cannot read anything secret: credentials, secret hashes, real usernames, tokens, codes, pending requests", async () => {
+      for (const q of [
+        "select * from bridge.accounts", "select secret_hash from bridge.accounts", "select username from bridge.accounts",
+        "select * from bridge.account_links", "select sealed_credential from bridge.account_links",
+        "select * from bridge.grants", "select * from bridge.tokens", "select * from bridge.codes", "select * from bridge.pending",
+        "select * from bridge.clients", "select * from bridge.rate_limits", "select * from bridge.heartbeat", "select * from bridge.schema_migrations",
+      ]) await expect(panel.query(q), q).rejects.toThrow(/permission denied/);
+    });
+
+    it("the real username, the real host and every secret appear nowhere the panel can read", async () => {
+      let readable = "";
+      for (const t of ["panel_accounts", "panel_grants", "panel_links", "audit_events", "user_events", "node_samples"]) readable += JSON.stringify((await panel.query(`select * from bridge.${t}`)).rows);
+      for (const secret of ["real.person42", "real-host.example.com", "VERYSECRETHASH", "VERYSECRETCREDENTIAL", "pu-secret-id", "real.person42".toUpperCase()]) expect(readable, secret).not.toContain(secret);
+      expect(readable).toContain("Eve31");
+    });
+
+    it("cannot write, alter or create anything", async () => {
+      for (const q of [
+        "insert into bridge.audit_events (ts,node,kind,name,ok,total_ms) values (1,'x','tool','x',true,1)", "update bridge.user_events set username = 'x'", "delete from bridge.audit_events",
+        "truncate bridge.node_samples", "create table bridge.evil (x int)", "drop table bridge.audit_events", "create schema evil", "alter table bridge.audit_events add column x int",
+        "update bridge.panel_accounts set display_name = 'x'", "insert into bridge.node_samples (ts,node) values (1,'x')",
+      ]) await expect(panel.query(q), q).rejects.toThrow(/permission denied|must be owner|cannot (update|insert|delete)|not (automatically )?updatable/);
+    });
+
+    it("PgPanelStore serves the whole PanelData surface through that role", async () => {
+      const ps = new PgPanelStore({ connectionString: panelUrl(), ssl: "off" }, now);
+      expect(await ps.countAccounts()).toBe(1);
+      expect(await ps.liveGrantCount()).toBe(1);
+      expect((await ps.userEventsRecent(0, 5))[0]).toMatchObject({ username: "Eve31", kind: "joined" });
+      expect((await ps.auditTotals("tool", T0 - 1000, T0 + 1000)).count).toBe(1);
+      expect((await ps.auditBreakdown("tool", "username", T0 - 1000, T0 + 1000, 5))[0].key).toBe("Eve31");
+      expect(await ps.auditActiveUsers(T0 - 1000, T0 + 1000)).toBe(1);
+      expect((await ps.nodeSamples(0))[0].node).toBe("n1");
+      expect((await ps.userEventCounts(T0 - 1000, T0 + 1000)).byKind).toEqual({ joined: 1 });
+      await ps.ping();
+      await ps.close();
+      await panel.end();
+      await admin.end();
+    });
   });
 
   it("the least-privilege role cannot touch anything outside the bridge tables", async () => {

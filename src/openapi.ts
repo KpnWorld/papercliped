@@ -1,5 +1,5 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { SERVER_VERSION } from "./mcp.js";
+import { VERSION as SERVER_VERSION } from "./version.js";
 import { tools } from "./tools.js";
 
 /**
@@ -30,7 +30,7 @@ export function buildOpenApi(serverUrl: string) {
   return {
     openapi: "3.1.0",
     info: {
-      title: "Paperclip Bridge",
+      title: "Papercliped",
       version: SERVER_VERSION,
       description: "Control Paperclip agents, sync with them, and pull reports.",
     },

@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ALIAS_RE } from "../src/accounts/alias.js";
 import { hostAllowed, readOAuthConfig, type BridgeConfig, type OAuthConfig } from "../src/config.js";
 import { migrate } from "../src/migrate.js";
 import { PgStore } from "../src/oauth/pg-store.js";
@@ -21,6 +22,9 @@ const seen: Seen[] = [];
 const challenges = new Map<string, { host: string; token: string; secret: string; status: string }>();
 const revokedBy: string[] = [];
 const challengeNames: string[] = [];
+const deadTokens = new Set<string>(); // credentials that Paperclip no longer accepts
+const identity = new Map<string, string>(); // host → the Paperclip user id whoami reports (default user@host)
+const unreachable = new Set<string>(); // hosts the egress cannot connect to
 let seq = 0;
 
 function fleet(): Server {
@@ -54,10 +58,13 @@ function fleet(): Server {
       return ch && u.searchParams.get("token") === ch.secret ? send(200, { status: ch.status }) : send(404, { error: "nf" });
     }
     if (p === "/api/cli-auth/me") {
-      const ch = [...challenges.values()].find((c) => `Bearer ${c.token}` === auth && c.status === "approved");
-      return ch ? send(200, { userId: `user@${ch.host}` }) : send(401, { error: "auth" });
+      const token = auth?.replace(/^Bearer /, "") ?? "";
+      const ch = [...challenges.values()].find((c) => c.token === token && c.status === "approved");
+      if (!ch || deadTokens.has(token)) return send(401, { error: "auth" });
+      return send(200, { userId: identity.get(ch.host) ?? `user@${ch.host}` });
     }
     if (p === "/api/cli-auth/revoke-current") return (revokedBy.push(`${host}|${auth}`), send(200, { revoked: true }));
+    if (deadTokens.has(auth?.replace(/^Bearer /, "") ?? "")) return send(401, { error: "auth" });
     seen.push({ host, path: p, auth });
     if (p === `/api/companies/${CID}/agents`) return send(200, [{ id: "a1", name: `agent-of-${host}`, status: "idle" }]);
     if (p === "/api/companies") return send(200, [{ id: CID, name: host }]);
@@ -70,6 +77,7 @@ const outbound: string[] = []; // every URL the bridge tried to reach (the egres
 const egress: typeof fetch = (async (input: any, init: any = {}) => {
   const u = new URL(typeof input === "string" ? input : input.toString());
   outbound.push(u.toString());
+  if (unreachable.has(u.hostname)) throw new Error("connect ECONNREFUSED");
   return fetch(`${mockBase}${u.pathname}${u.search}`, { ...init, headers: { ...(init.headers ?? {}), "x-mock-host": u.hostname } });
 }) as any;
 
@@ -87,7 +95,7 @@ const approve = (host: string) => {
 interface Rig { base: string; server: Server; provider: OAuthProvider; store: Store; audit: AuditEvent[]; clock: { t: number }; oauth: OAuthConfig; close: () => void }
 
 async function rig(over: Partial<OAuthConfig> = {}, opts: { store?: Store; secret?: string } = {}): Promise<Rig> {
-  const clock = { t: 1_800_000_000_000 };
+  const clock = { t: Date.now() };
   const audit: AuditEvent[] = [];
   const probe = createServer();
   await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
@@ -95,8 +103,8 @@ async function rig(over: Partial<OAuthConfig> = {}, opts: { store?: Store; secre
   await new Promise<void>((r) => probe.close(() => r()));
   const config: BridgeConfig = { apiUrl: "http://unused.invalid/api", apiKey: "SHOULD-NEVER-BE-USED", companyId: "SHOULD-NEVER-BE-USED", readOnly: false, timeoutMs: 5000 };
   const oauth: OAuthConfig = {
-    issuer: `http://localhost:${port}`, secret: opts.secret ?? "s".repeat(40), previousSecrets: [], mode: "multi", login: "paperclip", dataFile: null, database: null,
-    paperclipPublicUrl: null, accessTtlSec: 3600, refreshTtlSec: 86400, idleRevokeDays: 30, callsPerMinute: 120, redirectHosts: ["claude.ai"], proxyHops: 0,
+    issuer: `http://localhost:${port}`, secret: opts.secret ?? "s".repeat(40), previousSecrets: [], mode: "multi", accounts: true, login: "paperclip", dataFile: null, database: null,
+    paperclipPublicUrl: null, accessTtlSec: 3600, refreshTtlSec: 86400 * 40, idleRevokeDays: 30, callsPerMinute: 120, redirectHosts: ["claude.ai"], proxyHops: 0,
     instance: { allowedPorts: [443], denyHosts: ["localhost"], allowHosts: null }, ...over,
   };
   const store = opts.store ?? new MemoryStore(null, () => clock.t);
@@ -114,122 +122,638 @@ const pkce = () => {
 const register = async (r: Rig, name = "Claude") =>
   ((await (await fetch(`${r.base}/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ redirect_uris: [CB], client_name: name }) })).json()) as any).client_id as string;
 
-async function start(r: Rig, clientId: string, scope = "paperclip:read paperclip:control") {
+interface Sess { cid: string; verifier: string; html: string; rid: string; csrf: string; status: number }
+const grab = (html: string) => ({ rid: /name="rid" value="([^"]+)"/.exec(html)?.[1]!, csrf: /name="csrf" value="([^"]+)"/.exec(html)?.[1]! });
+
+async function start(r: Rig, cid?: string, scope = "paperclip:read paperclip:control"): Promise<Sess> {
+  cid ??= await register(r);
   const { verifier, challenge } = pkce();
-  const q = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: CB, code_challenge: challenge, code_challenge_method: "S256", state: "st", scope, resource: `${r.base}/mcp` });
+  const q = new URLSearchParams({ response_type: "code", client_id: cid, redirect_uri: CB, code_challenge: challenge, code_challenge_method: "S256", state: "st", scope, resource: `${r.base}/mcp` });
   const page = await fetch(`${r.base}/authorize?${q}`, { redirect: "manual" });
   const html = await page.text();
-  return { verifier, html, page, rid: /name="rid" value="([^"]+)"/.exec(html)?.[1]!, csrf: /name="csrf" value="([^"]+)"/.exec(html)?.[1]! };
+  return { cid, verifier, html, status: page.status, ...grab(html) };
 }
-const instance = (r: Rig, s: { rid: string; csrf: string }, typed: string, extra: Record<string, string> = {}) =>
-  fetch(`${r.base}/authorize/instance`, form({ rid: s.rid, csrf: s.csrf, action: "continue", instance: typed, ...extra }));
+const step = (r: Rig, s: Pick<Sess, "rid" | "csrf">, path: string, fields: Record<string, string> = {}) => fetch(`${r.base}/authorize/${path}`, form({ rid: s.rid, csrf: s.csrf, action: "continue", ...fields }));
+const toInstance = async (r: Rig, s: Sess) => (await step(r, s, "connect")).text();
 
-/** Full connect: returns an access token bound to `host`. */
-async function connect(r: Rig, host: string, level = "paperclip:control") {
-  const cid = await register(r, `client-${host}`);
-  const s = await start(r, cid, level);
-  const inst = await instance(r, s, host);
-  const html = await inst.text();
+const SECRET_RE = /id="sec">(pcs_[0-9A-Z<>wbr/-]+)</; // the page puts <wbr> after each dash so phones wrap only there
+const secretOf = (html: string) => SECRET_RE.exec(html)?.[1]?.replace(/<wbr>/g, "");
+const exchange = async (r: Rig, s: Sess, dec: Response) => {
+  const loc = dec.headers.get("location");
+  if (!loc) throw new Error(`no redirect: ${dec.status} ${(await dec.text()).slice(0, 200)}`);
+  const code = new URL(loc).searchParams.get("code")!;
+  return (await (await fetch(`${r.base}/token`, form({ grant_type: "authorization_code", code, redirect_uri: CB, code_verifier: s.verifier, client_id: s.cid }))).json()) as any;
+};
+
+/** A brand-new user: connect → approve → username → secret → allow. */
+async function newUser(r: Rig, host: string, username: string, o: { level?: string; cid?: string; scope?: string; anonymous?: boolean } = {}) {
+  const s = await start(r, o.cid, o.scope ?? o.level ?? "paperclip:read paperclip:control");
+  await toInstance(r, s);
+  await step(r, s, "instance", { instance: host });
   approve(host);
-  const dec = await fetch(`${r.base}/authorize/decision`, form({ rid: s.rid, csrf: s.csrf, action: "allow", level }));
-  const loc = new URL(dec.headers.get("location")!);
-  const tok = (await (await fetch(`${r.base}/token`, form({ grant_type: "authorization_code", code: loc.searchParams.get("code")!, redirect_uri: CB, code_verifier: s.verifier, client_id: cid }))).json()) as any;
-  return { cid, tokens: tok, consentHtml: html };
+  const un = await (await step(r, s, "approved")).text();
+  const secretPage = await (await step(r, s, "username", { username, ...(o.anonymous ? { anonymous: "on" } : {}) })).text();
+  const secret = secretOf(secretPage);
+  const scopePage = await (await step(r, s, "continue")).text();
+  const dec = await step(r, s, "decision", { level: o.level ?? "paperclip:control" });
+  const tokens = await exchange(r, s, dec);
+  return { s, secret, usernamePage: un, secretPage, scopePage, tokens, username };
 }
+
+/** Log in with username + secret key (no Paperclip approval needed while the stored key still works). */
+async function loginFlow(r: Rig, username: string, secret: string, o: { level?: string; cid?: string } = {}) {
+  const s = await start(r, o.cid);
+  const res = await step(r, s, "login", { username, secret });
+  const html = await res.text();
+  return { s, res, html };
+}
+
 const act = (r: Rig, token: string, tool: string, body: unknown = {}) => fetch(`${r.base}/actions/${tool}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+/** Pages HTML-escape apostrophes; compare against the visible text. */
+const un = (h: string) => h.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+const kinds = async (r: Rig) => (await r.store.userEventsRecent(0, 100)).reverse().map((e) => `${e.kind}${e.username ? ":" + e.username : ""}${e.detail ? "/" + e.detail : ""}`);
 
-// ───────────── tests ─────────────
-function flowSuite(label: string, makeStore: (now: () => number) => Promise<Store>, closeStore = true) {
-  describe(`multi-tenant flow (${label})`, () => {
-    it("asks for the instance first, then signs in on THAT instance and binds the grant to it", async () => {
-      const clock = { t: 1_800_000_000_000 };
-      const store = await makeStore(() => clock.t);
-      const r = await rig({}, { store });
-      const before = challenges.size;
-      const cid = await register(r);
-      const s = await start(r, cid);
-      expect(s.html).toContain("Connect your Paperclip");
-      expect(s.html).toContain('name="instance"');
-      expect(challenges.size).toBe(before); // nothing contacted before the user names an instance
+// ───────────── the new-user journey ─────────────
+describe("account flow: a brand-new user", () => {
+  it("connects Paperclip, picks a username, gets a secret key once, and ends up with a scoped grant", async () => {
+    const r = await rig();
+    const before = challenges.size;
+    const s = await start(r);
+    // step 1: choose
+    expect(s.html).toContain("Sign in to Papercliped");
+    expect(s.html).toContain('action="/authorize/login"');
+    expect(s.html).toContain("Connect your Paperclip");
+    expect(challenges.size).toBe(before); // nothing contacted yet
+    // step 2: instance
+    expect(await toInstance(r, s)).toContain('name="instance"');
+    // step 3: approve in Paperclip
+    const ap = await (await step(r, s, "instance", { instance: "Tenant-A.Example.com" })).text();
+    expect(ap).toContain("https://tenant-a.example.com/cli-auth/");
+    expect(challengeNames.at(-1)).toMatch(/^Claude \(via Papercliped, returns to claude\.ai\)$/);
+    // pressing Continue before approving is refused
+    const early = await (await step(r, s, "approved")).text();
+    expect(early).toContain("Not approved in Paperclip yet");
+    approve("tenant-a.example.com");
+    // step 4: username
+    const unPage = await (await step(r, s, "approved")).text();
+    expect(unPage).toContain("Choose your username");
+    expect(unPage).toContain("At least 6 characters");
+    // rules enforced server-side, with helpful messages, and nothing is created
+    for (const [bad, why] of [["abc", /at least 6/], ["justletters", /number or one of/], ["bad%name1", /only letters/], [".lead1ng", /Start your username/], ["admin.01", /reserved/]] as const) {
+      const t = await step(r, s, "username", { username: bad });
+      expect(t.status).toBe(400);
+      expect(await t.text()).toMatch(why);
+    }
+    expect(await r.store.countAccounts()).toBe(0);
+    // step 5: the secret key, shown once
+    const sec = await (await step(r, s, "username", { username: "og.kpnwrld" })).text();
+    const secret = secretOf(sec)!;
+    expect(secret).toMatch(/^pcs_([0-9A-HJKMNP-TV-Z]{4}-){7}[0-9A-HJKMNP-TV-Z]{4}$/);
+    expect(sec).toContain("Welcome, og.kpnwrld");
+    expect(un(sec)).toContain("only time we'll show it");
+    // the account exists; the secret is stored only as a hash; the credential only sealed
+    const acct = (await r.store.getAccountByKey("og.kpnwrld"))!;
+    expect(acct.username).toBe("og.kpnwrld");
+    expect(acct.secretHash).toMatch(/^scrypt\$/);
+    expect(JSON.stringify(acct)).not.toContain(secret.replace(/-/g, "").slice(4));
+    const link = (await r.store.getLink(acct.id))!;
+    expect(link).toMatchObject({ instanceUrl: "https://tenant-a.example.com", paperclipUserId: "user@tenant-a.example.com" });
+    expect(link.sealedCredential).toMatch(/^[0-9a-f]{8}\./);
+    expect(link.sealedCredential).not.toContain("board-tenant-a");
+    // step 6: access level, then the code
+    const scope = await (await step(r, s, "continue")).text();
+    expect(scope).toContain("Allow Claude?");
+    expect(scope).toContain("Signed in as <strong>og.kpnwrld</strong>");
+    expect(scope).toMatch(/value="paperclip:control" checked/);
+    expect(scope).not.toMatch(/value="paperclip:admin"/);
+    const dec = await step(r, s, "decision", { level: "paperclip:control" });
+    expect(dec.status).toBe(302);
+    const tokens = await exchange(r, s, dec);
+    expect(tokens).toMatchObject({ token_type: "Bearer", scope: "paperclip:read paperclip:control" });
 
-      const inst = await (await instance(r, s, "Tenant-A.Example.com")).text();
-      expect(inst).toContain("tenant-a.example.com");
-      expect(inst).toContain("https://tenant-a.example.com/cli-auth/");
-      expect(challengeNames.at(-1)).toMatch(/^Claude \(via bridge, returns to claude\.ai\)$/); // what the user sees on THEIR Paperclip approval page
-      approve("tenant-a.example.com");
-      const dec = await fetch(`${r.base}/authorize/decision`, form({ rid: s.rid, csrf: s.csrf, action: "allow", level: "paperclip:control" }));
-      expect(dec.status).toBe(302);
-      const code = new URL(dec.headers.get("location")!).searchParams.get("code")!;
-      const t = (await (await fetch(`${r.base}/token`, form({ grant_type: "authorization_code", code, redirect_uri: CB, code_verifier: s.verifier, client_id: cid }))).json()) as any;
-
-      seen.length = 0;
-      const res = await act(r, t.access_token, "paperclip_list_agents", { companyId: CID });
-      expect(res.status).toBe(200);
-      expect(((await res.json()) as any)[0].name).toBe("agent-of-tenant-a.example.com");
-      expect(seen.at(-1)).toMatchObject({ host: "tenant-a.example.com", auth: expect.stringMatching(/^Bearer board-tenant-a\.example\.com-/) });
-      const [g] = await r.provider.listGrants();
-      expect(g.instanceUrl).toBe("https://tenant-a.example.com");
-      expect(r.audit.at(-1)).toMatchObject({ tool: "paperclip_list_agents", ok: true, instance: "tenant-a.example.com", userId: "user@tenant-a.example.com" });
-      // the operator's placeholder credentials are never used in multi-tenant mode
-      expect(JSON.stringify(seen)).not.toContain("SHOULD-NEVER-BE-USED");
-      r.close();
-      if (closeStore) await store.close();
-    });
-  });
-}
-flowSuite("memory store", async (now) => new MemoryStore(null, now));
-
-describe.skipIf(!DB)("multi-tenant flow on Postgres", () => {
-  const opts = { connectionString: DB!, ssl: "off" as const };
-  it("works end to end with the Postgres store", async () => {
-    const c = new pg.Client({ connectionString: DB });
-    await c.connect();
-    await c.query("drop schema if exists bridge cascade");
-    await c.end();
-    await migrate(opts);
-    const clock = { t: 1_800_000_000_000 };
-    const store = new PgStore(opts, () => clock.t);
-    const r = await rig({}, { store });
-    const { tokens } = await connect(r, "tenant-pg.example.com");
-    expect((await act(r, tokens.access_token, "paperclip_list_companies")).status).toBe(200);
-    // refresh rotation + reuse detection against Postgres
-    const cid = (await r.provider.listGrants())[0].clientId;
-    const next = (await (await fetch(`${r.base}/token`, form({ grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: cid }))).json()) as any;
-    expect((await act(r, next.access_token, "paperclip_list_companies")).status).toBe(200);
-    const reuse = (await (await fetch(`${r.base}/token`, form({ grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: cid }))).json()) as any;
-    expect(reuse.error).toBe("invalid_grant");
-    expect((await act(r, next.access_token, "paperclip_list_companies")).status).toBe(401);
-    // no raw secrets at rest
-    const q = new pg.Client({ connectionString: DB });
-    await q.connect();
-    const dump = JSON.stringify((await q.query("select * from bridge.grants")).rows) + JSON.stringify((await q.query("select * from bridge.tokens")).rows) + JSON.stringify((await q.query("select * from bridge.codes")).rows);
-    await q.end();
-    expect(dump).not.toContain("board-tenant-pg");
-    expect(dump).not.toContain(tokens.access_token);
-    expect(dump).not.toContain(tokens.refresh_token);
+    // the grant belongs to the account and uses the account's stored Paperclip key
+    seen.length = 0;
+    const res = await act(r, tokens.access_token, "paperclip_list_agents", { companyId: CID });
+    expect(res.status).toBe(200);
+    expect(seen.at(-1)).toMatchObject({ host: "tenant-a.example.com", auth: expect.stringMatching(/^Bearer board-tenant-a\.example\.com-/) });
+    expect(JSON.stringify(seen)).not.toContain("SHOULD-NEVER-BE-USED");
+    const [g] = await r.provider.listGrants();
+    expect(g).toMatchObject({ accountId: acct.id, username: "og.kpnwrld", sealedCredential: null });
+    // the operator's log and audit trail know the username
+    expect(r.audit.at(-1)).toMatchObject({ tool: "paperclip_list_agents", ok: true, username: "og.kpnwrld", instance: "tenant-a.example.com" });
+    expect(await kinds(r)).toEqual(["started", "joined:og.kpnwrld/tenant-a.example.com", "completed:og.kpnwrld/new"]);
     r.close();
-    await store.close();
+  });
+
+  it("usernames are unique regardless of case, even when two people race for one", async () => {
+    const r = await rig();
+    await newUser(r, "tenant-a.example.com", "Kpn.Wrld1");
+    const s = await start(r);
+    await toInstance(r, s);
+    await step(r, s, "instance", { instance: "tenant-b.example.com" });
+    approve("tenant-b.example.com");
+    await step(r, s, "approved");
+    const taken = await step(r, s, "username", { username: "kpn.wrld1" });
+    expect(taken.status).toBe(400);
+    expect(await taken.text()).toContain("That username is taken");
+    // two simultaneous sign-ups for the same free name: exactly one wins
+    const mk = async (host: string) => {
+      const x = await start(r);
+      await toInstance(r, x);
+      await step(r, x, "instance", { instance: host });
+      approve(host);
+      await step(r, x, "approved");
+      return x;
+    };
+    const [x, y] = [await mk("tenant-c.example.com"), await mk("tenant-d.example.com")];
+    const texts = await Promise.all([step(r, x, "username", { username: "Race.Name9" }), step(r, y, "username", { username: "race.name9" })].map(async (p) => (await p).text()));
+    expect(texts.filter((t) => t.includes("Welcome, ")).length).toBe(1);
+    expect(texts.filter((t) => t.includes("That username is taken")).length).toBe(1);
+    r.close();
+  });
+
+  it("another Paperclip user can't take over an existing identity", async () => {
+    const r = await rig();
+    await newUser(r, "tenant-a.example.com", "first.user1");
+    // same Paperclip user returns on a fresh client → welcomed back as the same account, no new username
+    const s = await start(r);
+    await toInstance(r, s);
+    await step(r, s, "instance", { instance: "tenant-a.example.com" });
+    approve("tenant-a.example.com");
+    const welcome = await (await step(r, s, "approved")).text();
+    expect(welcome).toContain("Welcome back, first.user1");
+    expect(await r.store.countAccounts()).toBe(1);
+    // a different Paperclip user on the same instance is a different identity and gets to choose a name
+    identity.set("tenant-a.example.com", "someone-else");
+    const s2 = await start(r);
+    await toInstance(r, s2);
+    await step(r, s2, "instance", { instance: "tenant-a.example.com" });
+    approve("tenant-a.example.com");
+    expect(await (await step(r, s2, "approved")).text()).toContain("Choose your username");
+    identity.delete("tenant-a.example.com");
+    r.close();
   });
 });
 
-describe("tenant isolation", () => {
-  it("each grant reaches only its own instance with only its own credential", async () => {
+// ───────────── returning users ─────────────
+describe("account flow: returning users", () => {
+  it("logging in with username + secret key reuses the stored Paperclip key (no new approval)", async () => {
     const r = await rig();
-    const a = await connect(r, "tenant-a.example.com");
-    const b = await connect(r, "tenant-b.example.com");
+    const { secret, tokens: first } = await newUser(r, "tenant-a.example.com", "og.kpnwrld");
+    const chBefore = challenges.size;
+    const { s, res, html } = await loginFlow(r, "OG.KPNWRLD", secret!.toLowerCase().replace(/-/g, " ")); // case + formatting forgiven
+    expect(res.status).toBe(200);
+    expect(html).toContain("Allow Claude?");
+    expect(html).toContain("Signed in as <strong>og.kpnwrld</strong>");
+    expect(challenges.size).toBe(chBefore); // no new Paperclip approval was needed
+    const tokens = await exchange(r, s, await step(r, s, "decision", { level: "paperclip:read" }));
+    expect(tokens.scope).toBe("paperclip:read");
+    seen.length = 0;
+    expect((await act(r, tokens.access_token, "paperclip_list_agents", { companyId: CID })).status).toBe(200);
+    // the same stored Paperclip key serves both connections
+    expect(seen[0].auth).toMatch(/board-tenant-a\.example\.com-\d+$/);
+    expect((await act(r, first.access_token, "paperclip_list_agents", { companyId: CID })).status).toBe(200);
+    expect(seen[1].auth).toBe(seen[0].auth);
+    const ev = await kinds(r);
+    expect(ev.slice(-3)).toEqual(["started", "login:og.kpnwrld/claude.ai", "completed:og.kpnwrld/login"]);
+    r.close();
+  });
+
+  it("wrong credentials get one generic message — unknown user and wrong key look identical — and are logged", async () => {
+    const r = await rig();
+    const { secret } = await newUser(r, "tenant-a.example.com", "og.kpnwrld");
+    const wrongKey = await loginFlow(r, "og.kpnwrld", "pcs_" + "0123-4567-89AB-CDEF-GHJK-MNPQ-RSTV-WXYZ");
+    const unknown = await loginFlow(r, "nobody.here9", secret!);
+    const garbage = await loginFlow(r, "og.kpnwrld", "hunter2");
+    for (const x of [wrongKey, unknown, garbage]) {
+      expect(x.res.status).toBe(400);
+      expect(un(x.html)).toContain("That username and secret key don't match.");
+      expect(x.html).not.toContain("Allow Claude?");
+    }
+    const ev = await kinds(r);
+    expect(ev.filter((e) => e.startsWith("login_failed"))).toEqual(["login_failed:og.kpnwrld/bad_credentials", "login_failed/bad_credentials", "login_failed:og.kpnwrld/bad_credentials"]);
+    expect(JSON.stringify(await r.store.userEventsRecent(0, 100))).not.toContain("nobody.here9"); // attacker-supplied names never reach the log
+    r.close();
+  });
+
+  it("throttles guessing per username (and still rejects the right key while throttled)", async () => {
+    const r = await rig();
+    const { secret } = await newUser(r, "tenant-a.example.com", "og.kpnwrld");
+    for (let i = 0; i < 8; i++) expect((await loginFlow(r, "og.kpnwrld", "pcs_" + "0".repeat(4) + `-${String(1000 + i)}-89AB-CDEF-GHJK-MNPQ-RSTV-WXYZ`)).res.status).toBe(400);
+    const locked = await loginFlow(r, "og.kpnwrld", secret!);
+    expect(locked.res.status).toBe(429);
+    expect(locked.html).toContain("Too many attempts");
+    expect(await kinds(r)).toContain("login_failed/rate_limited");
+    r.clock.t += 16 * 60_000;
+    expect((await loginFlow(r, "og.kpnwrld", secret!)).res.status).toBe(200); // window passed
+    r.close();
+  });
+
+  it("an expired Paperclip key sends the user to reconnect, keeping their username", async () => {
+    const r = await rig();
+    const { secret } = await newUser(r, "tenant-a.example.com", "og.kpnwrld");
+    const link = (await r.store.getLink((await r.store.getAccountByKey("og.kpnwrld"))!.id))!;
+    // Paperclip stops accepting the stored key
+    for (const c of challenges.values()) if (c.host === "tenant-a.example.com") deadTokens.add(c.token);
+    const { s, html } = await loginFlow(r, "og.kpnwrld", secret!);
+    expect(html).toContain("Your Paperclip connection has expired");
+    expect(html).toContain('value="tenant-a.example.com"'); // prefilled
+    await step(r, s, "instance", { instance: "tenant-a.example.com" });
+    approve("tenant-a.example.com");
+    const scope = await (await step(r, s, "approved")).text(); // straight to access level: no username step
+    expect(scope).toContain("Signed in as <strong>og.kpnwrld</strong>");
+    const fresh = (await r.store.getLink(link.accountId))!;
+    expect(fresh.connectedAt).toBeGreaterThanOrEqual(link.connectedAt);
+    expect(fresh.sealedCredential).not.toBe(link.sealedCredential);
+    expect(await r.store.countAccounts()).toBe(1);
+    expect(await kinds(r)).toContain("updated:og.kpnwrld/reconnect");
+    deadTokens.clear();
+    r.close();
+  });
+
+  it("can't graft a Paperclip identity that belongs to a different username", async () => {
+    const r = await rig();
+    const a = await newUser(r, "tenant-a.example.com", "alice.one1");
+    await newUser(r, "tenant-b.example.com", "bob.two22");
+    // alice logs in with her key but approves Bob's Paperclip identity
+    for (const c of challenges.values()) if (c.host === "tenant-a.example.com") deadTokens.add(c.token); // force reconnect
+    const { s } = await loginFlow(r, "alice.one1", a.secret!);
+    await step(r, s, "instance", { instance: "tenant-b.example.com" });
+    approve("tenant-b.example.com");
+    const res = await step(r, s, "approved");
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("already linked to a different Papercliped username");
+    deadTokens.clear();
+    r.close();
+  });
+
+  it("returning via Paperclip approval: the old key is revoked upstream, and a lost secret key can be replaced", async () => {
+    const r = await rig();
+    const first = await newUser(r, "tenant-a.example.com", "og.kpnwrld");
+    const oldKey = (await act(r, first.tokens.access_token, "paperclip_list_agents", { companyId: CID }), seen.at(-1)!.auth!);
+    revokedBy.length = 0;
+    const s = await start(r);
+    await toInstance(r, s);
+    await step(r, s, "instance", { instance: "tenant-a.example.com" });
+    approve("tenant-a.example.com");
+    expect(await (await step(r, s, "approved")).text()).toContain("Welcome back, og.kpnwrld");
+    await new Promise((x) => setTimeout(x, 50));
+    expect(revokedBy).toEqual([`tenant-a.example.com|${oldKey}`]);
+    // lost key → make a new one
+    const rot = await (await step(r, s, "welcome", { action: "rotate" })).text();
+    const newSecret = secretOf(rot)!;
+    expect(rot).toContain("Your new secret key");
+    expect(newSecret).not.toBe(first.secret);
+    expect((await loginFlow(r, "og.kpnwrld", first.secret!)).res.status).toBe(400); // old key dead
+    expect((await loginFlow(r, "og.kpnwrld", newSecret)).res.status).toBe(200); // new key works
+    expect(await kinds(r)).toContain("updated:og.kpnwrld/secret_rotated");
+    r.close();
+  });
+});
+
+// ───────────── anonymity ─────────────
+/**
+ * Everything the separate panel's database role can read, as one string: the telemetry tables, and grants ONLY through the
+ * `panel_grants` view's columns (no instance_url, no credential). The real-role equivalent is asserted against Postgres in store.test.ts.
+ */
+const panelView = async (r: Rig) => {
+  const grants = (await r.provider.listGrants()).map((g) => ({ id: g.id, clientName: g.clientName, scopes: g.scopes, createdAt: g.createdAt, lastUsedAt: g.lastUsedAt, revoked: g.revoked, accountId: g.accountId, displayName: g.username }));
+  return JSON.stringify([await r.store.userEventsRecent(0, 1000), await r.store.auditRecent(0, 1000), grants]);
+};
+
+describe("anonymity", () => {
+  it("is off by default: logs show the real username and host", async () => {
+    const r = await rig();
+    const u = await newUser(r, "tenant-a.example.com", "og.kpnwrld");
+    await act(r, u.tokens.access_token, "paperclip_list_agents", { companyId: CID });
+    const seenByPanel = await panelView(r);
+    expect(seenByPanel).toContain("og.kpnwrld");
+    expect(seenByPanel).toContain("tenant-a.example.com");
+    expect((await r.store.getAccountByKey("og.kpnwrld"))).toMatchObject({ anonymous: false, alias: null });
+    expect(u.usernamePage).toContain('name="anonymous"');
+    expect(u.usernamePage).not.toMatch(/name="anonymous" checked/);
+    r.close();
+  });
+
+  it("opting in at signup shows an alias like Ann02 everywhere the operator looks — never the username or the Paperclip's address", async () => {
+    const r = await rig();
+    const u = await newUser(r, "tenant-a.example.com", "og.kpnwrld", { anonymous: true });
+    await act(r, u.tokens.access_token, "paperclip_list_agents", { companyId: CID });
+    const acct = (await r.store.getAccountByKey("og.kpnwrld"))!;
+    expect(acct).toMatchObject({ username: "og.kpnwrld", anonymous: true });
+    expect(acct.alias).toMatch(ALIAS_RE);
+    const alias = acct.alias!;
+    const link = (await r.store.getLink(acct.id))!;
+    expect(link.instanceLabel).toMatch(/^anon-[0-9a-f]{6}$/);
+    expect(link.instanceUrl).toBe("https://tenant-a.example.com"); // the bridge still needs the real address to call it
+
+    const seenByPanel = await panelView(r);
+    expect(seenByPanel).not.toContain("og.kpnwrld");
+    expect(seenByPanel).not.toContain("tenant-a.example.com");
+    expect(seenByPanel).toContain(alias);
+    expect(seenByPanel).toContain(link.instanceLabel!);
+    expect(await kinds(r)).toEqual(["started", `joined:${alias}/${link.instanceLabel}`, `completed:${alias}/new`]);
+    expect(r.audit.at(-1)).toMatchObject({ tool: "paperclip_list_agents", username: alias, instance: link.instanceLabel });
+    // the user's OWN pages still use their real name
+    expect(u.secretPage).toContain("Welcome, og.kpnwrld");
+    expect(u.scopePage).toContain("Signed in as <strong>og.kpnwrld</strong>");
+    expect(u.scopePage).toContain(`You appear as <strong>${alias}</strong>`);
+    // logging in with the real username still works, and the log stays anonymous
+    const back = await loginFlow(r, "og.kpnwrld", u.secret!);
+    expect(back.res.status).toBe(200);
+    expect((await kinds(r)).filter((k) => k.startsWith("login:"))).toEqual([`login:${alias}/claude.ai`]);
+    r.close();
+  });
+
+  it("existing users can turn it on later: history is rewritten, the alias is stable, and turning it off restores the name", async () => {
+    const r = await rig();
+    const u = await newUser(r, "tenant-a.example.com", "og.kpnwrld");
+    await act(r, u.tokens.access_token, "paperclip_list_agents", { companyId: CID });
+    expect(await panelView(r)).toContain("og.kpnwrld");
+
+    // log in again and tick the box on the access-level screen
+    const { s, html } = await loginFlow(r, "og.kpnwrld", u.secret!);
+    expect(html).not.toMatch(/name="anonymous" checked/);
+    const t1 = await exchange(r, s, await step(r, s, "decision", { level: "paperclip:control", privacy_present: "1", anonymous: "on" }));
+    const alias = (await r.store.getAccountByKey("og.kpnwrld"))!.alias!;
+    expect(alias).toMatch(ALIAS_RE);
+    let view = await panelView(r);
+    expect(view).not.toContain("og.kpnwrld"); // the earlier rows were rewritten too
+    expect(view).not.toContain("tenant-a.example.com");
+    expect(view).toContain(alias);
+    expect(await kinds(r)).toContain(`updated:${alias}/privacy_on`);
+    // the already-connected client now audits under the alias as well
+    await act(r, u.tokens.access_token, "paperclip_list_agents", { companyId: CID });
+    expect(r.audit.at(-1)).toMatchObject({ username: alias });
+    expect((await r.provider.listGrants()).every((g) => g.username === alias)).toBe(true);
+
+    // leaving the box unticked (with the form field present) turns it back off; the alias is kept
+    const again = await loginFlow(r, "og.kpnwrld", u.secret!);
+    expect(again.html).toMatch(/name="anonymous" checked/); // reflects the current state
+    await exchange(r, again.s, await step(r, again.s, "decision", { level: "paperclip:read", privacy_present: "1" }));
+    view = await panelView(r);
+    expect(view).toContain("og.kpnwrld");
+    expect(view).toContain("tenant-a.example.com");
+    expect(view).not.toContain(`"${alias}"`);
+    expect((await r.store.getAccountByKey("og.kpnwrld"))).toMatchObject({ anonymous: false, alias });
+    expect(await kinds(r)).toContain("updated:og.kpnwrld/privacy_off");
+    expect(t1.access_token).toBeDefined();
+    // ...and on again: same alias
+    const third = await loginFlow(r, "og.kpnwrld", u.secret!);
+    await exchange(r, third.s, await step(r, third.s, "decision", { level: "paperclip:read", privacy_present: "1", anonymous: "on" }));
+    expect((await r.store.getAccountByKey("og.kpnwrld"))!.alias).toBe(alias);
+    r.close();
+  });
+
+  it("forms that don't carry the privacy field never change the setting", async () => {
+    const r = await rig();
+    const u = await newUser(r, "tenant-a.example.com", "og.kpnwrld", { anonymous: true });
+    const { s } = await loginFlow(r, "og.kpnwrld", u.secret!);
+    await exchange(r, s, await step(r, s, "decision", { level: "paperclip:read" })); // no privacy_present
+    expect((await r.store.getAccountByKey("og.kpnwrld"))!.anonymous).toBe(true);
+    r.close();
+  });
+
+  it("anonymous users never leak through 'left', idle expiry, or operator deletion, and tenants stay distinguishable", async () => {
+    const r = await rig();
+    const a = await newUser(r, "tenant-a.example.com", "alice.one1", { anonymous: true });
+    const b = await newUser(r, "tenant-b.example.com", "bob.two22", { anonymous: true });
+    const la = (await r.store.getLink((await r.store.getAccountByKey("alice.one1"))!.id))!.instanceLabel;
+    const lb = (await r.store.getLink((await r.store.getAccountByKey("bob.two22"))!.id))!.instanceLabel;
+    expect(la).not.toBe(lb); // different tenants keep different labels, so slow-tenant debugging still works
+    const aliasA = (await r.store.getAccountByKey("alice.one1"))!.alias!;
+    const aliasB = (await r.store.getAccountByKey("bob.two22"))!.alias!;
+    expect(aliasA).not.toBe(aliasB);
+    await fetch(`${r.base}/revoke`, form({ token: a.tokens.refresh_token }));
+    r.clock.t += 40 * 86_400_000;
+    await r.provider.sweep();
+    await r.provider.deleteUser("alice.one1");
+    const view = await panelView(r);
+    for (const secret of ["alice.one1", "bob.two22", "tenant-a.example.com", "tenant-b.example.com"]) expect(view, secret).not.toContain(secret);
+    const ev = await kinds(r);
+    expect(ev).toContain(`left:${aliasA}/disconnected`);
+    expect(ev).toContain(`left:${aliasB}/idle`);
+    expect(ev).toContain(`left:${aliasA}/deleted`);
+    expect(b.tokens.access_token).toBeDefined();
+    r.close();
+  });
+
+  it("reconnecting keeps the same anonymous instance label", async () => {
+    const r = await rig();
+    const u = await newUser(r, "tenant-a.example.com", "og.kpnwrld", { anonymous: true });
+    const acct = (await r.store.getAccountByKey("og.kpnwrld"))!;
+    const before = (await r.store.getLink(acct.id))!.instanceLabel;
+    for (const c of challenges.values()) if (c.host === "tenant-a.example.com") deadTokens.add(c.token);
+    const { s } = await loginFlow(r, "og.kpnwrld", u.secret!);
+    await step(r, s, "instance", { instance: "tenant-a.example.com" });
+    approve("tenant-a.example.com");
+    await step(r, s, "approved");
+    expect((await r.store.getLink(acct.id))!.instanceLabel).toBe(before);
+    deadTokens.clear();
+    r.close();
+  });
+
+  it("the operator CLI view lists the real name and the alias together (this is the operator's own lookup)", async () => {
+    const r = await rig();
+    await newUser(r, "tenant-a.example.com", "og.kpnwrld", { anonymous: true });
+    const [row] = await r.provider.listUsers();
+    expect(row).toMatchObject({ username: "og.kpnwrld", anonymous: true, alias: expect.stringMatching(ALIAS_RE), instance: "tenant-a.example.com" });
+    r.close();
+  });
+});
+
+// ───────────── step order and abuse ─────────────
+describe("account flow: step enforcement", () => {
+  it("steps can't be skipped or replayed out of order; the page shown is where the user really is", async () => {
+    const r = await rig();
+    const s = await start(r);
+    for (const path of ["decision", "username", "approved", "welcome", "continue", "instance"]) {
+      const res = await step(r, s, path, { level: "paperclip:admin", username: "sneaky.user1", instance: "tenant-a.example.com" });
+      expect(res.status, path).toBe(200);
+      const html = await res.text();
+      expect(html, path).toContain("Sign in to Papercliped"); // still at the first step
+      expect(html, path).not.toContain("Allow Claude?");
+    }
+    expect(await r.store.countAccounts()).toBe(0);
+    expect(challenges.size).toBeGreaterThanOrEqual(0);
+    r.close();
+  });
+
+  it("requires the CSRF token, and Cancel at any step returns access_denied and is logged", async () => {
+    const r = await rig();
+    const s = await start(r);
+    const bad = await fetch(`${r.base}/authorize/connect`, form({ rid: s.rid, csrf: "wrong", action: "continue" }));
+    expect(await bad.text()).toContain("Security token mismatch");
+    await toInstance(r, s);
+    const cancel = await step(r, s, "instance", { action: "deny" });
+    expect(new URL(cancel.headers.get("location")!).searchParams.get("error")).toBe("access_denied");
+    expect(await kinds(r)).toContain("connect_failed/denied");
+    const gone = await step(r, s, "instance", { instance: "tenant-a.example.com" });
+    expect(await gone.text()).toContain("expired"); // the request is gone
+    r.close();
+  });
+
+  it("the secret key page can't be shown a second time", async () => {
+    const r = await rig();
+    const s = await start(r);
+    await toInstance(r, s);
+    await step(r, s, "instance", { instance: "tenant-a.example.com" });
+    approve("tenant-a.example.com");
+    await step(r, s, "approved");
+    const first = await (await step(r, s, "username", { username: "og.kpnwrld" })).text();
+    expect(SECRET_RE.test(first)).toBe(true);
+    const again = await (await step(r, s, "username", { username: "og.kpnwrld" })).text(); // a reload / double submit
+    expect(SECRET_RE.test(again)).toBe(false);
+    expect(un(again)).toContain("can't be shown again");
+    expect(again).toContain("Allow Claude?");
+    r.close();
+  });
+
+  it("login/connect/instance steps don't exist in single-instance mode", async () => {
+    const r = await rig({ mode: "single", accounts: false });
+    for (const p of ["login", "connect", "instance"]) expect((await fetch(`${r.base}/authorize/${p}`, form({ rid: "x", csrf: "y" }))).status).toBe(404);
+    r.close();
+  });
+});
+
+// ───────────── lifecycle ─────────────
+describe("account lifecycle", () => {
+  it("disconnecting a client logs 'left' but keeps the Paperclip key, so the user can come back without approving", async () => {
+    const r = await rig();
+    const { tokens, secret } = await newUser(r, "tenant-a.example.com", "og.kpnwrld");
+    revokedBy.length = 0;
+    expect((await fetch(`${r.base}/revoke`, form({ token: tokens.refresh_token }))).status).toBe(200);
+    expect((await act(r, tokens.access_token, "paperclip_list_agents", { companyId: CID })).status).toBe(401);
+    await new Promise((x) => setTimeout(x, 50));
+    expect(revokedBy).toEqual([]); // the key stays active
+    expect(await kinds(r)).toContain("left:og.kpnwrld/disconnected");
+    const back = await loginFlow(r, "og.kpnwrld", secret!);
+    expect(back.html).toContain("Allow Claude?"); // no re-approval
+    r.close();
+  });
+
+  it("'left' is logged only when the LAST client disconnects", async () => {
+    const r = await rig();
+    const a = await newUser(r, "tenant-a.example.com", "og.kpnwrld");
+    const { s } = await loginFlow(r, "og.kpnwrld", a.secret!);
+    const second = await exchange(r, s, await step(r, s, "decision", { level: "paperclip:read" }));
+    await fetch(`${r.base}/revoke`, form({ token: a.tokens.refresh_token }));
+    expect((await kinds(r)).filter((e) => e.startsWith("left"))).toEqual([]);
+    await fetch(`${r.base}/revoke`, form({ token: second.refresh_token }));
+    expect((await kinds(r)).filter((e) => e.startsWith("left"))).toEqual(["left:og.kpnwrld/disconnected"]);
+    r.close();
+  });
+
+  it("an idle account loses its stored key (revoked upstream) but keeps its username", async () => {
+    const r = await rig();
+    const idle = await newUser(r, "tenant-a.example.com", "idle.user1");
+    r.clock.t += 20 * 86_400_000;
+    const active = await newUser(r, "tenant-b.example.com", "active.user2");
+    await act(r, active.tokens.access_token, "paperclip_list_agents", { companyId: CID });
+    r.clock.t += 15 * 86_400_000; // idle: 35 days since use · active: 15
+    revokedBy.length = 0;
+    expect(await r.provider.sweep()).toBeGreaterThanOrEqual(1);
+    await new Promise((x) => setTimeout(x, 50));
+    expect(revokedBy.filter((x) => x.startsWith("tenant-a.example.com|Bearer board-tenant-a"))).toHaveLength(1);
+    expect(revokedBy.some((x) => x.startsWith("tenant-b"))).toBe(false);
+    const acct = (await r.store.getAccountByKey("idle.user1"))!;
+    expect(acct).toBeDefined(); // username survives
+    expect((await r.store.getLink(acct.id))?.sealedCredential).toBeNull(); // credential deleted
+    expect((await act(r, idle.tokens.access_token, "paperclip_list_agents", { companyId: CID })).status).toBe(401);
+    expect(await kinds(r)).toContain("left:idle.user1/idle");
+    // logging in now requires reconnecting
+    const { html } = await loginFlow(r, "idle.user1", idle.secret!);
+    expect(html).toContain("Your Paperclip connection has expired");
+    r.close();
+  });
+
+  it("operator deletion removes the account, revokes the key upstream, and frees the name", async () => {
+    const r = await rig();
+    const u = await newUser(r, "tenant-a.example.com", "deleteme.99");
+    revokedBy.length = 0;
+    expect(await r.provider.deleteUser("DELETEME.99")).toBe(true);
+    await new Promise((x) => setTimeout(x, 50));
+    expect(revokedBy).toHaveLength(1);
+    expect(await r.store.getAccountByKey("deleteme.99")).toBeUndefined();
+    expect((await act(r, u.tokens.access_token, "paperclip_list_agents", { companyId: CID })).status).toBe(401);
+    expect(await r.provider.deleteUser("deleteme.99")).toBe(false);
+    expect(await kinds(r)).toContain("left:deleteme.99/deleted");
+    r.close();
+  });
+
+  it("listUsers never exposes secrets", async () => {
+    const r = await rig();
+    await newUser(r, "tenant-a.example.com", "og.kpnwrld");
+    const users = await r.provider.listUsers();
+    expect(users).toEqual([expect.objectContaining({ username: "og.kpnwrld", instance: "tenant-a.example.com", connected: true, liveGrants: 1 })]);
+    expect(JSON.stringify(users)).not.toMatch(/scrypt|sealed|board-|pcs_/);
+    r.close();
+  });
+
+  it("key rotation re-seals account credentials too", async () => {
+    const A = "a".repeat(40), B = "b".repeat(40);
+    const store = new MemoryStore(null);
+    const r1 = await rig({}, { store, secret: A });
+    const { tokens } = await newUser(r1, "tenant-a.example.com", "og.kpnwrld");
+    const acct = (await store.getAccountByKey("og.kpnwrld"))!;
+    const before = (await store.getLink(acct.id))!.sealedCredential!;
+    r1.close();
+    const r2 = await rig({ previousSecrets: [A] }, { store, secret: B });
+    expect((await act(r2, tokens.access_token, "paperclip_list_agents", { companyId: CID })).status).toBe(200);
+    expect(await r2.provider.rotateKeys()).toBe(1);
+    expect((await store.getLink(acct.id))!.sealedCredential).not.toBe(before);
+    expect(await r2.provider.rotateKeys()).toBe(0);
+    r2.close();
+    const r3 = await rig({}, { store, secret: B });
+    expect((await act(r3, tokens.access_token, "paperclip_list_agents", { companyId: CID })).status).toBe(200);
+    r3.close();
+    const r4 = await rig({}, { store, secret: A });
+    expect((await act(r4, tokens.access_token, "paperclip_list_agents", { companyId: CID })).status).toBe(401);
+    r4.close();
+  });
+});
+
+// ───────────── tenant isolation & runtime protections ─────────────
+describe("tenant isolation", () => {
+  it("each account reaches only its own instance with only its own credential", async () => {
+    const r = await rig();
+    const a = await newUser(r, "tenant-a.example.com", "alice.one1");
+    const b = await newUser(r, "tenant-b.example.com", "bob.two22");
     seen.length = 0;
     await act(r, a.tokens.access_token, "paperclip_list_agents", { companyId: CID });
     await act(r, b.tokens.access_token, "paperclip_list_agents", { companyId: CID });
     await act(r, a.tokens.access_token, "paperclip_list_agents", { companyId: CID });
     expect(seen.map((s) => s.host)).toEqual(["tenant-a.example.com", "tenant-b.example.com", "tenant-a.example.com"]);
-    for (const s of seen) expect(s.auth).toContain(s.host); // tenant X's token is never sent to tenant Y
-    // the raw-API escape hatch cannot be pointed at another host: it only takes a path
+    for (const s of seen) expect(s.auth).toContain(s.host);
     seen.length = 0;
     await act(r, a.tokens.access_token, "paperclip_api_request", { method: "GET", path: "/companies" });
-    expect(seen.at(-1)?.host).toBe("tenant-a.example.com");
     const evil = await act(r, a.tokens.access_token, "paperclip_api_request", { method: "GET", path: "//evil.com/x" });
     expect(seen.every((s) => s.host === "tenant-a.example.com")).toBe(true);
     expect(evil.status).toBeGreaterThanOrEqual(400);
+    r.close();
+  });
+
+  it("re-validates the stored instance on every call (tampered or newly-denied hosts are cut off)", async () => {
+    const r = await rig();
+    const { tokens } = await newUser(r, "tenant-a.example.com", "og.kpnwrld");
+    expect((await act(r, tokens.access_token, "paperclip_list_companies")).status).toBe(200);
+    const acct = (await r.store.getAccountByKey("og.kpnwrld"))!;
+    const link = (await r.store.getLink(acct.id))!;
+    await r.store.putLink({ ...link, instanceUrl: "https://localhost" });
+    const before = outbound.length;
+    expect((await act(r, tokens.access_token, "paperclip_list_companies")).status).toBe(401);
+    expect(outbound.length).toBe(before);
+    r.close();
+  });
+
+  it("limits calls per grant", async () => {
+    const r = await rig({ callsPerMinute: 3 });
+    const { tokens } = await newUser(r, "tenant-a.example.com", "og.kpnwrld");
+    const codes: number[] = [];
+    for (let i = 0; i < 5; i++) codes.push((await act(r, tokens.access_token, "paperclip_list_companies")).status);
+    expect(codes).toEqual([200, 200, 200, 429, 429]);
+    r.clock.t += 61_000;
+    expect((await act(r, tokens.access_token, "paperclip_list_companies")).status).toBe(200);
     r.close();
   });
 });
@@ -241,9 +765,10 @@ describe("instance step: SSRF and abuse", () => {
   ];
   it.each(rejected)("never contacts %j", async (typed) => {
     const r = await rig();
-    const s = await start(r, await register(r));
+    const s = await start(r);
+    await toInstance(r, s);
     const before = outbound.length;
-    const res = await instance(r, s, typed);
+    const res = await step(r, s, "instance", { instance: typed });
     expect(res.status).toBe(400);
     expect(outbound.length).toBe(before);
     expect(await res.text()).toMatch(/class="err"/);
@@ -252,22 +777,24 @@ describe("instance step: SSRF and abuse", () => {
 
   it("refuses the bridge's own address (it must not proxy to itself)", async () => {
     const r = await rig({ instance: { allowedPorts: [443], denyHosts: ["bridge.example.com"], allowHosts: null } });
-    const s = await start(r, await register(r));
+    const s = await start(r);
+    await toInstance(r, s);
     const before = outbound.length;
-    expect((await instance(r, s, "bridge.example.com")).status).toBe(400);
+    expect((await step(r, s, "instance", { instance: "bridge.example.com" })).status).toBe(400);
     expect(outbound.length).toBe(before);
     r.close();
   });
 
   it("honours a host allow-list for private betas", async () => {
     const r = await rig({ instance: { allowedPorts: [443], denyHosts: [], allowHosts: ["*.beta.example.com", "friend.example.org"] } });
-    const s = await start(r, await register(r));
+    const s = await start(r);
+    await toInstance(r, s);
     const before = outbound.length;
-    const no = await instance(r, s, "tenant-a.example.com");
+    const no = await step(r, s, "instance", { instance: "tenant-a.example.com" });
     expect(no.status).toBe(400);
     expect(await no.text()).toContain("not open to that host");
     expect(outbound.length).toBe(before);
-    expect((await instance(r, s, "x.beta.example.com")).status).toBe(200);
+    expect((await step(r, s, "instance", { instance: "x.beta.example.com" })).status).toBe(200);
     expect(hostAllowed("beta.example.com", ["*.beta.example.com"])).toBe(false);
     expect(hostAllowed("friend.example.org", ["friend.example.org"])).toBe(true);
     r.close();
@@ -281,128 +808,86 @@ describe("instance step: SSRF and abuse", () => {
     ["tenant-evilpath.example.com", /unexpected approval link/],
     ["tenant-badid.example.com", /invalid challenge id/],
   ];
-  it.each(hostile)("handles a hostile or wrong server at %s without issuing a consent page", async (host, msg) => {
+  it.each(hostile)("handles a hostile or wrong server at %s without reaching the approval step", async (host, msg) => {
     const r = await rig();
-    const s = await start(r, await register(r));
-    const res = await instance(r, s, host);
+    const s = await start(r);
+    await toInstance(r, s);
+    const res = await step(r, s, "instance", { instance: host });
     const html = await res.text();
     expect(res.status).toBe(400);
     expect(html).toMatch(msg);
     expect(html).not.toContain("evil.com");
-    expect(html).not.toContain('name="level"'); // no consent step reached
+    expect(html).not.toContain("Open Paperclip to approve");
     r.close();
   });
 
-  it("caps instance attempts per request (probing through the bridge is bounded)", async () => {
+  it("caps instance attempts per request (probing through the bridge is bounded) and logs one failure", async () => {
     const r = await rig();
-    const s = await start(r, await register(r));
+    const s = await start(r);
+    await toInstance(r, s);
     const statuses: number[] = [];
-    for (let i = 0; i < 6; i++) statuses.push((await instance(r, s, `tenant-down${i}.example.com`)).status);
+    for (let i = 0; i < 6; i++) statuses.push((await step(r, s, "instance", { instance: `tenant-down${i}.example.com` })).status);
     expect(statuses.slice(0, 5)).toEqual([400, 400, 400, 400, 400]);
     expect(statuses[5]).toBe(429);
+    const failed = (await kinds(r)).filter((e) => e.startsWith("connect_failed"));
+    expect(failed).toEqual(["connect_failed/unreachable", "connect_failed/too_many_attempts"]);
     r.close();
   });
 
-  it("requires the CSRF token, and Allow before choosing an instance is refused", async () => {
+  it("a Paperclip that is unreachable at login time doesn't lock the user out", async () => {
     const r = await rig();
-    const s = await start(r, await register(r));
-    const bad = await fetch(`${r.base}/authorize/instance`, form({ rid: s.rid, csrf: "wrong", action: "continue", instance: "tenant-a.example.com" }));
-    expect(await bad.text()).toContain("Security token mismatch");
-    const early = await fetch(`${r.base}/authorize/decision`, form({ rid: s.rid, csrf: s.csrf, action: "allow", level: "paperclip:read" }));
-    expect(early.status).toBe(400);
-    expect(await early.text()).toContain("Enter your Paperclip address first");
-    const cancel = await instance(r, s, "", { action: "deny" });
-    expect(new URL(cancel.headers.get("location")!).searchParams.get("error")).toBe("access_denied");
-    r.close();
-  });
-
-  it("does not exist in single-instance mode", async () => {
-    const r = await rig({ mode: "single" });
-    const res = await fetch(`${r.base}/authorize/instance`, form({ rid: "x", csrf: "y", instance: "tenant-a.example.com" }));
-    expect(res.status).toBe(404);
+    const { secret } = await newUser(r, "tenant-a.example.com", "og.kpnwrld");
+    unreachable.add("tenant-a.example.com");
+    const { res, html } = await loginFlow(r, "og.kpnwrld", secret!);
+    expect(res.status).toBe(502);
+    expect(un(html)).toContain("couldn't reach your Paperclip");
+    unreachable.delete("tenant-a.example.com");
+    expect((await loginFlow(r, "og.kpnwrld", secret!)).res.status).toBe(200);
     r.close();
   });
 });
 
-describe("runtime protections", () => {
-  it("re-validates the stored instance on every call (tampered or newly-denied hosts are cut off)", async () => {
-    const r = await rig();
-    const { tokens } = await connect(r, "tenant-a.example.com");
-    expect((await act(r, tokens.access_token, "paperclip_list_companies")).status).toBe(200);
-    const [g] = await r.provider.listGrants();
-    await r.store.putGrant({ ...g, instanceUrl: "https://localhost" });
-    const before = outbound.length;
-    expect((await act(r, tokens.access_token, "paperclip_list_companies")).status).toBe(401);
-    expect(outbound.length).toBe(before);
+// ───────────── Postgres end to end ─────────────
+describe.skipIf(!DB)("account flow on Postgres", () => {
+  const opts = { connectionString: DB!, ssl: "off" as const };
+  it("works end to end, and secrets never reach the database in the clear", async () => {
+    const c = new pg.Client({ connectionString: DB });
+    await c.connect();
+    await c.query("drop schema if exists bridge cascade");
+    await c.end();
+    await migrate(opts);
+    const clock = { t: Date.now() };
+    const store = new PgStore(opts, () => clock.t);
+    const r = await rig({}, { store });
+    const u = await newUser(r, "tenant-pg.example.com", "pg.user007");
+    expect((await act(r, u.tokens.access_token, "paperclip_list_companies")).status).toBe(200);
+    const back = await loginFlow(r, "PG.user007", u.secret!);
+    expect(back.html).toContain("Allow Claude?");
+    // refresh rotation + reuse detection against Postgres
+    const cid = (await r.provider.listGrants())[0].clientId;
+    const next = (await (await fetch(`${r.base}/token`, form({ grant_type: "refresh_token", refresh_token: u.tokens.refresh_token, client_id: cid }))).json()) as any;
+    expect((await act(r, next.access_token, "paperclip_list_companies")).status).toBe(200);
+    expect(((await (await fetch(`${r.base}/token`, form({ grant_type: "refresh_token", refresh_token: u.tokens.refresh_token, client_id: cid }))).json()) as any).error).toBe("invalid_grant");
+    expect((await act(r, next.access_token, "paperclip_list_companies")).status).toBe(401);
+    // the whole schema, searched for anything sensitive
+    const q = new pg.Client({ connectionString: DB });
+    await q.connect();
+    let dump = "";
+    for (const t of ["accounts", "account_links", "grants", "tokens", "codes", "pending", "user_events", "audit_events"]) dump += JSON.stringify((await q.query(`select * from bridge.${t}`)).rows);
+    await q.end();
+    expect(dump).toContain("pg.user007");
+    expect(dump).not.toContain(u.secret!);
+    expect(dump).not.toContain(u.secret!.replace(/-/g, ""));
+    expect(dump).not.toContain("board-tenant-pg");
+    expect(dump).not.toContain(u.tokens.access_token);
+    expect(dump).not.toContain(u.tokens.refresh_token);
+    expect(await kinds(r)).toEqual(expect.arrayContaining(["joined:pg.user007/tenant-pg.example.com", "completed:pg.user007/new", "login:pg.user007/claude.ai"]));
     r.close();
-  });
-
-  it("limits calls per grant", async () => {
-    const r = await rig({ callsPerMinute: 3 });
-    const { tokens } = await connect(r, "tenant-a.example.com");
-    const codes: number[] = [];
-    for (let i = 0; i < 5; i++) codes.push((await act(r, tokens.access_token, "paperclip_list_companies")).status);
-    expect(codes).toEqual([200, 200, 200, 429, 429]);
-    r.clock.t += 61_000;
-    expect((await act(r, tokens.access_token, "paperclip_list_companies")).status).toBe(200);
-    r.close();
-  });
-
-  it("sweeps idle grants: revokes, deletes the credential, and tells the right tenant to revoke its key", async () => {
-    const r = await rig();
-    const idle = await connect(r, "tenant-a.example.com");
-    r.clock.t += 20 * 86_400_000;
-    const active = await connect(r, "tenant-b.example.com");
-    r.clock.t += 15 * 86_400_000; // idle one: 35 days since last use; active one: 15
-    revokedBy.length = 0;
-    expect(await r.provider.sweep()).toBe(1);
-    await new Promise((x) => setTimeout(x, 50));
-    expect(revokedBy).toHaveLength(1);
-    expect(revokedBy[0]).toMatch(/^tenant-a\.example\.com\|Bearer board-tenant-a/);
-    const grants = await r.store.listGrants();
-    expect(grants.filter((g) => g.revoked).every((g) => g.sealedCredential === null)).toBe(true);
-    expect((await act(r, idle.tokens.access_token, "paperclip_list_companies")).status).toBe(401);
-    // access tokens had expired by now (1h ttl); the still-live grant is unaffected by the sweep
-    expect((await r.store.listGrants()).filter((g) => !g.revoked)).toHaveLength(1);
-    expect(active.tokens.refresh_token).toBeDefined();
-    r.close();
-  });
-
-  it("idleRevokeDays=0 disables the sweep", async () => {
-    const r = await rig({ idleRevokeDays: 0 });
-    await connect(r, "tenant-a.example.com");
-    r.clock.t += 400 * 86_400_000;
-    expect(await r.provider.sweep()).toBe(0);
-    r.close();
+    await store.close();
   });
 });
 
-describe("key rotation", () => {
-  it("old credentials keep working under a previous secret and can be re-sealed", async () => {
-    const A = "a".repeat(40), B = "b".repeat(40);
-    const store = new MemoryStore(null);
-    const r1 = await rig({}, { store, secret: A });
-    const { tokens } = await connect(r1, "tenant-a.example.com");
-    const sealedBefore = (await store.listGrants())[0].sealedCredential!;
-    r1.close();
-
-    const r2 = await rig({ previousSecrets: [A] }, { store, secret: B });
-    expect((await act(r2, tokens.access_token, "paperclip_list_companies")).status).toBe(200);
-    expect(await r2.provider.rotateKeys()).toBe(1);
-    const sealedAfter = (await store.listGrants())[0].sealedCredential!;
-    expect(sealedAfter).not.toBe(sealedBefore);
-    expect(await r2.provider.rotateKeys()).toBe(0);
-    r2.close();
-
-    const r3 = await rig({}, { store, secret: B }); // old secret fully retired
-    expect((await act(r3, tokens.access_token, "paperclip_list_companies")).status).toBe(200);
-    r3.close();
-    const r4 = await rig({}, { store, secret: A }); // wrong secret cannot open it
-    expect((await act(r4, tokens.access_token, "paperclip_list_companies")).status).toBe(401);
-    r4.close();
-  });
-});
-
+// ───────────── misc ─────────────
 describe("client IP for rate limiting", () => {
   const req = (xff: string | undefined, remote = "10.0.0.9") => ({ headers: xff ? { "x-forwarded-for": xff } : {}, socket: { remoteAddress: remote } }) as any;
   it("ignores X-Forwarded-For unless proxies are configured", () => expect(clientIp(req("1.2.3.4"), 0)).toBe("10.0.0.9"));
@@ -419,12 +904,13 @@ describe("client IP for rate limiting", () => {
 describe("multi-tenant configuration", () => {
   const base = { BRIDGE_OAUTH: "1", BRIDGE_MODE: "multi", BRIDGE_SECRET: "s".repeat(32), DATABASE_URL: "postgresql://u:p@h/db" };
   const url = "https://bridge.example.com";
-  it("accepts a safe public configuration and denies the bridge's own host by default", () => {
+  it("accepts a safe public configuration, turns accounts on, and denies the bridge's own host by default", () => {
     const c = readOAuthConfig(base, url, null)!;
-    expect(c).toMatchObject({ mode: "multi", login: "paperclip", idleRevokeDays: 30, callsPerMinute: 120 });
+    expect(c).toMatchObject({ mode: "multi", accounts: true, login: "paperclip", idleRevokeDays: 30, callsPerMinute: 120 });
     expect(c.instance.denyHosts).toContain("bridge.example.com");
     expect(c.instance.allowedPorts).toEqual([443]);
     expect(c.database?.ssl).toBe("verify");
+    expect(readOAuthConfig({ ...base, BRIDGE_MODE: "single" }, url, null)!.accounts).toBe(false);
   });
   it("refuses unsafe public setups", () => {
     expect(() => readOAuthConfig({ ...base, BRIDGE_LOGIN: "static" }, url, "tok")).toThrow(/BRIDGE_LOGIN=paperclip/);

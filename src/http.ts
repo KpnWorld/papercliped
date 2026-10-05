@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import { readConfig, readHttpConfig } from "./config.js";
-import { AdminRoutes } from "./admin/routes.js";
 import { migrate } from "./migrate.js";
 import { OAuthProvider } from "./oauth/provider.js";
 import { createHttpServer } from "./server.js";
 import { createStore } from "./store-factory.js";
-import { AuditRecorder, SystemSampler } from "./telemetry/recorder.js";
+import { AuditRecorder, NodeReporter, SystemSampler } from "./telemetry/recorder.js";
 import { MemoryStore } from "./oauth/store.js";
 
 const SWEEP_EVERY_MS = 60 * 60 * 1000;
+const KEEPALIVE_EVERY_MS = 10 * 60 * 1000;
 
 async function main() {
   const config = readConfig();
@@ -24,7 +24,7 @@ async function main() {
     process.exit(1);
   }
 
-  // One store serves OAuth state, audit telemetry and (via the recorder) the dashboard.
+  // One store serves OAuth state, accounts and audit telemetry; the operator panel is a separate program that reads it.
   const store = http.oauth ? createStore(http.oauth) : new MemoryStore();
   try {
     await store.ping();
@@ -48,34 +48,42 @@ async function main() {
   recorder.start();
   const sampler = new SystemSampler(store);
   sampler.start();
-  const admin = http.admin
-    ? new AdminRoutes({
-        token: http.admin.token,
-        sessionHours: http.admin.sessionHours,
-        secureCookie: !!http.publicUrl?.startsWith("https:"),
-        store,
-        recorder,
-        sampler,
-        slowMs: http.audit.slowMs,
-        liveGrants: provider ? async () => (await provider.listGrants()).length : undefined,
-        mode: http.oauth ? `oauth ${http.oauth.mode}` : "token",
-        persistent: !!http.oauth?.database,
-        proxyHops: http.oauth?.proxyHops ?? 0,
-      })
-    : null;
+  const reporter = new NodeReporter(store, sampler, recorder.node);
+  reporter.start();
 
-  const server = createHttpServer(config, http, { oauth: provider, recorder, admin });
+  const server = createHttpServer(config, http, { oauth: provider, recorder });
   server.listen(http.port, http.host, () => {
     const o = http.oauth;
     console.error(
       `paperclip-bridge listening on http://${http.host}:${http.port}` +
         (o ? ` [oauth ${o.mode}${o.mode === "single" ? `, ${o.login} login → ${config.apiUrl}` : ""}, store: ${o.database ? "postgres" : o.dataFile ? "file" : "memory"}, issuer ${o.issuer}]` : ` → ${config.apiUrl}`) +
-        (config.readOnly ? " [read-only]" : "") +
-        (admin ? " [dashboard: /admin]" : ""),
+        (config.readOnly ? " [read-only]" : ""),
     );
   });
 
   let sweeper: NodeJS.Timeout | undefined;
+  // Free tiers: Supabase pauses an idle project and Render spins a quiet service down. A periodic write keeps the database
+  // active; the self-ping keeps Render awake while it is up (an external pinger is what wakes it from sleep — docs/LAUNCH.md).
+  const beat = async () => {
+    try {
+      await store.heartbeat();
+    } catch (e) {
+      console.error("heartbeat failed:", (e as Error).message);
+    }
+    if (keepalive) {
+      try {
+        const r = await fetch(`${http.publicUrl}/healthz`, { signal: AbortSignal.timeout(15_000) });
+        await r.arrayBuffer();
+      } catch {
+        /* a failed self-ping is harmless */
+      }
+    }
+  };
+  const keepalive = !!http.publicUrl?.startsWith("https:") && !/^(0|false|no|off)$/i.test(process.env.BRIDGE_KEEPALIVE ?? "1");
+  const beater = setInterval(() => void beat(), KEEPALIVE_EVERY_MS);
+  beater.unref();
+  void beat();
+
   const run = async () => {
     try {
       const n = provider ? await provider.sweep() : 0;
@@ -94,6 +102,8 @@ async function main() {
     console.error(`${sig}: shutting down`);
     if (sweeper) clearInterval(sweeper);
     sampler.stop();
+    reporter.stop();
+    clearInterval(beater);
     server.close(() => void recorder.stop().finally(() => store.close()).finally(() => process.exit(0)));
     setTimeout(() => process.exit(0), 10_000).unref(); // don't hang a deploy on a stuck keep-alive
   };

@@ -1,0 +1,10 @@
+name = "papercliped-keepalive"
+main = "keepalive-worker.js"
+compatibility_date = "2025-01-01"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+# /readyz checks the database too, so each ping also counts as Supabase activity.
+TARGET_URL = "https://papercliped.kpnsolute.com/readyz"

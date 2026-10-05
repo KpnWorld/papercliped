@@ -1,6 +1,6 @@
 {
-  "name": "paperclip",
-  "version": "0.1.0",
+  "name": "papercliped",
+  "version": "1.0.0-beta.1",
   "description": "Control Paperclip agents, sync with them, and pull reports from Claude.",
   "author": { "name": "KpnWorld" },
   "license": "MIT",

@@ -8,6 +8,8 @@ const USAGE = `paperclip-bridge-admin <command>
 
   schema-sql     print ONE paste-able SQL script (all migrations) for the Supabase SQL editor
   migrate        apply database migrations (uses DATABASE_MIGRATE_URL if set, else DATABASE_URL; needs a direct/session connection)
+  users          list accounts: real username, alias (if anonymous), when last signed in (OPERATOR ONLY: this un-masks aliases)
+  delete-user <username>  delete an account, its stored credential and grants (asks that Paperclip to revoke the key)
   grants         list live grants (no secrets are shown)
   revoke <id>    revoke one grant and delete its stored credential
   sweep          revoke grants idle longer than BRIDGE_IDLE_REVOKE_DAYS
@@ -29,7 +31,7 @@ async function main() {
     console.log(applied.length ? `applied: ${applied.join(", ")}` : "database is up to date");
     return;
   }
-  if (!["grants", "revoke", "revoke-all", "sweep", "rotate-keys"].includes(cmd ?? "")) {
+  if (!["users", "delete-user", "grants", "revoke", "revoke-all", "sweep", "rotate-keys"].includes(cmd ?? "")) {
     console.error(USAGE);
     process.exit(cmd ? 2 : 0);
   }
@@ -37,7 +39,14 @@ async function main() {
   if (!http.oauth) throw new Error("BRIDGE_OAUTH=1 and its settings are required for this command");
   const provider = new OAuthProvider({ config: readConfig(), oauth: http.oauth, bridgeToken: http.bridgeToken, store: createStore(http.oauth) });
   try {
-    if (cmd === "grants") {
+    if (cmd === "users") {
+      for (const a of await provider.store.listAccounts(1000)) {
+        console.log([a.username, a.anonymous ? `anonymous as ${a.alias}` : "public", a.disabled ? "disabled" : "active", a.lastLoginAt ? `last login ${new Date(a.lastLoginAt).toISOString()}` : "never signed in"].join("\t"));
+      }
+    } else if (cmd === "delete-user") {
+      if (!arg) throw new Error("usage: delete-user <username>");
+      console.log((await provider.deleteUser(arg)) ? `deleted ${arg}` : `no such user: ${arg}`);
+    } else if (cmd === "grants") {
       for (const g of await provider.listGrants()) {
         console.log([g.id, g.clientName, g.instanceUrl ?? "-", g.scopes.join(","), `last used ${new Date(g.lastUsedAt).toISOString()}`].join("\t"));
       }

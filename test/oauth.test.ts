@@ -105,6 +105,7 @@ async function rig(over: Partial<OAuthConfig> = {}, extra: { dataFile?: string; 
     redirectHosts: ["claude.ai", "chatgpt.com"],
     previousSecrets: [],
     mode: "single",
+    accounts: false,
     database: null,
     idleRevokeDays: 30,
     callsPerMinute: 120,
@@ -556,11 +557,11 @@ describe("coexistence and persistence", () => {
     const g = await p2.authenticate(tokens.access_token);
     expect(g).not.toBeNull();
     seenAuth.length = 0;
-    await p2.clientFor(g!).get(`/companies/${CID}/agents`);
+    await (await p2.clientFor(g!)).get(`/companies/${CID}/agents`);
     expect(seenAuth.at(-1)).toMatch(/^Bearer board-tok-/);
     // a different secret cannot unseal it
     const p3 = new OAuthProvider({ config, oauth: { ...r2.oauth, secret: "z".repeat(40) }, bridgeToken: "x", store });
-    expect(() => p3.clientFor((g as any))).toThrow(/no longer has/);
+    await expect(p3.clientFor(g as any)).rejects.toThrow(/no longer has/);
     r2.close();
   });
 });

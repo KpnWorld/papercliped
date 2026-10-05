@@ -1,23 +1,28 @@
 import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { safeEqual, randomToken } from "../oauth/crypto.js";
-import type { SystemSampler, AuditRecorder } from "../telemetry/recorder.js";
-import type { AuditRow, AuditStore } from "../telemetry/types.js";
-import { adminPage, loginPage } from "./page.js";
+import { randomToken, safeEqual } from "../oauth/crypto.js";
+import type { PanelData } from "../oauth/store.js";
+import type { NodeSample } from "../accounts/types.js";
+import type { AuditRow } from "../telemetry/types.js";
+import { loginPage, panelPage } from "./page.js";
 
-export interface AdminDeps {
+export interface PanelDeps {
   token: string;
   sessionHours: number;
   secureCookie: boolean;
-  store: AuditStore & { hit(key: string, limit: number, windowMs: number): Promise<boolean> };
-  recorder: AuditRecorder;
-  sampler: SystemSampler;
+  /** Read-only data access. In production this is the Postgres read-only role; in demos and tests an in-memory store. */
+  store: PanelData;
+  /** p95 above this marks the system "degraded" (3× = critical). */
   slowMs: number;
-  /** Live connection count (cached by the caller if expensive). */
-  liveGrants?: () => Promise<number | null>;
+  /** Name used in the log lines: "og.kpnwrld - joined <name>". */
+  communityName?: string;
   mode: string;
   persistent: boolean;
   proxyHops?: number;
+  /** Process-local throttle for the sign-in form (the panel's role can't write to the database). */
+  limit: (key: string, n: number, windowMs: number) => boolean;
+  /** This panel's own database round-trip, measured by the panel. */
+  panelPingMs?: () => number | null;
   now?: () => number;
 }
 
@@ -33,7 +38,10 @@ export const WINDOWS: Record<string, [number, number]> = {
 
 export type Health = { state: "healthy" | "degraded" | "critical" | "idle"; reasons: string[] };
 
-export function assessHealth(i: { count: number; faults: number; p95: number; dbPingMs: number | null; dbFailures: number; loopLagP99Ms: number; slowMs: number; recentDbFailed: boolean }): Health {
+/** The bridge reports every 30 s. Silence for this long means it is down, asleep (free tier), or cannot reach the database. */
+export const BRIDGE_SILENT_MS = 120_000;
+
+export function assessHealth(i: { count: number; faults: number; p95: number; dbPingMs: number | null; loopLagP99Ms: number; slowMs: number; recentDbFailed: boolean; /** ms since the bridge last reported; null = it never has */ bridgeSilentMs: number | null }): Health {
   const reasons: string[] = [];
   let level = 0;
   const bump = (l: number, why: string) => {
@@ -47,6 +55,8 @@ export function assessHealth(i: { count: number; faults: number; p95: number; db
     if (i.p95 >= i.slowMs * 3) bump(2, `p95 latency ${Math.round(i.p95)} ms`);
     else if (i.p95 >= i.slowMs) bump(1, `p95 latency ${Math.round(i.p95)} ms`);
   }
+  if (i.bridgeSilentMs === null) bump(1, "no bridge has reported yet");
+  else if (i.bridgeSilentMs > BRIDGE_SILENT_MS) bump(2, `the bridge has not reported for ${Math.round(i.bridgeSilentMs / 1000)} s (asleep, down, or cannot reach the database)`);
   if (i.recentDbFailed) bump(2, "database ping is failing");
   else if (i.dbPingMs != null && i.dbPingMs >= 1000) bump(2, `database ping ${Math.round(i.dbPingMs)} ms`);
   else if (i.dbPingMs != null && i.dbPingMs >= 250) bump(1, `database ping ${Math.round(i.dbPingMs)} ms`);
@@ -56,14 +66,14 @@ export function assessHealth(i: { count: number; faults: number; p95: number; db
   return { state: level === 2 ? "critical" : "degraded", reasons };
 }
 
-const COOKIE = "pcb_admin";
+const COOKIE = "pcp_panel";
 
-export class AdminRoutes {
+export class PanelRoutes {
   private key: Buffer;
   private now: () => number;
   private grantsCache: { at: number; v: number | null } = { at: 0, v: null };
 
-  constructor(private d: AdminDeps) {
+  constructor(private d: PanelDeps) {
     this.key = Buffer.from(hkdfSync("sha256", d.token, "paperclip-bridge", "admin-session-v1", 32));
     this.now = d.now ?? Date.now;
   }
@@ -110,29 +120,31 @@ export class AdminRoutes {
   }
 
   private cookie(value: string, maxAgeSec: number): string {
-    return `${COOKIE}=${value}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}${this.d.secureCookie ? "; Secure" : ""}`;
+    return `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}${this.d.secureCookie ? "; Secure" : ""}`;
   }
 
   async handle(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     const p = url.pathname;
-    if (p !== "/admin" && !p.startsWith("/admin/")) return false;
     const m = req.method ?? "GET";
 
-    if (m === "POST" && p === "/admin/login") return this.login(req, res);
-    if (m === "POST" && p === "/admin/logout") return this.send(res, 303, "", "text/plain", { Location: "/admin", "Set-Cookie": this.cookie("", 0) });
+    if (p === "/healthz") return this.json(res, 200, { ok: true });
+    if (m === "POST" && p === "/login") return this.login(req, res);
+    if (m === "POST" && p === "/logout") return this.send(res, 303, "", "text/plain", { Location: "/", "Set-Cookie": this.cookie("", 0) });
 
     const authed = this.sessionValid(req);
-    if (m === "GET" && (p === "/admin" || p === "/admin/")) {
-      return authed ? this.html(res, 200, (n) => adminPage(n, { slowMs: this.d.slowMs })) : this.html(res, 200, (n) => loginPage(n));
+    if (m === "GET" && (p === "/" || p === "/index.html")) {
+      return authed ? this.html(res, 200, (n) => panelPage(n, { slowMs: this.d.slowMs })) : this.html(res, 200, (n) => loginPage(n));
     }
-    if (!authed) return this.json(res, 401, { error: "Sign in at /admin" });
-    if (m === "GET" && p === "/admin/api/summary") return this.summary(res, url);
-    if (m === "GET" && p === "/admin/api/events") return this.events(res, url);
+    if (!p.startsWith("/api/")) return this.json(res, 404, { error: "Not found" });
+    if (!authed) return this.json(res, 401, { error: "Sign in first" });
+    if (m === "GET" && p === "/api/summary") return this.summary(res, url);
+    if (m === "GET" && p === "/api/events") return this.events(res, url);
+    if (m === "GET" && p === "/api/community/events") return this.communityEvents(res, url);
     return this.json(res, 404, { error: "Not found" });
   }
 
   private async login(req: IncomingMessage, res: ServerResponse): Promise<true> {
-    if (!(await this.d.store.hit(`admin-login:${this.ip(req)}`, 5, 60_000))) {
+    if (!this.d.limit(`panel-login:${this.ip(req)}`, 5, 60_000)) {
       return this.html(res, 429, (n) => loginPage(n, "Too many attempts. Wait a minute."));
     }
     let body = "";
@@ -144,13 +156,12 @@ export class AdminRoutes {
     if (!safeEqual(token, this.d.token)) return this.html(res, 401, (n) => loginPage(n, "Incorrect token."));
     const maxAge = this.d.sessionHours * 3600;
     const expSec = Math.floor(this.now() / 1000) + maxAge;
-    return this.send(res, 303, "", "text/plain", { Location: "/admin", "Set-Cookie": this.cookie(this.sign(expSec), maxAge) });
+    return this.send(res, 303, "", "text/plain", { Location: "/", "Set-Cookie": this.cookie(this.sign(expSec), maxAge) });
   }
 
   private async grants(): Promise<number | null> {
-    if (!this.d.liveGrants) return null;
     if (this.now() - this.grantsCache.at > 10_000) {
-      this.grantsCache = { at: this.now(), v: await this.d.liveGrants().catch(() => null) };
+      this.grantsCache = { at: this.now(), v: await this.d.store.liveGrantCount().catch(() => null) };
     }
     return this.grantsCache.v;
   }
@@ -164,7 +175,7 @@ export class AdminRoutes {
     const from = to - span;
     const S = this.d.store;
     try {
-      const [totals, prev, series, histogram, byTool, byInstance, byError, slowest, httpTotals, httpByRoute, httpSeries, live] = await Promise.all([
+      const [totals, prev, series, histogram, byTool, byInstance, byError, slowest, httpTotals, httpByRoute, httpSeries, live, byUser, userCounts, userSeries, activeUsers, totalUsers] = await Promise.all([
         S.auditTotals("tool", from, to),
         S.auditTotals("tool", from - span, from),
         S.auditSeries("tool", from, to, bucketMs),
@@ -177,18 +188,29 @@ export class AdminRoutes {
         S.auditBreakdown("http", "name", from, to, 20),
         S.auditSeries("http", from, to, bucketMs),
         this.grants(),
+        S.auditBreakdown("tool", "username", from, to, 50),
+        S.userEventCounts(from, to),
+        S.userEventSeries(from, to, bucketMs),
+        S.auditActiveUsers(from, to),
+        S.countAccounts(),
       ]);
-      const system = this.d.sampler.snapshot();
-      const rec = this.d.recorder.stats();
+      const started = userCounts.byKind.started ?? 0;
+      const completed = userCounts.byKind.completed ?? 0;
+      const nowMs = this.now();
+      const samples = await this.d.store.nodeSamples(nowMs - 15 * 60_000);
+      const nodes = latestPerNode(samples, nowMs);
+      const newest = nodes.length ? Math.min(...nodes.map((n) => n.ageMs)) : null;
+      const pings = samples.filter((x) => x.dbPingMs != null).slice(0, 12).map((x) => x.dbPingMs as number).reverse();
+      const lead = nodes[0];
       const health = assessHealth({
         count: totals.count,
         faults: totals.faults,
         p95: totals.p95,
-        dbPingMs: system.dbPingMs,
-        dbFailures: system.dbFailures,
-        loopLagP99Ms: system.loopLagP99Ms,
+        dbPingMs: lead?.dbPingMs ?? null,
+        loopLagP99Ms: Math.max(0, ...nodes.filter((n) => n.ageMs <= BRIDGE_SILENT_MS).map((n) => n.loopLagP99Ms)),
         slowMs: this.d.slowMs,
-        recentDbFailed: system.recentPing.slice(-3).length > 0 && system.recentPing.slice(-3).every((x) => x == null),
+        recentDbFailed: samples.slice(0, 3).length > 0 && samples.slice(0, 3).every((x) => x.dbPingMs == null),
+        bridgeSilentMs: newest,
       });
       return this.json(res, 200, {
         window: win,
@@ -207,11 +229,33 @@ export class AdminRoutes {
         byError,
         slowest: slowest.map(rowJson),
         http: { totals: httpTotals, byRoute: httpByRoute, series: httpSeries },
-        system: { ...system, node: this.d.recorder.node, mode: this.d.mode, persistent: this.d.persistent, liveGrants: live },
-        recorder: rec,
+        community: {
+          name: this.d.communityName ?? "cliped",
+          totalUsers,
+          activeUsers,
+          counts: userCounts.byKind,
+          failures: userCounts.failures,
+          series: userSeries,
+          byUser,
+          // Flows that were started but never finished (abandoned) count against the rate: that is what a visitor experienced.
+          successRate: started > 0 ? Math.min(1, completed / started) : null,
+        },
+        system: { nodes, bridgeSilentMs: newest, bridgeSilentAfterMs: BRIDGE_SILENT_MS, recentPing: pings, mode: this.d.mode, persistent: this.d.persistent, liveGrants: live, panelPingMs: this.d.panelPingMs?.() ?? null },
       });
     } catch (e) {
       return this.json(res, 500, { error: `Could not read telemetry: ${(e as Error).message}` });
+    }
+  }
+
+  private async communityEvents(res: ServerResponse, url: URL): Promise<true> {
+    const after = Math.max(0, Number(url.searchParams.get("after")) || 0);
+    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit")) || 60));
+    try {
+      // `started` / `completed` are counters, not log lines; the feed is the human-readable stream.
+      const rows = (await this.d.store.userEventsRecent(after, limit * 3)).filter((e) => !["started", "completed"].includes(e.kind)).slice(0, limit);
+      return this.json(res, 200, { name: this.d.communityName ?? "cliped", events: rows.map((e) => ({ id: e.id, at: e.at, kind: e.kind, username: e.username, detail: e.detail })) });
+    } catch (e) {
+      return this.json(res, 500, { error: `Could not read community events: ${(e as Error).message}` });
     }
   }
 
@@ -226,6 +270,13 @@ export class AdminRoutes {
       return this.json(res, 500, { error: `Could not read events: ${(e as Error).message}` });
     }
   }
+}
+
+/** The newest reading from each bridge process that reported recently. */
+export function latestPerNode(samples: NodeSample[], nowMs: number) {
+  const m = new Map<string, NodeSample>();
+  for (const x of samples) if (!m.has(x.node) || x.at > m.get(x.node)!.at) m.set(x.node, x);
+  return [...m.values()].sort((a, b) => b.at - a.at).map((x) => ({ node: x.node, version: x.version, at: x.at, ageMs: Math.max(0, nowMs - x.at), dbPingMs: x.dbPingMs, loopLagP99Ms: x.loopLagP99Ms, rssMb: x.rssMb, heapMb: x.heapMb, uptimeS: x.uptimeS }));
 }
 
 function rowJson(r: AuditRow) {

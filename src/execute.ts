@@ -16,7 +16,7 @@ export function isMutation(tool: ToolDef, input: Record<string, unknown>): boole
 export interface ExecOptions {
   /** When set, the caller is limited to these scopes. Omitted = unrestricted (stdio / static token). */
   scopes?: readonly string[];
-  actor?: { id: string; client?: string; userId?: string | null; instance?: string };
+  actor?: { id: string; client?: string; userId?: string | null; instance?: string; username?: string };
   audit?: (e: AuditEvent) => void;
 }
 
@@ -50,6 +50,7 @@ export async function executeTool(
       client: opts.actor?.client,
       userId: opts.actor?.userId,
       instance: opts.actor?.instance,
+      username: opts.actor?.username,
       scope,
       totalMs: Math.round(performance.now() - started),
       upstreamMs: Math.round(unionMs(timer.intervals)),

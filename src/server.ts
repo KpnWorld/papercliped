@@ -7,7 +7,6 @@ import { createMcpServer } from "./mcp.js";
 import { safeEqual } from "./oauth/crypto.js";
 import { OAuthProvider } from "./oauth/provider.js";
 import { buildOpenApi } from "./openapi.js";
-import type { AdminRoutes } from "./admin/routes.js";
 import type { AuditRecorder } from "./telemetry/recorder.js";
 
 const MAX_BODY_BYTES = 1_000_000;
@@ -20,8 +19,6 @@ export interface ServerOptions {
   audit?: (e: AuditEvent) => void;
   /** Persists tool-call and HTTP events for the dashboard. */
   recorder?: AuditRecorder;
-  /** Operator dashboard at /admin. */
-  admin?: AdminRoutes | null;
 }
 
 /** Route groups worth measuring. Health checks, discovery documents and the dashboard itself are excluded. */
@@ -61,7 +58,7 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
 }
 
 /** Who is calling the protected endpoints. */
-type Principal = { kind: "static" } | { kind: "oauth"; grantId: string; client: string; userId: string | null; instance?: string; scopes: string[]; paperclip: PaperclipClient };
+type Principal = { kind: "static" } | { kind: "oauth"; grantId: string; client: string; userId: string | null; username?: string; instance?: string; scopes: string[]; paperclip: PaperclipClient };
 
 export function createHttpServer(config: BridgeConfig, http: HttpConfig, opts: ServerOptions = {}): Server {
   const baseClient = opts.client ?? new PaperclipClient(config);
@@ -81,24 +78,19 @@ export function createHttpServer(config: BridgeConfig, http: HttpConfig, opts: S
     const grant = oauth ? await oauth.authenticate(token) : null;
     if (!grant || !oauth) return null;
     let paperclip: PaperclipClient;
-    try {
-      paperclip = oauth.clientFor(grant);
-    } catch {
-      return null; // unreadable credential or instance no longer allowed: treat as an invalid token
-    }
     let instance: string | undefined;
     try {
-      instance = grant.instanceUrl ? new URL(grant.instanceUrl).host : undefined;
+      ({ client: paperclip, instanceHost: instance } = await oauth.resolveClient(grant));
     } catch {
-      instance = undefined;
+      return null; // unreadable credential, expired connection, or instance no longer allowed: an invalid token (the user reconnects)
     }
-    return { kind: "oauth", grantId: grant.id, client: grant.clientName, userId: grant.userId, instance, scopes: grant.scopes, paperclip };
+    return { kind: "oauth", grantId: grant.id, client: grant.clientName, userId: grant.userId, username: grant.username ?? undefined, instance, scopes: grant.scopes, paperclip };
   }
 
   const execFor = (p: Principal): { client: PaperclipClient; exec: ExecOptions } =>
     p.kind === "static"
       ? { client: baseClient, exec: { actor: { id: "static-token" }, audit } }
-      : { client: p.paperclip, exec: { scopes: p.scopes, actor: { id: p.grantId, client: p.client, userId: p.userId, instance: p.instance }, audit } };
+      : { client: p.paperclip, exec: { scopes: p.scopes, actor: { id: p.grantId, client: p.client, userId: p.userId, instance: p.instance, username: p.username }, audit } };
 
   const unauthorized = (res: ServerResponse, invalid: boolean) => {
     const challenge = oauth ? oauth.challengeHeader(invalid ? "invalid_token" : undefined) : "Bearer";
@@ -119,8 +111,6 @@ export function createHttpServer(config: BridgeConfig, http: HttpConfig, opts: S
           opts.recorder!.record({ ts: new Date().toISOString(), kind: "http", tool: group, mutation: false, ok: status < 400, status, errorClass: status < 400 ? undefined : httpErrorClass(status), actor: "http", totalMs: Math.round(performance.now() - started) });
         });
       }
-
-      if (opts.admin && (await opts.admin.handle(req, res, url))) return;
 
       if (path === "/healthz") return json(res, 200, { ok: true, readOnly: config.readOnly, oauth: !!oauth });
       if (path === "/readyz") {

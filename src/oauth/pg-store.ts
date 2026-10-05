@@ -1,6 +1,7 @@
 import pg from "pg";
+import { AliasTakenError, type Account, type AccountLink, type NodeSample, type PrivacyChange, type UserEvent, type UserEventBucket } from "../accounts/types.js";
 import { FAULT_CLASSES, HIST_EDGES, type AuditRow, type BreakdownRow, type SeriesBucket, type Totals } from "../telemetry/types.js";
-import type { CodeRecord, CodeTake, Grant, OAuthClient, PendingRecord, Store, TokenRecord } from "./store.js";
+import type { CodeRecord, CodeTake, Grant, OAuthClient, PendingRecord, Store, TokenRecord, UserCounts } from "./store.js";
 
 const MAX_CLIENTS = 1000;
 const CLIENT_IDLE_MS = 7 * 24 * 3600 * 1000;
@@ -34,6 +35,8 @@ const toGrant = (r: any): Grant => ({
   resource: r.resource,
   instanceUrl: r.instance_url,
   sealedCredential: r.sealed_credential,
+  accountId: r.account_id ?? null,
+  username: r.username ?? null,
   createdAt: num(r.created_at),
   lastUsedAt: num(r.last_used_at),
   revoked: r.revoked,
@@ -45,11 +48,11 @@ const toGrant = (r: any): Grant => ({
  * Works through Supabase's transaction pooler (no prepared statements or session state are used).
  */
 export class PgStore implements Store {
-  private pool: pg.Pool;
+  protected pool: pg.Pool;
 
   constructor(
     opts: PgOptions | pg.Pool,
-    private now: () => number = Date.now,
+    protected now: () => number = Date.now,
   ) {
     this.pool =
       opts instanceof pg.Pool
@@ -58,7 +61,7 @@ export class PgStore implements Store {
     this.pool.on("error", (e) => console.error("postgres pool error:", e.message));
   }
 
-  private q = (text: string, params: unknown[] = []) => this.pool.query(text, params);
+  protected q = (text: string, params: unknown[] = []) => this.pool.query(text, params);
 
   async putClient(c: OAuthClient) {
     await this.q(
@@ -90,10 +93,10 @@ export class PgStore implements Store {
 
   async putGrant(g: Grant) {
     await this.q(
-      `insert into bridge.grants (id, client_id, client_name, user_id, scopes, resource, instance_url, sealed_credential, created_at, last_used_at, revoked)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      `insert into bridge.grants (id, client_id, client_name, user_id, scopes, resource, instance_url, sealed_credential, created_at, last_used_at, revoked, account_id, username)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        on conflict (id) do update set sealed_credential = excluded.sealed_credential, scopes = excluded.scopes, revoked = excluded.revoked, last_used_at = excluded.last_used_at`,
-      [g.id, g.clientId, g.clientName, g.userId, g.scopes, g.resource, g.instanceUrl, g.sealedCredential, g.createdAt, g.lastUsedAt, g.revoked],
+      [g.id, g.clientId, g.clientName, g.userId, g.scopes, g.resource, g.instanceUrl, g.sealedCredential, g.createdAt, g.lastUsedAt, g.revoked, g.accountId ?? null, g.username ?? null],
     );
   }
   async getGrant(id: string) {
@@ -204,15 +207,196 @@ export class PgStore implements Store {
     await this.pruneClients();
   }
 
+  // ───────────── accounts ─────────────
+
+  private static toAccount(x: any): Account {
+    return { id: x.id, username: x.username, usernameKey: x.username_key, secretHash: x.secret_hash, createdAt: num(x.created_at), lastLoginAt: x.last_login_at == null ? null : num(x.last_login_at), disabled: x.disabled, anonymous: !!x.anonymous, alias: x.alias ?? null };
+  }
+  private static toLink(x: any): AccountLink {
+    return { accountId: x.account_id, instanceUrl: x.instance_url, paperclipUserId: x.paperclip_user_id, sealedCredential: x.sealed_credential, createdAt: num(x.created_at), connectedAt: num(x.connected_at), lastUsedAt: num(x.last_used_at), instanceLabel: x.instance_label ?? null };
+  }
+
+  async createAccount(a: Account) {
+    try {
+      const r = await this.q(
+        "insert into bridge.accounts (id, username, username_key, secret_hash, created_at, last_login_at, disabled, anonymous, alias) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict (username_key) do nothing returning id",
+        [a.id, a.username, a.usernameKey, a.secretHash, a.createdAt, a.lastLoginAt, a.disabled, !!a.anonymous, a.alias ?? null],
+      );
+      return r.rowCount === 1;
+    } catch (e) {
+      if ((e as { code?: string; constraint?: string }).code === "23505" && (e as { constraint?: string }).constraint === "accounts_alias_idx") throw new AliasTakenError(a.alias ?? "");
+      throw e;
+    }
+  }
+  async setAccountPrivacy(id: string, c: PrivacyChange) {
+    const cl = await this.pool.connect();
+    try {
+      await cl.query("begin");
+      const r = await cl.query("update bridge.accounts set anonymous = $2, alias = $3 where id = $1 returning id", [id, c.anonymous, c.alias]);
+      if (!r.rowCount) {
+        await cl.query("rollback");
+        return "missing" as const;
+      }
+      await cl.query("update bridge.account_links set instance_label = $2 where account_id = $1", [id, c.instanceLabel]);
+      await cl.query("update bridge.grants set username = $2 where account_id = $1", [id, c.display]);
+      await cl.query("update bridge.user_events set username = $2, detail = case when detail = $3 then $4 else detail end where account_id = $1", [id, c.display, c.prevInstanceLabel, c.instanceLabel]);
+      await cl.query("update bridge.audit_events set username = $1, instance = case when instance = $2 then $3 else instance end where username = $4", [c.display, c.prevInstanceLabel, c.instanceLabel, c.prevDisplay]);
+      await cl.query("commit");
+      return "ok" as const;
+    } catch (e) {
+      await cl.query("rollback").catch(() => {});
+      if ((e as { code?: string }).code === "23505") return "alias_taken" as const;
+      throw e;
+    } finally {
+      cl.release();
+    }
+  }
+  async getAccountByKey(usernameKey: string) {
+    const r = await this.q("select * from bridge.accounts where username_key = $1", [usernameKey]);
+    return r.rows[0] ? PgStore.toAccount(r.rows[0]) : undefined;
+  }
+  async getAccount(id: string) {
+    const r = await this.q("select * from bridge.accounts where id = $1", [id]);
+    return r.rows[0] ? PgStore.toAccount(r.rows[0]) : undefined;
+  }
+  async setAccountSecret(id: string, secretHash: string) {
+    await this.q("update bridge.accounts set secret_hash = $2 where id = $1", [id, secretHash]);
+  }
+  async touchAccountLogin(id: string, at: number) {
+    await this.q("update bridge.accounts set last_login_at = $2 where id = $1", [id, at]);
+  }
+  async countAccounts() {
+    return num((await this.q("select count(*) as n from bridge.accounts")).rows[0].n);
+  }
+  async listAccounts(limit: number) {
+    return (await this.q("select * from bridge.accounts order by created_at limit $1", [limit])).rows.map(PgStore.toAccount);
+  }
+  async deleteAccount(id: string) {
+    const c = await this.pool.connect();
+    try {
+      await c.query("begin");
+      const link = await c.query("select instance_url, sealed_credential from bridge.account_links where account_id = $1 for update", [id]);
+      const acct = await c.query("select id from bridge.accounts where id = $1 for update", [id]);
+      if (!acct.rowCount) {
+        await c.query("rollback");
+        return null;
+      }
+      await c.query("delete from bridge.tokens where grant_id in (select id from bridge.grants where account_id = $1)", [id]);
+      await c.query("update bridge.grants set revoked = true, sealed_credential = null where account_id = $1", [id]);
+      await c.query("delete from bridge.accounts where id = $1", [id]); // cascades to the link
+      await c.query("commit");
+      return { sealedCredential: (link.rows[0]?.sealed_credential as string | null) ?? null, instanceUrl: (link.rows[0]?.instance_url as string | null) ?? null };
+    } catch (e) {
+      await c.query("rollback").catch(() => {});
+      throw e;
+    } finally {
+      c.release();
+    }
+  }
+  async putLink(l: AccountLink) {
+    try {
+      await this.q(
+        `insert into bridge.account_links (account_id, instance_url, paperclip_user_id, sealed_credential, created_at, connected_at, last_used_at, instance_label) values ($1,$2,$3,$4,$5,$6,$7,$8)
+         on conflict (account_id) do update set instance_url = excluded.instance_url, paperclip_user_id = excluded.paperclip_user_id, sealed_credential = excluded.sealed_credential, connected_at = excluded.connected_at, last_used_at = excluded.last_used_at, instance_label = excluded.instance_label`,
+        [l.accountId, l.instanceUrl, l.paperclipUserId, l.sealedCredential, l.createdAt, l.connectedAt, l.lastUsedAt, l.instanceLabel ?? null],
+      );
+      return true;
+    } catch (e) {
+      if ((e as { code?: string }).code === "23505") return false; // identity already owned by another account
+      throw e;
+    }
+  }
+  async getLink(accountId: string) {
+    const r = await this.q("select * from bridge.account_links where account_id = $1", [accountId]);
+    return r.rows[0] ? PgStore.toLink(r.rows[0]) : undefined;
+  }
+  async getLinkByIdentity(instanceUrl: string, paperclipUserId: string) {
+    const r = await this.q("select * from bridge.account_links where instance_url = $1 and paperclip_user_id = $2", [instanceUrl, paperclipUserId]);
+    return r.rows[0] ? PgStore.toLink(r.rows[0]) : undefined;
+  }
+  async touchLink(accountId: string) {
+    const t = this.now();
+    await this.q("update bridge.account_links set last_used_at = $2 where account_id = $1 and last_used_at < $3", [accountId, t, t - TOUCH_PERSIST_MS]);
+  }
+  async dropLinkCredential(accountId: string) {
+    const r = await this.q(
+      "with old as (select sealed_credential from bridge.account_links where account_id = $1 for update) update bridge.account_links l set sealed_credential = null from old where l.account_id = $1 returning old.sealed_credential",
+      [accountId],
+    );
+    return (r.rows[0]?.sealed_credential as string | null) ?? null;
+  }
+  async listIdleLinks(cutoff: number) {
+    return (await this.q("select * from bridge.account_links where sealed_credential is not null and last_used_at < $1", [cutoff])).rows.map(PgStore.toLink);
+  }
+  async revokeAccountGrants(accountId: string) {
+    const c = await this.pool.connect();
+    try {
+      await c.query("begin");
+      const r = await c.query("update bridge.grants set revoked = true, sealed_credential = null where account_id = $1 and not revoked returning id", [accountId]);
+      if (r.rowCount) await c.query("delete from bridge.tokens where grant_id = any($1::text[])", [r.rows.map((x) => x.id)]);
+      await c.query("commit");
+      return r.rowCount ?? 0;
+    } catch (e) {
+      await c.query("rollback").catch(() => {});
+      throw e;
+    } finally {
+      c.release();
+    }
+  }
+  async countLiveGrants(accountId: string) {
+    return num((await this.q("select count(*) as n from bridge.grants where account_id = $1 and not revoked", [accountId])).rows[0].n);
+  }
+
+  async insertUserEvent(e: UserEvent) {
+    await this.q("insert into bridge.user_events (ts, account_id, username, kind, detail) values ($1,$2,$3,$4,$5)", [e.at, e.accountId, e.username, e.kind, e.detail]);
+  }
+  async userEventsRecent(afterId: number, limit: number): Promise<UserEvent[]> {
+    const r = await this.q("select * from bridge.user_events where id > $1 order by id desc limit $2", [afterId, limit]);
+    return r.rows.map((x) => ({ id: num(x.id), at: num(x.ts), accountId: x.account_id, username: x.username, kind: x.kind, detail: x.detail }));
+  }
+  async userEventCounts(from: number, to: number): Promise<UserCounts> {
+    const k = await this.q("select kind, count(*)::int as n from bridge.user_events where ts >= $1 and ts < $2 group by kind", [from, to]);
+    const f = await this.q("select kind, coalesce(detail, 'unknown') as detail, count(*)::int as n from bridge.user_events where ts >= $1 and ts < $2 and kind in ('connect_failed','login_failed') group by 1, 2", [from, to]);
+    return { byKind: Object.fromEntries(k.rows.map((x) => [x.kind, x.n])), failures: Object.fromEntries(f.rows.map((x) => [`${x.kind}:${x.detail}`, x.n])) };
+  }
+  async userEventSeries(from: number, to: number, bucketMs: number): Promise<UserEventBucket[]> {
+    const r = await this.q(
+      `select (ts / $3::bigint) * $3::bigint as t,
+              (count(*) filter (where kind = 'completed'))::int as completed,
+              (count(*) filter (where kind in ('connect_failed', 'login_failed')))::int as failed,
+              (count(*) filter (where kind = 'joined'))::int as joined
+         from bridge.user_events where ts >= $1 and ts < $2 and kind in ('completed','connect_failed','login_failed','joined') group by 1 order by 1`,
+      [from, to, bucketMs],
+    );
+    return r.rows.map((x) => ({ t: num(x.t), completed: x.completed, failed: x.failed, joined: x.joined }));
+  }
+  async recordNodeSample(x: NodeSample) {
+    await this.q("insert into bridge.node_samples (ts, node, db_ping_ms, loop_lag_p99_ms, rss_mb, heap_mb, uptime_s, version) values ($1,$2,$3,$4,$5,$6,$7,$8)", [x.at, x.node, x.dbPingMs, x.loopLagP99Ms, x.rssMb, x.heapMb, x.uptimeS, x.version]);
+  }
+  async nodeSamples(since: number): Promise<NodeSample[]> {
+    const r = await this.q("select * from bridge.node_samples where ts >= $1 order by ts desc limit 1000", [since]);
+    return r.rows.map((x) => ({ at: num(x.ts), node: x.node, dbPingMs: x.db_ping_ms, loopLagP99Ms: x.loop_lag_p99_ms, rssMb: x.rss_mb, heapMb: x.heap_mb, uptimeS: x.uptime_s, version: x.version }));
+  }
+  async liveGrantCount() {
+    return num((await this.q("select count(*) as n from bridge.grants where not revoked")).rows[0].n);
+  }
+  async heartbeat() {
+    await this.q("insert into bridge.heartbeat (id, at) values (1, $1) on conflict (id) do update set at = excluded.at", [this.now()]);
+  }
+
+  async auditActiveUsers(from: number, to: number) {
+    return num((await this.q("select count(distinct username) as n from bridge.audit_events where ts >= $1 and ts < $2 and username is not null", [from, to])).rows[0].n);
+  }
+
   // ───────────── audit ─────────────
 
   async insertAudit(rows: AuditRow[]) {
     if (!rows.length) return;
     const col = <T>(f: (r: AuditRow) => T) => rows.map(f);
     await this.q(
-      `insert into bridge.audit_events (ts, node, kind, name, mutation, ok, status, error_class, total_ms, upstream_ms, upstream_calls, scope, grant_id, client, instance, user_id)
-       select * from unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::boolean[], $6::boolean[], $7::int[], $8::text[], $9::int[], $10::int[], $11::int[], $12::text[], $13::text[], $14::text[], $15::text[], $16::text[])`,
-      [col((r) => r.at), col((r) => r.node), col((r) => r.kind), col((r) => r.name), col((r) => r.mutation), col((r) => r.ok), col((r) => r.status), col((r) => r.errorClass), col((r) => r.totalMs), col((r) => r.upstreamMs), col((r) => r.upstreamCalls), col((r) => r.scope), col((r) => r.grantId), col((r) => r.client), col((r) => r.instance), col((r) => r.userId)],
+      `insert into bridge.audit_events (ts, node, kind, name, mutation, ok, status, error_class, total_ms, upstream_ms, upstream_calls, scope, grant_id, client, instance, user_id, username)
+       select * from unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::boolean[], $6::boolean[], $7::int[], $8::text[], $9::int[], $10::int[], $11::int[], $12::text[], $13::text[], $14::text[], $15::text[], $16::text[], $17::text[])`,
+      [col((r) => r.at), col((r) => r.node), col((r) => r.kind), col((r) => r.name), col((r) => r.mutation), col((r) => r.ok), col((r) => r.status), col((r) => r.errorClass), col((r) => r.totalMs), col((r) => r.upstreamMs), col((r) => r.upstreamCalls), col((r) => r.scope), col((r) => r.grantId), col((r) => r.client), col((r) => r.instance), col((r) => r.userId), col((r) => r.username)],
     );
   }
 
@@ -253,8 +437,8 @@ export class PgStore implements Store {
     return { count: x.count, errors: x.errors, faults: x.faults, mutations: x.mutations, p50: x.p50, p95: x.p95, p99: x.p99, upstreamP95: x.upstream_p95, bridgeP95: x.bridge_p95 };
   }
 
-  async auditBreakdown(kind: "tool" | "http", by: "name" | "instance" | "errorClass", from: number, to: number, limit: number): Promise<BreakdownRow[]> {
-    const col = by === "name" ? "name" : by === "instance" ? "instance" : "error_class";
+  async auditBreakdown(kind: "tool" | "http", by: "name" | "instance" | "errorClass" | "username", from: number, to: number, limit: number): Promise<BreakdownRow[]> {
+    const col = by === "name" ? "name" : by === "instance" ? "instance" : by === "username" ? "username" : "error_class";
     const extra = by === "errorClass" ? "and not ok" : "";
     const r = await this.q(
       `select ${col} as key, ${this.agg(5)} from bridge.audit_events
@@ -276,7 +460,7 @@ export class PgStore implements Store {
   }
 
   private static toRow(x: any): AuditRow {
-    return { id: num(x.id), at: num(x.ts), node: x.node, kind: x.kind, name: x.name, mutation: x.mutation, ok: x.ok, status: x.status, errorClass: x.error_class, totalMs: x.total_ms, upstreamMs: x.upstream_ms, upstreamCalls: x.upstream_calls, scope: x.scope, grantId: x.grant_id, client: x.client, instance: x.instance, userId: x.user_id };
+    return { id: num(x.id), at: num(x.ts), node: x.node, kind: x.kind, name: x.name, mutation: x.mutation, ok: x.ok, status: x.status, errorClass: x.error_class, totalMs: x.total_ms, upstreamMs: x.upstream_ms, upstreamCalls: x.upstream_calls, scope: x.scope, grantId: x.grant_id, client: x.client, instance: x.instance, userId: x.user_id, username: x.username ?? null };
   }
   async auditSlowest(kind: "tool" | "http", from: number, to: number, limit: number) {
     return (await this.q("select * from bridge.audit_events where kind = $3 and ts >= $1 and ts < $2 order by total_ms desc limit $4", [from, to, kind, limit])).rows.map(PgStore.toRow);
@@ -285,6 +469,8 @@ export class PgStore implements Store {
     return (await this.q("select * from bridge.audit_events where id > $1 and ($3::text is null or kind = $3) order by id desc limit $2", [afterId, limit, kind ?? null])).rows.map(PgStore.toRow);
   }
   async pruneAudit(beforeMs: number) {
+    await this.q("delete from bridge.user_events where ts < $1", [beforeMs]);
+    await this.q("delete from bridge.node_samples where ts < $1", [beforeMs]);
     return (await this.q("delete from bridge.audit_events where ts < $1", [beforeMs])).rowCount ?? 0;
   }
 
@@ -293,5 +479,19 @@ export class PgStore implements Store {
   }
   async close() {
     await this.pool.end();
+  }
+}
+
+/**
+ * The operator panel's data access. Connects with the read-only `panel_ro` role (docs/panel-role.sql) and reads accounts and grants
+ * ONLY through the safe views, so it cannot see a secret hash, a sealed credential or a real username of an anonymous account.
+ * Write methods inherited from PgStore are never called by the panel, and the role could not execute them anyway.
+ */
+export class PgPanelStore extends PgStore {
+  async countAccounts() {
+    return num((await this.q("select count(*) as n from bridge.panel_accounts")).rows[0].n);
+  }
+  async liveGrantCount() {
+    return num((await this.q("select count(*) as n from bridge.panel_grants where not revoked")).rows[0].n);
   }
 }

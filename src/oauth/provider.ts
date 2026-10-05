@@ -1,9 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { generateSecretKey, burnVerify, hashSecretKey, normalizeSecretKey, verifySecretKey } from "../accounts/secret.js";
+import { anonInstanceLabel, displayName, generateAlias } from "../accounts/alias.js";
+import { AliasTakenError, type Account, type AccountLink, type UserEvent, type UserEventKind } from "../accounts/types.js";
+import { usernameKey, validateUsername } from "../accounts/username.js";
 import { PaperclipClient } from "../client.js";
 import { hostAllowed, type BridgeConfig, type OAuthConfig } from "../config.js";
 import { UnsafeUrlError, createSafeFetch, parseInstanceUrl } from "../net/safe-fetch.js";
 import { Keyring, isValidCodeChallenge, randomToken, safeEqual, sha256Hex, verifyPkce } from "./crypto.js";
-import { consentPage, errorPage, instancePage } from "./pages.js";
+import { approvePage, choosePage, consentPage, errorPage, instancePage, scopePage, secretPage, usernamePage, welcomePage } from "./pages.js";
 import { LoginError, PaperclipLogin, type Challenge } from "./paperclip-login.js";
 import { MemoryStore, type Grant, type PendingRecord, type Store } from "./store.js";
 import { SCOPES, isScope, maxRank, scopeAllows, scopesUpTo, type Scope } from "./scopes.js";
@@ -38,6 +42,9 @@ class OAuthError extends Error {
   }
 }
 
+/** The account's Paperclip connection is missing or was dropped: the user must reconnect. */
+export class ReconnectRequired extends Error {}
+
 export function levelOf(scopes: string[]): Scope {
   return SCOPES[Math.max(0, maxRank(scopes) - 1)];
 }
@@ -60,6 +67,8 @@ export function clientIp(req: IncomingMessage, hops: number): string {
   return req.socket.remoteAddress ?? "unknown";
 }
 
+type Step = { f: URLSearchParams; p: PendingRecord; rid: string };
+
 export class OAuthProvider {
   readonly resource: string;
   readonly metadataUrl: string;
@@ -68,15 +77,64 @@ export class OAuthProvider {
   private now: () => number;
   private safeFetch: typeof fetch;
   private multi: boolean;
+  private accounts: boolean;
 
   constructor(private deps: OAuthDeps) {
     this.now = deps.now ?? Date.now;
     this.store = deps.store ?? new MemoryStore(deps.oauth.dataFile, this.now);
     this.keyring = new Keyring([deps.oauth.secret, ...deps.oauth.previousSecrets]);
     this.multi = deps.oauth.mode === "multi";
+    this.accounts = deps.oauth.accounts && this.multi;
     this.safeFetch = deps.safeFetch ?? createSafeFetch({ timeoutMs: deps.config.timeoutMs, maxBytes: 2_000_000 });
     this.resource = `${deps.oauth.issuer}/mcp`;
     this.metadataUrl = `${deps.oauth.issuer}/.well-known/oauth-protected-resource`;
+  }
+
+  // ───────────── community log ─────────────
+
+  /** Best-effort: the community log must never break a sign-in. */
+  async event(kind: UserEventKind, who: { accountId?: string | null; username?: string | null } | null, detail?: string): Promise<void> {
+    try {
+      const e: UserEvent = { at: this.now(), accountId: who?.accountId ?? null, username: who?.username ?? null, kind, detail: detail ?? null };
+      await this.store.insertUserEvent(e);
+    } catch {
+      /* telemetry only */
+    }
+  }
+
+  /** The name logs and the panel show for an account: its alias if it opted into anonymity, else its username. */
+  private async who(accountId: string | null | undefined): Promise<{ accountId: string; username: string } | null> {
+    if (!accountId) return null;
+    const a = await this.store.getAccount(accountId);
+    return a ? { accountId: a.id, username: displayName(a) } : { accountId, username: "" };
+  }
+
+  /** What logs show for a tenant: its hostname, or a stable anonymous label if the owner opted into anonymity. */
+  private instanceLabelFor(a: Pick<Account, "id" | "anonymous" | "alias">, instanceUrl: string, previous?: AccountLink | null): string {
+    if (a.anonymous && a.alias) return previous?.instanceLabel?.startsWith("anon-") ? previous.instanceLabel : anonInstanceLabel(this.deps.oauth.secret, a.id);
+    return new URL(instanceUrl).host;
+  }
+
+  /** Turn anonymity on or off (generating a stable alias on first use) and rewrite what logs show. */
+  private async setPrivacy(a: Account, anonymous: boolean): Promise<Account> {
+    let alias = a.alias ?? null;
+    for (let i = 0; i < 25; i++) {
+      alias ??= generateAlias();
+      const link = await this.store.getLink(a.id);
+      const prevDisplay = displayName(a);
+      const next = { ...a, anonymous, alias };
+      const nextDisplay = displayName(next);
+      const prevLabel = link?.instanceLabel ?? (link ? new URL(link.instanceUrl).host : "");
+      const nextLabel = link ? this.instanceLabelFor(next, link.instanceUrl, anonymous ? null : link) : "";
+      const r = await this.store.setAccountPrivacy(a.id, { anonymous, alias, display: nextDisplay, prevDisplay, instanceLabel: nextLabel, prevInstanceLabel: prevLabel });
+      if (r === "ok") {
+        await this.event("updated", { accountId: a.id, username: nextDisplay }, anonymous ? "privacy_on" : "privacy_off");
+        return next;
+      }
+      if (r === "missing" || a.alias) throw new Error("Could not update privacy");
+      alias = null; // that alias was taken: draw another
+    }
+    throw new Error("Could not find a free anonymous name");
   }
 
   // ───────────── resource-server side ─────────────
@@ -102,12 +160,26 @@ export class OAuthProvider {
     return this.store.hit(`call:${grantId}`, this.deps.oauth.callsPerMinute, 60_000);
   }
 
-  clientFor(grant: Grant): PaperclipClient {
-    const apiKey = grant.sealedCredential ? this.keyring.unseal(grant.sealedCredential) : null;
-    if (!this.multi) return new PaperclipClient({ ...this.deps.config, apiKey });
-    if (!grant.instanceUrl) throw new Error("Grant has no Paperclip instance");
-    const origin = this.checkedInstance(grant.instanceUrl).origin; // re-validated on every use (policy can tighten)
-    return new PaperclipClient({ ...this.deps.config, apiUrl: `${origin}/api`, apiKey, companyId: null }, this.safeFetch);
+  /** The Paperclip client for a grant. In account mode the credential and instance come from the account's link. */
+  async resolveClient(grant: Grant): Promise<{ client: PaperclipClient; instanceHost?: string }> {
+    if (!this.accounts || !grant.accountId) {
+      const apiKey = grant.sealedCredential ? this.keyring.unseal(grant.sealedCredential) : null;
+      if (!this.multi) return { client: new PaperclipClient({ ...this.deps.config, apiKey }) };
+      if (!grant.instanceUrl) throw new Error("Grant has no Paperclip instance");
+      const origin = this.checkedInstance(grant.instanceUrl).origin;
+      return { client: new PaperclipClient({ ...this.deps.config, apiUrl: `${origin}/api`, apiKey, companyId: null }, this.safeFetch), instanceHost: new URL(origin).host };
+    }
+    const link = await this.store.getLink(grant.accountId);
+    if (!link?.sealedCredential) throw new ReconnectRequired("This account's Paperclip connection has expired; reconnect to continue.");
+    const origin = this.checkedInstance(link.instanceUrl).origin; // re-validated on every use (policy can tighten)
+    await this.store.touchLink(grant.accountId);
+    const apiKey = this.keyring.unseal(link.sealedCredential);
+    return { client: new PaperclipClient({ ...this.deps.config, apiUrl: `${origin}/api`, apiKey, companyId: null }, this.safeFetch), instanceHost: link.instanceLabel ?? new URL(origin).host };
+  }
+
+  /** Convenience for callers that only need the client. */
+  async clientFor(grant: Grant): Promise<PaperclipClient> {
+    return (await this.resolveClient(grant)).client;
   }
 
   async listGrants() {
@@ -118,6 +190,11 @@ export class OAuthProvider {
     const g = await this.store.getGrant(id);
     if (!g) return;
     const sealed = await this.store.revokeGrant(id);
+    if (g.accountId) {
+      // The Paperclip key belongs to the ACCOUNT and survives disconnecting a client: that is what lets the user come back.
+      if ((await this.store.countLiveGrants(g.accountId)) === 0) await this.event("left", { accountId: g.accountId, username: g.username }, "disconnected");
+      return;
+    }
     if (!sealed) return;
     try {
       void this.loginFor(g.instanceUrl).revoke(this.keyring.unseal(sealed));
@@ -126,14 +203,60 @@ export class OAuthProvider {
     }
   }
 
-  /** Revoke grants unused for `idleRevokeDays` and delete their stored credentials. Run periodically. */
+  /** Revoke idle grants and idle account connections, delete their stored credentials, prune telemetry. Run periodically. */
   async sweep(): Promise<number> {
     const days = this.deps.oauth.idleRevokeDays;
     await this.store.prune();
     if (!days) return 0;
-    const idle = await this.store.listIdleGrants(this.now() - days * DAY_MS);
+    const cutoff = this.now() - days * DAY_MS;
+    let n = 0;
+    const idle = await this.store.listIdleGrants(cutoff);
     for (const g of idle) await this.revokeGrant(g.id);
-    return idle.length;
+    n += idle.length;
+    for (const l of await this.store.listIdleLinks(cutoff)) {
+      await this.dropConnection(l, "idle");
+      n += 1;
+    }
+    return n;
+  }
+
+  /** Forget an account's stored Paperclip credential (the username stays) and tell its Paperclip to revoke the key. */
+  private async dropConnection(l: AccountLink, reason: string): Promise<void> {
+    const acct = await this.store.getAccount(l.accountId);
+    const sealed = await this.store.dropLinkCredential(l.accountId);
+    await this.store.revokeAccountGrants(l.accountId);
+    await this.revokeUpstream(l.instanceUrl, sealed);
+    await this.event("left", { accountId: l.accountId, username: acct ? displayName(acct) : "" }, reason);
+  }
+
+  private async revokeUpstream(instanceUrl: string | null, sealed: string | null) {
+    if (!sealed) return;
+    try {
+      void this.loginFor(instanceUrl).revoke(this.keyring.unseal(sealed));
+    } catch {
+      /* best effort */
+    }
+  }
+
+  // ───────────── operator tools ─────────────
+
+  async listUsers(limit = 1000) {
+    const out = [];
+    for (const a of await this.store.listAccounts(limit)) {
+      const link = await this.store.getLink(a.id);
+      out.push({ id: a.id, username: a.username, anonymous: !!a.anonymous, alias: a.alias ?? null, createdAt: a.createdAt, lastLoginAt: a.lastLoginAt, instance: link ? new URL(link.instanceUrl).host : null, connected: !!link?.sealedCredential, liveGrants: await this.store.countLiveGrants(a.id) });
+    }
+    return out;
+  }
+
+  /** Delete an account entirely: grants, stored credential (revoked upstream), username. */
+  async deleteUser(username: string): Promise<boolean> {
+    const a = await this.store.getAccountByKey(usernameKey(username));
+    if (!a) return false;
+    const gone = await this.store.deleteAccount(a.id);
+    if (gone) await this.revokeUpstream(gone.instanceUrl, gone.sealedCredential);
+    await this.event("left", { accountId: a.id, username: displayName(a) }, "deleted");
+    return true;
   }
 
   /** Re-seal every stored credential with the current key (after rotating BRIDGE_SECRET). */
@@ -142,6 +265,12 @@ export class OAuthProvider {
     for (const g of await this.store.listGrants()) {
       if (g.revoked || !g.sealedCredential || !this.keyring.needsRotation(g.sealedCredential)) continue;
       await this.store.putGrant({ ...g, sealedCredential: this.keyring.seal(this.keyring.unseal(g.sealedCredential)) });
+      n += 1;
+    }
+    for (const a of await this.store.listAccounts(1_000_000)) {
+      const l = await this.store.getLink(a.id);
+      if (!l?.sealedCredential || !this.keyring.needsRotation(l.sealedCredential)) continue;
+      await this.store.putLink({ ...l, sealedCredential: this.keyring.seal(this.keyring.unseal(l.sealedCredential)) });
       n += 1;
     }
     return n;
@@ -179,10 +308,22 @@ export class OAuthProvider {
       if (m === "POST" && p === "/register") return await this.register(req, res);
       if (m === "GET" && p === "/authorize") return await this.authorize(req, res, url);
       if (m === "GET" && p === "/authorize/status") return await this.authorizeStatus(req, res, url);
-      if (m === "POST" && p === "/authorize/instance") return await this.instanceStep(req, res);
-      if (m === "POST" && p === "/authorize/decision") return await this.decision(req, res);
       if (m === "POST" && p === "/token") return await this.token(req, res);
       if (m === "POST" && p === "/revoke") return await this.revoke(req, res);
+      if (m === "POST" && p.startsWith("/authorize/")) {
+        const step = p.slice("/authorize/".length);
+        if (this.accounts) {
+          if (step === "login") return await this.stepLogin(req, res);
+          if (step === "connect") return await this.stepConnect(req, res);
+          if (step === "instance") return await this.stepInstance(req, res);
+          if (step === "approved") return await this.stepApproved(req, res);
+          if (step === "username") return await this.stepUsername(req, res);
+          if (step === "welcome") return await this.stepWelcome(req, res);
+          if (step === "continue") return await this.stepContinue(req, res);
+          if (step === "decision") return await this.decisionAccount(req, res);
+        } else if (step === "decision") return await this.decisionSingle(req, res);
+        if (step === "instance" || step === "login" || step === "connect") return this.html(res, 404, errorPage("Not found", "This bridge is bound to a single Paperclip instance."));
+      }
     } catch (err) {
       if (err instanceof OAuthError) {
         this.json(res, err.status, { error: err.code, error_description: err.message });
@@ -196,13 +337,7 @@ export class OAuthProvider {
   // ───────────── metadata ─────────────
 
   private protectedResourceMetadata() {
-    return {
-      resource: this.resource,
-      authorization_servers: [this.deps.oauth.issuer],
-      scopes_supported: [...SCOPES],
-      bearer_methods_supported: ["header"],
-      resource_name: "Paperclip Bridge",
-    };
+    return { resource: this.resource, authorization_servers: [this.deps.oauth.issuer], scopes_supported: [...SCOPES], bearer_methods_supported: ["header"], resource_name: "Papercliped" };
   }
 
   private serverMetadata() {
@@ -341,7 +476,7 @@ export class OAuthProvider {
     const client = await this.store.getClient(q.get("client_id") ?? "");
     const redirectUri = q.get("redirect_uri") ?? "";
     // Until client + redirect_uri are trusted we must NOT redirect: show an error page instead.
-    if (!client) return this.html(res, 400, errorPage("Unknown application", "This application is not registered with the bridge. Remove and re-add the connector."));
+    if (!client) return this.html(res, 400, errorPage("Unknown application", "This application is not registered. Remove and re-add the connector."));
     if (!redirectUri || !this.redirectMatches(client.redirectUris, redirectUri))
       return this.html(res, 400, errorPage("Invalid redirect", "The redirect address does not match the application's registration."));
 
@@ -361,10 +496,12 @@ export class OAuthProvider {
     const rid = randomToken(24);
     const p: PendingRecord = { clientId: client.id, clientName: client.name, redirectUri, state, codeChallenge: challenge, requestedMax, csrf: randomToken(24), attempts: 0, expiresAt: this.now() + PENDING_TTL_MS };
     await this.store.touchClient(client.id);
+    await this.event("started", null);
 
-    if (this.multi) {
+    if (this.accounts) {
+      p.stage = "choose";
       await this.store.putPending(rid, p);
-      return this.renderInstance(res, rid, p);
+      return this.renderStage(res, rid, p);
     }
     if (this.deps.oauth.login === "paperclip") {
       try {
@@ -372,6 +509,7 @@ export class OAuthProvider {
         const ch = await this.loginFor(null).createChallenge(`${client.name} (via bridge, returns to ${new URL(redirectUri).host})`);
         p.sealedChallenge = this.keyring.seal(JSON.stringify(ch));
       } catch (e) {
+        await this.event("connect_failed", null, "unreachable");
         return this.html(res, 502, errorPage("Cannot reach Paperclip", `The bridge could not start a sign-in with Paperclip: ${(e as Error).message}`));
       }
     }
@@ -379,10 +517,7 @@ export class OAuthProvider {
     return this.renderConsent(res, rid, p, false);
   }
 
-  private renderInstance(res: ServerResponse, rid: string, p: PendingRecord, error?: string, value?: string): true {
-    const u = new URL(p.redirectUri);
-    return this.html(res, error ? 400 : 200, instancePage({ rid, csrf: p.csrf, clientName: p.clientName, redirectHost: u.host, error, value }), undefined, u.origin);
-  }
+  // ───────────── single-instance consent (legacy flow) ─────────────
 
   private renderConsent(res: ServerResponse, rid: string, p: PendingRecord, approved: boolean, error?: string): true {
     const nonce = randomToken(12);
@@ -416,64 +551,15 @@ export class OAuthProvider {
     const ch = p && this.unsealChallenge(p);
     if (!p || !ch) return this.json(res, 200, { approved: false });
     try {
-      return this.json(res, 200, { approved: (await this.loginFor(p.instanceUrl ?? null).status(ch)) === "approved" });
+      return this.json(res, 200, { approved: (await this.login(p.instanceUrl ?? null).status(ch)) === "approved" });
     } catch {
       return this.json(res, 200, { approved: false });
     }
   }
 
-  // ───────────── POST /authorize/instance (multi-tenant) ─────────────
+  private login = (instanceUrl: string | null) => this.loginFor(instanceUrl);
 
-  private async instanceStep(req: IncomingMessage, res: ServerResponse): Promise<true> {
-    if (!this.multi) return this.html(res, 404, errorPage("Not found", "This bridge is bound to a single Paperclip instance."));
-    const ip = this.ip(req);
-    if (!(await this.limit(`inst:${ip}`, 20))) return this.html(res, 429, errorPage("Too many attempts", "Please wait a minute and try again."));
-    const f = await this.readForm(req);
-    const rid = f.get("rid") ?? "";
-    const p = await this.store.getPending(rid);
-    if (!p) return this.html(res, 400, errorPage("Request expired", "This authorization request expired. Start the connection again from the app."));
-    if (!safeEqual(f.get("csrf") ?? "", p.csrf)) return this.html(res, 400, errorPage("Invalid request", "Security token mismatch. Start again from the app."));
-    if (f.get("action") === "deny") {
-      await this.store.deletePending(rid);
-      return this.redirectWith(res, p.redirectUri, { error: "access_denied", error_description: "The user cancelled", state: p.state });
-    }
-    // Each attempt makes the bridge contact a stranger-supplied host: bound them per request and per IP.
-    if (p.attempts >= MAX_INSTANCE_ATTEMPTS) {
-      await this.store.deletePending(rid);
-      return this.html(res, 429, errorPage("Too many attempts", "Too many addresses tried. Start again from the app."));
-    }
-    p.attempts += 1;
-    const typed = (f.get("instance") ?? "").slice(0, 300);
-
-    let origin: URL;
-    try {
-      origin = this.checkedInstance(typed);
-    } catch (e) {
-      await this.store.putPending(rid, p);
-      return this.renderInstance(res, rid, p, e instanceof UnsafeUrlError ? e.message : "Invalid address.", typed);
-    }
-    const login = this.loginFor(origin.origin);
-    try {
-      const probe = await login.probe();
-      if (!probe.ok) {
-        await this.store.putPending(rid, p);
-        return this.renderInstance(res, rid, p, probe.reason, typed);
-      }
-      const ch = await login.createChallenge(`${p.clientName} (via bridge, returns to ${new URL(p.redirectUri).host})`);
-      p.instanceUrl = origin.origin;
-      p.sealedChallenge = this.keyring.seal(JSON.stringify(ch));
-    } catch (e) {
-      await this.store.putPending(rid, p);
-      const why = e instanceof LoginError ? e.message : "The bridge could not complete a sign-in with that Paperclip.";
-      return this.renderInstance(res, rid, p, why, typed);
-    }
-    await this.store.putPending(rid, p);
-    return this.renderConsent(res, rid, p, false);
-  }
-
-  // ───────────── POST /authorize/decision ─────────────
-
-  private async decision(req: IncomingMessage, res: ServerResponse): Promise<true> {
+  private async decisionSingle(req: IncomingMessage, res: ServerResponse): Promise<true> {
     const ip = this.ip(req);
     if (!(await this.limit(`dec:${ip}`, 20))) return this.html(res, 429, errorPage("Too many attempts", "Please wait a minute and try again."));
     const f = await this.readForm(req);
@@ -481,12 +567,11 @@ export class OAuthProvider {
     const p = await this.store.getPending(rid);
     if (!p) return this.html(res, 400, errorPage("Request expired", "This authorization request expired. Start the connection again from the app."));
     if (!safeEqual(f.get("csrf") ?? "", p.csrf)) return this.html(res, 400, errorPage("Invalid request", "Security token mismatch. Start again from the app."));
-
     if (f.get("action") === "deny") {
       await this.store.deletePending(rid);
+      await this.event("connect_failed", null, "denied");
       return this.redirectWith(res, p.redirectUri, { error: "access_denied", error_description: "The user denied the request", state: p.state });
     }
-    if (this.multi && !p.instanceUrl) return this.renderInstance(res, rid, p, "Enter your Paperclip address first.");
     const allowed = scopesUpTo(p.requestedMax as Scope);
     const level = (f.get("level") ?? "") as Scope;
     if (!allowed.includes(level)) return this.renderConsent(res, rid, p, false, "Choose an access level.");
@@ -495,7 +580,7 @@ export class OAuthProvider {
     let userId: string | null = null;
     if (this.deps.oauth.login === "paperclip") {
       const ch = this.unsealChallenge(p)!;
-      const login = this.loginFor(p.instanceUrl ?? null);
+      const login = this.loginFor(null);
       let status: Awaited<ReturnType<PaperclipLogin["status"]>>;
       try {
         status = await login.status(ch);
@@ -504,6 +589,7 @@ export class OAuthProvider {
       }
       if (status === "cancelled" || status === "expired") {
         await this.store.deletePending(rid);
+        await this.event("connect_failed", null, "expired");
         return this.html(res, 400, errorPage("Sign-in ended", `The Paperclip approval was ${status}. Start the connection again from the app.`));
       }
       if (status !== "approved") return this.renderConsent(res, rid, p, false, "Not approved in Paperclip yet. Approve it in the Paperclip tab, then press Allow again.");
@@ -529,6 +615,397 @@ export class OAuthProvider {
       userId,
       instanceUrl: p.instanceUrl ?? null,
       sealedCredential: credential ? this.keyring.seal(credential) : null,
+      expiresAt: this.now() + CODE_TTL_MS,
+    });
+    await this.store.deletePending(rid);
+    return this.redirectWith(res, p.redirectUri, { code, state: p.state });
+  }
+
+  // ───────────── account flow (multi-tenant) ─────────────
+
+  private page(res: ServerResponse, status: number, html: string, p: PendingRecord, nonce?: string): true {
+    return this.html(res, status, html, nonce, new URL(p.redirectUri).origin);
+  }
+
+  private ctx(rid: string, p: PendingRecord, error?: string) {
+    return { rid, csrf: p.csrf, clientName: p.clientName, redirectHost: new URL(p.redirectUri).host, error };
+  }
+
+  /** Render whatever page matches the pending request's current stage (also used to recover from back-button / double-submits). */
+  private async renderStage(res: ServerResponse, rid: string, p: PendingRecord, error?: string, extra: { value?: string; notice?: string } = {}): Promise<true> {
+    const status = error ? 400 : 200;
+    const c = this.ctx(rid, p, error);
+    switch (p.stage) {
+      case "instance":
+        return this.page(res, status, instancePage({ ...c, value: extra.value, notice: extra.notice }), p);
+      case "approve": {
+        const ch = this.unsealChallenge(p);
+        if (!ch || !p.instanceUrl) {
+          p.stage = "instance";
+          await this.store.putPending(rid, p);
+          return this.renderStage(res, rid, p, error);
+        }
+        const nonce = randomToken(12);
+        return this.page(res, status, approvePage({ ...c, approvalUrl: ch.approvalUrl, instanceHost: new URL(p.instanceUrl).host, approved: false, nonce }), p, nonce);
+      }
+      case "username":
+        return this.page(res, status, usernamePage({ ...c, value: extra.value }), p);
+      case "welcome":
+        return this.page(res, status, welcomePage({ ...c, username: p.username ?? "" }), p);
+      case "secret": // the key can only be shown once, at creation: a reload goes on to the next step
+        p.stage = "consent";
+        await this.store.putPending(rid, p);
+        return this.renderStage(res, rid, p, error ?? "Your secret key can't be shown again. If you didn't save it, connect your Paperclip next time to get a new one.");
+      case "consent": {
+        const link = p.accountId ? await this.store.getLink(p.accountId) : undefined;
+        const u = new URL(p.redirectUri);
+        const acct = p.accountId ? await this.store.getAccount(p.accountId) : undefined;
+        return this.page(res, status, scopePage({ ...c, requestedMax: p.requestedMax as Scope, loopbackOnly: u.protocol === "http:" && LOOPBACK.has(u.hostname), instanceHost: link ? new URL(link.instanceUrl).host : "your Paperclip", username: p.username ?? "", anonymous: !!acct?.anonymous, alias: acct?.alias ?? null }), p);
+      }
+      default:
+        return this.page(res, status, choosePage(c), p);
+    }
+  }
+
+  /** Common front matter for every account-flow POST: rate limit, parse, find the request, check CSRF, handle Cancel. */
+  private async loadStep(req: IncomingMessage, res: ServerResponse, stages: string[]): Promise<Step | null> {
+    if (!(await this.limit(`step:${this.ip(req)}`, 120))) {
+      this.html(res, 429, errorPage("Too many attempts", "Please wait a minute and try again."));
+      return null;
+    }
+    const f = await this.readForm(req);
+    const rid = f.get("rid") ?? "";
+    const p = await this.store.getPending(rid);
+    if (!p) {
+      this.html(res, 400, errorPage("Request expired", "This sign-in expired. Start the connection again from the app."));
+      return null;
+    }
+    if (!safeEqual(f.get("csrf") ?? "", p.csrf)) {
+      this.html(res, 400, errorPage("Invalid request", "Security token mismatch. Start again from the app."));
+      return null;
+    }
+    if (f.get("action") === "deny") {
+      await this.store.deletePending(rid);
+      await this.event("connect_failed", await this.who(p.accountId), "denied");
+      this.redirectWith(res, p.redirectUri, { error: "access_denied", error_description: "The user cancelled", state: p.state });
+      return null;
+    }
+    if (!p.stage || !stages.includes(p.stage)) {
+      await this.renderStage(res, rid, p); // out of order: show where they actually are
+      return null;
+    }
+    return { f, p, rid };
+  }
+
+  /** Swap in a new Paperclip credential for an account, revoking the one it replaces. */
+  private async replaceLink(accountId: string, instanceUrl: string, paperclipUserId: string, credential: string): Promise<boolean> {
+    const old = await this.store.getLink(accountId);
+    const t = this.now();
+    const acct = await this.store.getAccount(accountId);
+    const instanceLabel = acct ? this.instanceLabelFor(acct, instanceUrl, old) : new URL(instanceUrl).host;
+    const ok = await this.store.putLink({ accountId, instanceUrl, paperclipUserId, sealedCredential: this.keyring.seal(credential), createdAt: old?.createdAt ?? t, connectedAt: t, lastUsedAt: t, instanceLabel });
+    if (ok && old?.sealedCredential) {
+      let same = false;
+      try {
+        same = this.keyring.unseal(old.sealedCredential) === credential;
+      } catch {
+        /* unreadable old key: just revoke it */
+      }
+      if (!same) await this.revokeUpstream(old.instanceUrl, old.sealedCredential);
+    }
+    return ok;
+  }
+
+  // POST /authorize/login — username + secret key
+  private async stepLogin(req: IncomingMessage, res: ServerResponse): Promise<true> {
+    const s = await this.loadStep(req, res, ["choose"]);
+    if (!s) return true;
+    const { f, p, rid } = s;
+    const typed = (f.get("username") ?? "").trim().slice(0, 64);
+    const key = usernameKey(typed);
+    const generic = "That username and secret key don't match.";
+    const throttled = !(await this.limit(`login:ip:${this.ip(req)}`, 20)) || !(await this.limit(`login:user:${key}`, 8, 15 * 60_000));
+    if (throttled) {
+      await this.event("login_failed", null, "rate_limited");
+      return this.page(res, 429, choosePage({ ...this.ctx(rid, p, "Too many attempts. Please wait a few minutes and try again."), username: typed }), p);
+    }
+    const account = typed ? await this.store.getAccountByKey(key) : undefined;
+    const valid = account && !account.disabled ? await verifySecretKey(f.get("secret"), account.secretHash) : (await burnVerify(f.get("secret")), false);
+    if (!account || !valid) {
+      await this.event("login_failed", account ? { accountId: account.id, username: displayName(account) } : null, "bad_credentials");
+      return this.page(res, 400, choosePage({ ...this.ctx(rid, p, generic), username: typed }), p);
+    }
+    await this.store.touchAccountLogin(account.id, this.now());
+    await this.event("login", { accountId: account.id, username: displayName(account) }, new URL(p.redirectUri).host);
+    p.accountId = account.id;
+    p.username = account.username;
+    p.path = "login";
+
+    // Do we still hold a working Paperclip key for this account?
+    const link = await this.store.getLink(account.id);
+    let alive = false;
+    let unreachable = false;
+    if (link?.sealedCredential) {
+      try {
+        await this.login(link.instanceUrl).whoami(this.keyring.unseal(link.sealedCredential));
+        alive = true;
+      } catch (e) {
+        if (!(e instanceof LoginError && (e.status === 401 || e.status === 403))) unreachable = true;
+      }
+    }
+    if (alive) {
+      p.stage = "consent";
+      await this.store.putPending(rid, p);
+      return this.renderStage(res, rid, p);
+    }
+    if (unreachable) {
+      p.stage = "choose";
+      p.accountId = undefined;
+      p.username = undefined;
+      await this.store.putPending(rid, p);
+      return this.page(res, 502, choosePage({ ...this.ctx(rid, p, "We couldn't reach your Paperclip right now. Try again in a minute, or connect your Paperclip again."), username: typed }), p);
+    }
+    // Key missing/expired: reconnect, but keep the username.
+    p.stage = "instance";
+    await this.store.putPending(rid, p);
+    return this.renderStage(res, rid, p, undefined, { value: link ? new URL(link.instanceUrl).host : "", notice: "Your Paperclip connection has expired. Reconnect it to continue; your username stays the same." });
+  }
+
+  // POST /authorize/connect — "Connect your Paperclip"
+  private async stepConnect(req: IncomingMessage, res: ServerResponse): Promise<true> {
+    const s = await this.loadStep(req, res, ["choose"]);
+    if (!s) return true;
+    s.p.stage = "instance";
+    s.p.path = "connect";
+    await this.store.putPending(s.rid, s.p);
+    return this.renderStage(res, s.rid, s.p);
+  }
+
+  // POST /authorize/instance — which Paperclip? validate, probe, start the approval there
+  private async stepInstance(req: IncomingMessage, res: ServerResponse): Promise<true> {
+    if (!(await this.limit(`inst:${this.ip(req)}`, 20))) return this.html(res, 429, errorPage("Too many attempts", "Please wait a minute and try again."));
+    const s = await this.loadStep(req, res, ["instance"]);
+    if (!s) return true;
+    const { f, p, rid } = s;
+    // Each attempt makes the bridge contact a stranger-supplied host: bound them per request.
+    if (p.attempts >= MAX_INSTANCE_ATTEMPTS) {
+      await this.store.deletePending(rid);
+      await this.event("connect_failed", await this.who(p.accountId), "too_many_attempts");
+      return this.html(res, 429, errorPage("Too many attempts", "Too many addresses tried. Start again from the app."));
+    }
+    p.attempts += 1;
+    const typed = (f.get("instance") ?? "").slice(0, 300);
+    const fail = async (why: string, detail: string) => {
+      await this.store.putPending(rid, p);
+      if (p.attempts === 1) await this.event("connect_failed", await this.who(p.accountId), detail);
+      return this.renderStage(res, rid, p, why, { value: typed });
+    };
+
+    let origin: URL;
+    try {
+      origin = this.checkedInstance(typed);
+    } catch (e) {
+      return fail(e instanceof UnsafeUrlError ? e.message : "Invalid address.", "invalid_instance");
+    }
+    const login = this.loginFor(origin.origin);
+    try {
+      const probe = await login.probe();
+      if (!probe.ok) return fail(probe.reason, "unreachable");
+      const ch = await login.createChallenge(`${p.clientName} (via Papercliped, returns to ${new URL(p.redirectUri).host})`);
+      p.instanceUrl = origin.origin;
+      p.sealedChallenge = this.keyring.seal(JSON.stringify(ch));
+    } catch (e) {
+      return fail(e instanceof LoginError ? e.message : "Papercliped could not complete a sign-in with that Paperclip.", "unreachable");
+    }
+    p.stage = "approve";
+    await this.store.putPending(rid, p);
+    return this.renderStage(res, rid, p);
+  }
+
+  // POST /authorize/approved — did they approve in Paperclip? who are they?
+  private async stepApproved(req: IncomingMessage, res: ServerResponse): Promise<true> {
+    const s = await this.loadStep(req, res, ["approve"]);
+    if (!s) return true;
+    const { p, rid } = s;
+    const ch = this.unsealChallenge(p);
+    if (!ch || !p.instanceUrl) {
+      p.stage = "instance";
+      await this.store.putPending(rid, p);
+      return this.renderStage(res, rid, p);
+    }
+    const login = this.loginFor(p.instanceUrl);
+    let status: Awaited<ReturnType<PaperclipLogin["status"]>>;
+    try {
+      status = await login.status(ch);
+    } catch (e) {
+      return this.renderStage(res, rid, p, `Could not check Paperclip: ${(e as Error).message}`);
+    }
+    if (status === "cancelled" || status === "expired") {
+      await this.store.deletePending(rid);
+      await this.event("connect_failed", await this.who(p.accountId), "expired");
+      return this.html(res, 400, errorPage("Sign-in ended", `The Paperclip approval was ${status}. Start the connection again from the app.`));
+    }
+    if (status !== "approved") return this.renderStage(res, rid, p, "Not approved in Paperclip yet. Approve it in the other tab, then press Continue.");
+
+    let userId: string | null;
+    try {
+      userId = (await login.whoami(ch.boardApiToken)).userId;
+    } catch (e) {
+      return this.renderStage(res, rid, p, `Paperclip did not accept the approved credential: ${(e as Error).message}`);
+    }
+    if (!userId) return this.renderStage(res, rid, p, "Paperclip did not say who you are, so we can't link a username to it.");
+
+    const owner = await this.store.getLinkByIdentity(p.instanceUrl, userId);
+    if (p.accountId) {
+      // Reconnecting an account the user already signed in to with their secret key.
+      if (owner && owner.accountId !== p.accountId) {
+        p.stage = "choose";
+        p.accountId = undefined;
+        p.username = undefined;
+        p.sealedChallenge = undefined;
+        await this.store.putPending(rid, p);
+        return this.page(res, 400, choosePage(this.ctx(rid, p, "That Paperclip account is already linked to a different Papercliped username. Log in with that username and its secret key.")), p);
+      }
+      if (!(await this.replaceLink(p.accountId, p.instanceUrl, userId, ch.boardApiToken))) return this.renderStage(res, rid, p, "Could not save your connection. Please try again.");
+      await this.event("updated", await this.who(p.accountId), "reconnect");
+      p.sealedChallenge = undefined;
+      p.stage = "consent";
+      await this.store.putPending(rid, p);
+      return this.renderStage(res, rid, p);
+    }
+    if (owner) {
+      // Known Paperclip identity: signing in with Paperclip's approval IS the proof, so log them straight in.
+      const acct = await this.store.getAccount(owner.accountId);
+      if (!acct || acct.disabled) return this.renderStage(res, rid, p, "This account is unavailable.");
+      if (!(await this.replaceLink(acct.id, p.instanceUrl, userId, ch.boardApiToken))) return this.renderStage(res, rid, p, "Could not save your connection. Please try again.");
+      await this.store.touchAccountLogin(acct.id, this.now());
+      await this.event("updated", { accountId: acct.id, username: displayName(acct) }, "reconnect");
+      p.accountId = acct.id;
+      p.username = acct.username;
+      p.sealedChallenge = undefined;
+      p.stage = "welcome";
+      await this.store.putPending(rid, p);
+      return this.renderStage(res, rid, p);
+    }
+    p.paperclipUserId = userId;
+    p.stage = "username";
+    await this.store.putPending(rid, p);
+    return this.renderStage(res, rid, p);
+  }
+
+  // POST /authorize/username — new user picks a name; we create the account and mint the secret key
+  private async stepUsername(req: IncomingMessage, res: ServerResponse): Promise<true> {
+    if (!(await this.limit(`signup:${this.ip(req)}`, 10))) return this.html(res, 429, errorPage("Too many attempts", "Please wait a minute and try again."));
+    const s = await this.loadStep(req, res, ["username"]);
+    if (!s) return true;
+    const { f, p, rid } = s;
+    const typed = (f.get("username") ?? "").slice(0, 64);
+    const v = validateUsername(typed);
+    if (!v.ok) return this.renderStage(res, rid, p, v.reason, { value: typed });
+    const ch = this.unsealChallenge(p);
+    if (!ch || !p.instanceUrl || !p.paperclipUserId) {
+      p.stage = "instance";
+      await this.store.putPending(rid, p);
+      return this.renderStage(res, rid, p);
+    }
+    const secret = generateSecretKey();
+    const t = this.now();
+    const wantsAnon = f.get("anonymous") === "on";
+    const account: Account = { id: `pcb_a_${randomToken(12)}`, username: v.username, usernameKey: v.key, secretHash: await hashSecretKey(normalizeSecretKey(secret)!), createdAt: t, lastLoginAt: t, disabled: false, anonymous: false, alias: null };
+    let created = false;
+    for (let i = 0; i < 25 && !created; i++) {
+      if (wantsAnon) {
+        account.anonymous = true;
+        account.alias = generateAlias();
+      }
+      try {
+        created = await this.store.createAccount(account);
+      } catch (e) {
+        if (!(e instanceof AliasTakenError)) throw e; // draw another alias
+        continue;
+      }
+      if (!created) return this.renderStage(res, rid, p, "That username is taken. Please choose another.", { value: typed });
+    }
+    if (!created) return this.renderStage(res, rid, p, "Could not reserve an anonymous name right now. Please try again.", { value: typed });
+    const linked = await this.store.putLink({ accountId: account.id, instanceUrl: p.instanceUrl, paperclipUserId: p.paperclipUserId, sealedCredential: this.keyring.seal(ch.boardApiToken), createdAt: t, connectedAt: t, lastUsedAt: t, instanceLabel: this.instanceLabelFor(account, p.instanceUrl) });
+    if (!linked) {
+      await this.store.deleteAccount(account.id); // lost a race for this Paperclip identity
+      p.stage = "choose";
+      p.sealedChallenge = undefined;
+      await this.store.putPending(rid, p);
+      return this.page(res, 409, choosePage(this.ctx(rid, p, "That Paperclip account was just linked to another username. Log in with it instead.")), p);
+    }
+    await this.event("joined", { accountId: account.id, username: displayName(account) }, this.instanceLabelFor(account, p.instanceUrl));
+    p.accountId = account.id;
+    p.username = account.username;
+    p.path = "new";
+    p.sealedChallenge = undefined; // the credential now lives only on the account link
+    p.stage = "secret";
+    await this.store.putPending(rid, p);
+    const nonce = randomToken(12);
+    return this.page(res, 200, secretPage({ ...this.ctx(rid, p), username: account.username, secret, rotated: false, nonce }), p, nonce); // shown here, once, and never stored
+  }
+
+  // POST /authorize/welcome — returning user: continue, or make a new secret key
+  private async stepWelcome(req: IncomingMessage, res: ServerResponse): Promise<true> {
+    const s = await this.loadStep(req, res, ["welcome"]);
+    if (!s) return true;
+    const { f, p, rid } = s;
+    if (f.get("action") === "rotate" && p.accountId) {
+      const secret = generateSecretKey();
+      await this.store.setAccountSecret(p.accountId, await hashSecretKey(normalizeSecretKey(secret)!));
+      await this.event("updated", await this.who(p.accountId), "secret_rotated");
+      p.stage = "secret";
+      await this.store.putPending(rid, p);
+      const nonce = randomToken(12);
+      return this.page(res, 200, secretPage({ ...this.ctx(rid, p), username: p.username ?? "", secret, rotated: true, nonce }), p, nonce);
+    }
+    p.stage = "consent";
+    await this.store.putPending(rid, p);
+    return this.renderStage(res, rid, p);
+  }
+
+  // POST /authorize/continue — after the secret key screen
+  private async stepContinue(req: IncomingMessage, res: ServerResponse): Promise<true> {
+    const s = await this.loadStep(req, res, ["secret"]);
+    if (!s) return true;
+    s.p.stage = "consent";
+    await this.store.putPending(s.rid, s.p);
+    return this.renderStage(res, s.rid, s.p);
+  }
+
+  // POST /authorize/decision — choose the access level and issue the code
+  private async decisionAccount(req: IncomingMessage, res: ServerResponse): Promise<true> {
+    const s = await this.loadStep(req, res, ["consent"]);
+    if (!s) return true;
+    const { f, p, rid } = s;
+    const allowed = scopesUpTo(p.requestedMax as Scope);
+    const level = (f.get("level") ?? "") as Scope;
+    if (!allowed.includes(level)) return this.renderStage(res, rid, p, "Choose an access level.");
+    const link = p.accountId ? await this.store.getLink(p.accountId) : undefined;
+    if (!p.accountId || !link?.sealedCredential) {
+      p.stage = "instance";
+      await this.store.putPending(rid, p);
+      return this.renderStage(res, rid, p, undefined, { notice: "Your Paperclip connection is missing. Reconnect to continue." });
+    }
+    let acct = (await this.store.getAccount(p.accountId))!;
+    if (f.get("privacy_present") === "1") {
+      const want = f.get("anonymous") === "on";
+      if (want !== !!acct.anonymous) acct = await this.setPrivacy(acct, want);
+    }
+    const code = `pcb_ac_${randomToken(32)}`;
+    await this.store.putCode(sha256Hex(code), {
+      clientId: p.clientId,
+      redirectUri: p.redirectUri,
+      codeChallenge: p.codeChallenge,
+      scopes: scopesUpTo(level),
+      clientName: p.clientName,
+      userId: null,
+      instanceUrl: link.instanceUrl,
+      sealedCredential: null, // the credential stays on the account link
+      accountId: p.accountId,
+      username: displayName(acct), // grants carry the DISPLAY name: that is what audit rows and the panel see
+      path: p.path ?? "connect",
       expiresAt: this.now() + CODE_TTL_MS,
     });
     await this.store.deletePending(rid);
@@ -574,12 +1051,15 @@ export class OAuthProvider {
       resource: this.resource,
       instanceUrl: entry.instanceUrl,
       sealedCredential: entry.sealedCredential,
+      accountId: entry.accountId ?? null,
+      username: entry.username ?? null,
       createdAt: t,
       lastUsedAt: t,
       revoked: false,
     };
     await this.store.putGrant(grant);
     await this.store.setCodeGrant(hash, grant.id);
+    await this.event("completed", { accountId: grant.accountId, username: grant.username }, entry.path ?? "connect");
     return this.issue(grant);
   }
 

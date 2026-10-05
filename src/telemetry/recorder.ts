@@ -1,5 +1,7 @@
 import { hostname } from "node:os";
 import { monitorEventLoopDelay } from "node:perf_hooks";
+import type { NodeSample } from "../accounts/types.js";
+import { VERSION } from "../version.js";
 import type { AuditEvent, AuditRow, AuditStore } from "./types.js";
 
 const clip = (s: string | null | undefined, n: number) => (s == null ? null : String(s).slice(0, n));
@@ -22,6 +24,7 @@ export function toRow(e: AuditEvent, node: string): AuditRow {
     client: clip(e.client, 100),
     instance: clip(e.instance, 255),
     userId: clip(e.userId, 200),
+    username: clip(e.username, 64),
   };
 }
 
@@ -179,5 +182,42 @@ export class SystemSampler {
       samples: this.samples,
       recentPing: [...this.pings],
     };
+  }
+}
+
+/**
+ * Writes this bridge process's health to the database every 30 s, so the separate panel can show it and notice when it STOPS
+ * (asleep on a free tier, crashed, or cut off from the database). Failures are swallowed: reporting must never hurt the bridge.
+ */
+export class NodeReporter {
+  private timer?: NodeJS.Timeout;
+  private warned = false;
+
+  constructor(
+    private store: { recordNodeSample(s: NodeSample): Promise<void> },
+    private sampler: SystemSampler,
+    private node: string,
+    private intervalMs = 30_000,
+  ) {}
+
+  async report(): Promise<void> {
+    const s = this.sampler.snapshot();
+    try {
+      await this.store.recordNodeSample({ at: Date.now(), node: this.node, dbPingMs: s.dbPingMs, loopLagP99Ms: s.loopLagP99Ms, rssMb: s.rssMb, heapMb: s.heapUsedMb, uptimeS: s.uptimeS, version: VERSION });
+      this.warned = false;
+    } catch (e) {
+      if (!this.warned) console.error("node report failed:", (e as Error).message);
+      this.warned = true;
+    }
+  }
+
+  start(): void {
+    void this.report();
+    this.timer = setInterval(() => void this.report(), this.intervalMs);
+    this.timer.unref();
+  }
+
+  stop(): void {
+    if (this.timer) clearInterval(this.timer);
   }
 }
