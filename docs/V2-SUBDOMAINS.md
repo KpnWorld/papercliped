@@ -10,6 +10,7 @@ Users who cannot get a public `https://` address for their Paperclip can pay **$
 - **The name is the user's username.** Usernames cannot be changed, so the subdomain label never changes. We never create domains for users, only a subdomain under our domain.
 - **Base domain may change** (today `kpnsolute.com`). The registry stores the **label**, not the full address; the base domain is configuration. The label stays registered to the user across any domain change.
 - **Purpose is limited:** the subdomain is an access address for the user's own Paperclip, like a handle on a platform, not a place to run a business's public site.
+- **Open to everyone at launch (not beta-only).** Paying the $5 makes the user a **pro member**: they get everything beta accounts get (the connection manager at `/manage` and the plugin) plus **management of their domain** (see 4a). Beta stays a separate, free opt-in. The manager's gate changes from `beta` to `beta OR pro`; store a `pro_since` timestamp on the account, set by the paid order.
 - **Symbols are remapped, not refused.** The username stays the user's identity; only the hostname is derived from it by replacing the symbols with hyphens (rules in 6.2).
 - **Anonymous mode does not affect the subdomain.** Anonymous only hides a user from the public live log and the operator panel (it shows an alias there). The username is still the username, so anonymous users get the same `<username>.<domain>` as everyone else.
 - **Cloudflare terms (checked by the owner, not re-verified by us):** the service is fine as long as users do not use the subdomains for actual business uses. The Subdomain Terms and the abuse checks in section 7 must enforce this. **For the legal drafting:** decide exactly where "business use" starts. Working line so far: reaching your own Paperclip through the name is allowed even if that Paperclip supports a business; using the name as a public site, API, storefront or brand, or serving anyone else's service, is not.
@@ -37,7 +38,16 @@ bridge (Render) ── job queue (Postgres) ◀── polls (outbound HTTPS only
 6. Back to signup with the address filled in: Connect your Paperclip → approve in Paperclip.
 7. `/manage` and the plugin show the tunnel's online status.
 
+## 4a. Pro members: domain management (in `/manage` and the plugin)
+- See the address (`label + base domain`), the tunnel status (online/offline, last seen) and the "is it Paperclip?" check result.
+- Re-show the connect command and rotate the tunnel token (invalidates the old one; needs the secret key, like other sensitive actions).
+- Change the local port the tunnel forwards to (still limited to `localhost`/`127.0.0.1` plus a port).
+- Release the name (needs the secret key; starts the quarantine; does not refund).
+- The label itself cannot be changed (it is derived from the username).
+- Plugin tokens stay unable to do secret-key actions, so rotate/release remain browser-only.
+
 ## 5. Data model (sketch)
+- `accounts.pro_since` (nullable timestamp; set when the paid order completes).
 - `subdomains`: `account_id` (unique), `label` (unique, lowercase), `tunnel_id`, `local_port`, `status` (`pending` | `active` | `suspended` | `released`), `terms_version`, `paid_at`, `order_id`, `created_at`, `released_at`.
 - `subdomain_jobs`: `id`, `kind` (`provision` | `suspend` | `release` | `repoint`), `payload`, `state`, `attempts`, `claimed_by`, `claimed_until`, `result`, timestamps.
 - `base_domains`: `domain`, `active`, `primary` (supports several at once during a change).
@@ -69,7 +79,7 @@ Cover: purpose limit (access address for your own Paperclip; internal use that s
 ## 10. Open questions
 1. 12-month quarantine and idle-reclaim periods?
 2. Which domain (dedicated, one level)?
-3. Open to everyone or beta only at launch?
+3. If a name is suspended for abuse or reclaimed, does the account keep pro? (Proposal: pro ends only if the name is suspended for breaking the terms; a released name keeps pro status.)
 4. Still to verify with Cloudflare's current docs: tunnels per account, DNS records per zone, certificate coverage for subdomains, per-OS service install steps.
 
 ## 11. Phases
