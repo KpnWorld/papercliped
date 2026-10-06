@@ -85,3 +85,20 @@ describe("docs pages", () => {
     expect(screen.getAllByText("1.2k").length).toBeGreaterThan(0);
   });
 });
+
+describe("docs layout", () => {
+  it("has the docs header, grouped sidebar and a copy-link menu", async () => {
+    render(<MemoryRouter initialEntries={["/docs/permissions"]}><App /></MemoryRouter>);
+    expect(screen.getByRole("link", { name: "papercliped docs home" })).toBeInTheDocument();
+    const side = screen.getAllByRole("navigation", { name: "Docs" })[0];
+    for (const g of ["Learn", "Reference", "Project"]) expect(within(side).getAllByText(g).length).toBeGreaterThan(0);
+    expect(within(side).getByRole("link", { name: "All docs" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "More page options" }));
+    expect(screen.getByRole("menuitem", { name: /View the Markdown source/ })).toHaveAttribute("href", "https://github.com/OpenSourcx/papercliped/blob/main/site/docs/permissions.md");
+  });
+  it("the site header has no light/dark switch", () => {
+    render(<MemoryRouter initialEntries={["/"]}><App /></MemoryRouter>);
+    expect(screen.queryByRole("radio", { name: /dark|light|system/i })).toBeNull();
+    expect(screen.getAllByRole("link", { name: "Get started" }).length).toBeGreaterThan(0);
+  });
+});

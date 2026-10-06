@@ -19,6 +19,9 @@
 
 - **AI apps now connect at `https://mcp.papercliped.co/mcp`** (the OAuth issuer moves to `mcp.papercliped.co`; the website, docs and `/manage` stay on `papercliped.co`). Docs show the connector address through a new `{{MCP}}` placeholder, so self-hosted bridges show their own. Anyone connected before must remove the connector and add the new address.
 
+- **Website redesign:** a bolder homepage (a centred headline, pill buttons, a gradient pill hero with the mascot in the middle; click it for a wave), a shorter header (Product, Docs, Resources, Community, search, GitHub stars, Get started). The docs get their own header (links left, "papercliped Docs" centred, search and stars right), a sidebar grouped into Learn, Reference and Project with icons, counts and collapsible sections, and a page header with breadcrumb, tag and a Copy link menu (view the Markdown source, suggest an edit). The changelog moves into the docs layout as expandable release cards.
+- **Light and dark now follow your device automatically.** The manual System/Light/Dark switch is gone (an old saved choice is cleared); the seasonal palettes still rotate on their own.
+
 ## v2.0.0 — stable open-source build
 
 Papercliped v2 is the free, open-source foundation: the bridge, the connector for Claude and any MCP app, and the Paperclip plugin. Paid features (managed subdomains, pricing, legal) are planned for v3 (`docs/V3-SUBDOMAINS.md`).

@@ -13,13 +13,15 @@ import { Field } from "../src/components/ui";
 import { liveSocials } from "../src/config/community";
 import { applyPrefs, readPrefs } from "../src/theme/prefs";
 import { seasonalTheme } from "../src/theme/rotation";
+import { themeCss } from "../src/theme/css";
 
 const inRouter = (ui: React.ReactNode, path = "/") => render(<MemoryRouter initialEntries={[path]}>{ui}</MemoryRouter>);
 
 describe("theme preferences", () => {
-  it("defaults to following the season and the system mode", () => {
-    expect(readPrefs()).toEqual({ theme: "season", mode: "system" });
-    applyPrefs("season", "system");
+  it("defaults to following the season; light or dark is left to the device", () => {
+    expect(readPrefs()).toEqual({ theme: "season" });
+    document.documentElement.dataset.mode = "dark"; // an old manual choice
+    applyPrefs("season");
     expect(document.documentElement.dataset.theme).toBe(seasonalTheme());
     expect(document.documentElement.dataset.mode).toBeUndefined();
   });
@@ -27,23 +29,25 @@ describe("theme preferences", () => {
     const spy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("blocked");
     });
-    expect(readPrefs()).toEqual({ theme: "season", mode: "system" });
+    expect(readPrefs()).toEqual({ theme: "season" });
     spy.mockRestore();
   });
   it("ignores junk stored values", () => {
     localStorage.setItem("pcl.theme", "<script>");
-    localStorage.setItem("pcl.mode", "neon");
-    expect(readPrefs()).toEqual({ theme: "season", mode: "system" });
+    expect(readPrefs()).toEqual({ theme: "season" });
   });
-  it("the picker applies and remembers a theme and mode", async () => {
+  it("the design-kit picker applies and remembers a palette, with no mode switch", async () => {
+    localStorage.setItem("pcl.mode", "dark");
     render(<ThemePicker />);
-    await userEvent.selectOptions(screen.getByLabelText("Theme"), "sakura");
-    await userEvent.click(screen.getByLabelText("dark"));
+    expect(screen.queryByRole("radio")).toBeNull();
+    await userEvent.selectOptions(screen.getByLabelText("Palette"), "sakura");
     expect(document.documentElement.dataset.theme).toBe("sakura");
-    expect(document.documentElement.dataset.mode).toBe("dark");
     expect(localStorage.getItem("pcl.theme")).toBe("sakura");
-    await userEvent.click(screen.getByLabelText("system"));
-    expect(document.documentElement.dataset.mode).toBeUndefined();
+    expect(localStorage.getItem("pcl.mode")).toBeNull();
+  });
+  it("the theme CSS has no manual mode overrides", () => {
+    expect(themeCss()).not.toContain("data-mode");
+    expect(themeCss()).toContain("@media (prefers-color-scheme: dark)");
   });
 });
 
@@ -109,7 +113,7 @@ describe("community links", () => {
 describe("app", () => {
   it("renders the home page and the kit", () => {
     inRouter(<App />);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Papercliped, not Paperclipped.");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Your Paperclip, in every AI app.");
   });
   it("renders the design kit with every theme listed", () => {
     inRouter(<App />, "/kit");

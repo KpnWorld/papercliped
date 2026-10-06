@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { search } from "../lib/docs";
 import { isExternal, resolveHref } from "../lib/hosts";
 import { cx } from "./cx";
+import { Icon } from "./Icons";
 
 const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -85,11 +86,20 @@ export function SearchHost() {
 }
 
 /** A button that opens the search dialog. Any number of these can be on a page. */
-export function SearchButton({ className }: { className?: string }) {
+export function SearchButton({ className, label = "Search docs" }: { className?: string; label?: string }) {
   return (
-    <button type="button" onClick={() => window.dispatchEvent(new Event(OPEN_EVENT))} className={cx("flex h-9 items-center gap-2 rounded-lg border border-field px-3 text-sm text-muted transition-colors hover:text-ink", className)}>
-      <span aria-hidden="true">⌕</span><span>Search docs</span>
-      <kbd className="ml-auto rounded border border-line px-1.5 text-xs">{isMac() ? "⌘" : "Ctrl"} K</kbd>
+    <button type="button" onClick={() => window.dispatchEvent(new Event(OPEN_EVENT))} className={cx("flex h-9 items-center gap-2 rounded-full border border-line bg-surface px-3.5 text-sm text-muted transition-colors hover:border-field hover:text-ink", className)}>
+      <Icon name="search" size={15} /><span>{label}</span>
+      <kbd className="ml-auto rounded-md border border-line bg-bg px-1.5 font-sans text-xs">{isMac() ? "⌘" : "Ctrl"} K</kbd>
+    </button>
+  );
+}
+
+/** Just the magnifier, for tight headers. */
+export function SearchIconButton({ className }: { className?: string }) {
+  return (
+    <button type="button" aria-label="Search docs" onClick={() => window.dispatchEvent(new Event(OPEN_EVENT))} className={cx("grid h-9 w-9 place-items-center rounded-full text-muted transition-colors hover:bg-surface hover:text-ink", className)}>
+      <Icon name="search" size={17} />
     </button>
   );
 }

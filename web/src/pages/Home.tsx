@@ -3,7 +3,8 @@ import { Accordion } from "../components/Accordion";
 import { CodeBlock } from "../components/CodeBlock";
 import { CountUp } from "../components/CountUp";
 import { GitHubIcon } from "../components/Layout";
-import { Mascot } from "../components/Mascot";
+import { Icon } from "../components/Icons";
+import { PillArt } from "../components/PillArt";
 import { Playground } from "../components/Playground";
 import { Stepper } from "../components/Stepper";
 import { ButtonLink, Card, TextLink } from "../components/ui";
@@ -16,11 +17,13 @@ const MCP_URL = "https://mcp.papercliped.co/mcp";
 
 function Section({ id, eyebrow, title, lede, children }: { id: string; eyebrow: string; title: string; lede?: string; children: React.ReactNode }) {
   return (
-    <section id={id} aria-labelledby={`${id}-h`} className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
-      <p className="text-sm font-bold uppercase tracking-widest text-muted">{eyebrow}</p>
-      <h2 id={`${id}-h`} className="mt-2 text-3xl font-bold sm:text-4xl">{title}</h2>
-      {lede && <p className="mt-3 max-w-2xl text-lg text-muted">{lede}</p>}
-      <div className="mt-8">{children}</div>
+    <section id={id} aria-labelledby={`${id}-h`} className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:py-28">
+      <div className="mx-auto max-w-3xl text-center">
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted">{eyebrow}</p>
+        <h2 id={`${id}-h`} className="mt-3 text-4xl font-bold leading-[1.05] tracking-tighter sm:text-5xl">{title}</h2>
+        {lede && <p className="mx-auto mt-4 max-w-2xl text-lg text-muted">{lede}</p>}
+      </div>
+      <div className="mt-12">{children}</div>
     </section>
   );
 }
@@ -51,63 +54,59 @@ export function Home() {
   return (
     <>
       <section className="relative overflow-hidden">
-        <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-16 pt-12 sm:pt-20 lg:grid-cols-[1.2fr_1fr]">
-          <div>
-            <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-sm font-medium">
-              <span aria-hidden="true">✦</span> Free and open source · v2
-            </p>
-            <h1 className="mt-5 text-5xl font-bold leading-[1.05] sm:text-6xl lg:text-7xl">Papercliped, not Paperclipped.</h1>
-            <p className="mt-5 max-w-xl text-lg text-muted sm:text-xl">Connect Claude, ChatGPT or any MCP app to your Paperclip. Control agents, sync with them and get reports, at the access level you choose.</p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <ButtonLink to="/docs/getting-started" size="lg">Get started</ButtonLink>
-              <ButtonLink to={community.github} variant="secondary" size="lg"><GitHubIcon /> Star on GitHub</ButtonLink>
-            </div>
-            <dl className="mt-8 flex flex-wrap gap-6">
-              <div><dt className="text-sm text-muted">People connected</dt><dd className="font-display text-3xl font-bold"><CountUp value={stats?.users ?? null} /></dd></div>
-              <div><dt className="text-sm text-muted">Live connections</dt><dd className="font-display text-3xl font-bold"><CountUp value={stats?.connections ?? null} /></dd></div>
-              <div><dt className="text-sm text-muted">Tools</dt><dd className="font-display text-3xl font-bold">{tools.length}</dd></div>
-            </dl>
-          </div>
-          <div className="flex flex-col items-center gap-6">
-            <div className="animate-float">
-              <Mascot size={220} hopOnClick title="Papercliped mascot. Click me." className="cursor-pointer drop-shadow-xl" />
-            </div>
-            <div className="w-full max-w-md">
-              <CodeBlock label="Add to Claude as a custom connector" code={MCP_URL} />
-            </div>
+        <div aria-hidden="true" className="hero-glow" />
+        <div className="relative mx-auto max-w-5xl px-4 pt-14 text-center sm:pt-20">
+          <AppLink to="/changelog" className="group inline-flex items-center gap-2 rounded-full border border-line bg-surface/70 py-1 pl-1.5 pr-3 text-sm font-medium transition-colors hover:border-field">
+            <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-accent-ink">v2</span>
+            Free and open source
+            <Icon name="chevron" size={14} className="text-muted transition-transform group-hover:translate-x-0.5" />
+          </AppLink>
+          <h1 className="mx-auto mt-7 max-w-4xl text-5xl font-bold leading-[0.95] tracking-tighter sm:text-7xl lg:text-[5.5rem]">Your Paperclip, in every AI&nbsp;app.</h1>
+          <p className="mx-auto mt-6 max-w-2xl text-lg text-muted sm:text-xl">Connect Claude, ChatGPT or any MCP app to your Paperclip. Check on agents, steer the work and get reports, at the access level you choose.</p>
+          <div className="mt-9 flex flex-wrap justify-center gap-3">
+            <ButtonLink to="/docs/getting-started" size="lg">Get started</ButtonLink>
+            <ButtonLink to={community.github} variant="secondary" size="lg"><GitHubIcon /> Star on GitHub</ButtonLink>
           </div>
         </div>
-        <div className="border-y border-line bg-surface">
-          <ul aria-label="Works with" className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-8 gap-y-3 px-4 py-5 text-sm font-semibold">
-            <li className="text-muted">Works with</li>
-            {APPS.map((a) => <li key={a} className="rounded-full border border-line bg-bg px-3 py-1 transition-transform duration-150 hover:-translate-y-0.5 hover:rotate-[-2deg]">{a}</li>)}
-          </ul>
+        <PillArt className="mx-auto mt-12 max-w-5xl px-4 sm:mt-14" />
+        <div className="relative border-y border-line bg-bg">
+          <dl className="mx-auto grid max-w-4xl grid-cols-3 divide-x divide-line text-center">
+            <div className="px-2 py-6"><dt className="text-xs text-muted sm:text-sm">People connected</dt><dd className="font-display text-3xl font-bold tracking-tight sm:text-4xl"><CountUp value={stats?.users ?? null} /></dd></div>
+            <div className="px-2 py-6"><dt className="text-xs text-muted sm:text-sm">Live connections</dt><dd className="font-display text-3xl font-bold tracking-tight sm:text-4xl"><CountUp value={stats?.connections ?? null} /></dd></div>
+            <div className="px-2 py-6"><dt className="text-xs text-muted sm:text-sm">Tools</dt><dd className="font-display text-3xl font-bold tracking-tight sm:text-4xl">{tools.length}</dd></div>
+          </dl>
         </div>
+        <ul aria-label="Works with" className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-3 gap-y-3 px-4 py-8 text-sm font-medium">
+          <li className="mr-2 text-xs font-bold uppercase tracking-[0.2em] text-muted">Works with</li>
+          {APPS.map((a) => <li key={a} className="rounded-full border border-line px-3.5 py-1.5 transition-transform duration-150 hover:-translate-y-0.5 hover:rotate-[-2deg]">{a}</li>)}
+        </ul>
       </section>
 
       <Section id="how" eyebrow="How it works" title="Three steps, about a minute" lede="You keep control the whole way: you approve the connection in your own Paperclip and choose what the AI may do.">
-        <Stepper steps={[
-          { title: "Add the connector", body: <><p>In Claude open <strong>Settings → Connectors → Add custom connector</strong> and paste the address. ChatGPT and other MCP apps work the same way.</p><CodeBlock code={MCP_URL} /></> },
-          { title: "Connect your Paperclip", body: <p>Enter your Paperclip's public address and approve the request inside your Paperclip. Pick a username and save the secret key you're shown once.</p> },
-          { title: "Choose the level, then ask", body: <p>Leave it on <strong>Read only</strong> or pick <strong>Full control (beta)</strong>. Then ask: “What are my agents working on?” or “Pause the agent that's over budget.”</p> },
-        ]} />
+        <div className="mx-auto max-w-3xl">
+          <Stepper steps={[
+            { title: "Add the connector", body: <><p>In Claude open <strong>Settings → Connectors → Add custom connector</strong> and paste the address. ChatGPT and other MCP apps work the same way.</p><CodeBlock code={MCP_URL} /></> },
+            { title: "Connect your Paperclip", body: <p>Enter your Paperclip's public address and approve the request inside your Paperclip. Pick a username and save the secret key you're shown once.</p> },
+            { title: "Choose the level, then ask", body: <p>Leave it on <strong>Read only</strong> or pick <strong>Full control (beta)</strong>. Then ask: “What are my agents working on?” or “Pause the agent that's over budget.”</p> },
+          ]} />
+        </div>
       </Section>
 
       <Section id="playground" eyebrow="Permission playground" title="See exactly what the AI can do" lede="Every tool, and the level it needs. Switch levels to see what changes.">
         <Playground />
       </Section>
 
-      <Section id="plugins" eyebrow="Two plugins, one service" title="Use it from your AI app, or from inside Paperclip">
+      <Section id="plugins" eyebrow="Two plugins, one service" title="From your AI app, or from inside Paperclip">
         <div className="grid gap-4 md:grid-cols-2">
-          <Card interactive>
-            <h3 className="text-xl font-bold">Papercliped for AI apps</h3>
+          <Card interactive className="p-7">
+            <h3 className="text-2xl font-bold tracking-tight">Papercliped for AI apps</h3>
             <p className="mt-2 text-muted">The main one. Claude, ChatGPT or any MCP client gets {tools.length} tools to control and report on your Paperclip. Hosted at papercliped.co, or run it yourself.</p>
-            <div className="mt-4 flex flex-wrap gap-3"><ButtonLink to="/docs/getting-started" size="sm">Get started</ButtonLink><ButtonLink to="/docs/other-ai-apps" size="sm" variant="secondary">Any AI app</ButtonLink></div>
+            <div className="mt-5 flex flex-wrap gap-3"><ButtonLink to="/docs/getting-started" size="sm">Get started</ButtonLink><ButtonLink to="/docs/other-ai-apps" size="sm" variant="secondary">Any AI app</ButtonLink></div>
           </Card>
-          <Card interactive>
-            <h3 className="text-xl font-bold">Papercliped plugin for Paperclip <span className="align-middle text-xs font-bold uppercase text-muted">beta</span></h3>
+          <Card interactive className="p-7">
+            <h3 className="text-2xl font-bold tracking-tight">Papercliped plugin for Paperclip <span className="align-middle text-xs font-bold uppercase text-muted">beta</span></h3>
             <p className="mt-2 text-muted">A page inside your Paperclip to link your account and manage connected apps: change their level, disconnect them, go anonymous.</p>
-            <div className="mt-4"><ButtonLink to="/docs/paperclip-plugin" size="sm" variant="secondary">Paperclip plugin</ButtonLink></div>
+            <div className="mt-5"><ButtonLink to="/docs/paperclip-plugin" size="sm" variant="secondary">Paperclip plugin</ButtonLink></div>
           </Card>
         </div>
       </Section>
@@ -116,21 +115,23 @@ export function Home() {
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {SECURITY.map((s) => <Card as="li" interactive key={s.t}><h3 className="font-sans text-lg font-bold">{s.t}</h3><p className="mt-1 text-muted">{s.d}</p></Card>)}
         </ul>
-        <p className="mt-6"><TextLink to="/docs/security">Read the security model</TextLink></p>
+        <p className="mt-8 text-center"><TextLink to="/docs/security">Read the security model</TextLink></p>
       </Section>
 
       <section aria-labelledby="cta-h" className="mx-auto max-w-6xl px-4 py-12">
-        <div className="flex flex-col items-start gap-6 rounded-3xl bg-accent p-8 text-accent-ink sm:flex-row sm:items-center sm:p-12">
-          <div className="flex-1">
-            <h2 id="cta-h" className="text-3xl font-bold">Build it with us</h2>
-            <p className="mt-2 max-w-xl opacity-90">Papercliped is a community project. Suggest a feature, report a bug, or send a pull request.</p>
+        <div className="relative overflow-hidden rounded-[2rem] border border-line bg-surface px-6 py-14 text-center sm:px-12 sm:py-20">
+          <div aria-hidden="true" className="cta-pills" />
+          <h2 id="cta-h" className="relative text-4xl font-bold tracking-tighter sm:text-5xl">Build it with us</h2>
+          <p className="relative mx-auto mt-3 max-w-xl text-lg text-muted">Papercliped is a community project. Suggest a feature, report a bug, or send a pull request.</p>
+          <div className="relative mt-8 flex flex-wrap justify-center gap-3">
+            <ButtonLink to="/community" size="lg">Join the community</ButtonLink>
+            <ButtonLink to="/docs" size="lg" variant="secondary">Read the docs</ButtonLink>
           </div>
-          <AppLink to="/community" className="inline-flex h-12 items-center rounded-lg bg-bg px-6 font-semibold text-ink transition-transform duration-150 hover:-translate-y-0.5 active:scale-[0.97]">Join the community</AppLink>
         </div>
       </section>
 
       <Section id="faq" eyebrow="FAQ" title="Questions people ask">
-        <Accordion items={FAQ} />
+        <div className="mx-auto max-w-3xl"><Accordion items={FAQ} /></div>
       </Section>
     </>
   );

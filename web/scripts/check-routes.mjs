@@ -100,13 +100,21 @@ try {
     mkdirSync(shotsDir, { recursive: true });
     for (const theme of THEMES) for (const mode of ["light", "dark"]) {
       const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: mode });
-      await c.addInitScript(([t, m]) => { localStorage.setItem("pcl.theme", t); localStorage.setItem("pcl.mode", m); }, [theme, mode]);
+      // Light or dark comes from the device (colorScheme); only the palette is a stored choice.
+      await c.addInitScript((t) => localStorage.setItem("pcl.theme", t), theme);
       const p = await c.newPage();
       await c.route("**/api/public/**", fakeApi);
       await p.goto(`${base}/kit`, { waitUntil: "networkidle" });
       await p.screenshot({ path: join(shotsDir, `kit-${theme}-${mode}.png`) });
       await p.goto(`${base}/`, { waitUntil: "networkidle" });
       await p.screenshot({ path: join(shotsDir, `home-${theme}-${mode}.png`) });
+      if (theme === "clip") {
+        await p.screenshot({ path: join(shotsDir, `home-full-${mode}.png`), fullPage: true });
+        for (const [name, path] of [["docs", "/docs"], ["doc", "/docs/permissions"], ["changelog", "/changelog"]]) {
+          await p.goto(`${base}${path}`, { waitUntil: "networkidle" });
+          await p.screenshot({ path: join(shotsDir, `${name}-${mode}.png`) });
+        }
+      }
       await c.close();
     }
     console.log(`screenshots in ${shotsDir}`);

@@ -7,7 +7,15 @@ export const DOCS_NAV: { title: string; slugs: string[] }[] = [
   { title: "Help", slugs: ["faq", "troubleshooting"] },
 ];
 
+/** How the sidebar groups the sections, with an icon for each (names from components/Icons). */
+export const DOCS_GROUPS: { label: string; sections: { title: string; icon: "rocket" | "plug" | "book" | "code" | "help" }[] }[] = [
+  { label: "Learn", sections: [{ title: "Get started", icon: "rocket" }, { title: "Connect your AI app", icon: "plug" }, { title: "Guides", icon: "book" }] },
+  { label: "Reference", sections: [{ title: "Reference", icon: "code" }, { title: "Help", icon: "help" }] },
+];
+
 export const DOC_ORDER = DOCS_NAV.flatMap((s) => s.slugs);
 export const sectionOf = (slug: string) => DOCS_NAV.find((s) => s.slugs.includes(slug))?.title ?? "Docs";
 /** Where "Edit on GitHub" goes: the generated tools page is edited in the code, not the Markdown. */
 export const editUrl = (slug: string) => (slug === "tools" ? "https://github.com/OpenSourcx/papercliped/blob/main/src/tools.ts" : `https://github.com/OpenSourcx/papercliped/edit/main/site/docs/${slug}.md`);
+/** The page's Markdown on GitHub. */
+export const sourceUrl = (slug: string) => (slug === "tools" ? "https://github.com/OpenSourcx/papercliped/blob/main/site/docs/tools.md" : `https://github.com/OpenSourcx/papercliped/blob/main/site/docs/${slug}.md`);
