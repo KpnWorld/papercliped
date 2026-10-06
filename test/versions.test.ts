@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 const json = (p: string) => JSON.parse(read(p));
 
-// One tag publishes both npm packages (see .github/workflows/release.yml), so every version string must agree.
+// One version on main publishes both npm packages and tags the commit (see .github/workflows/release.yml), so every version string must agree.
 describe("release metadata", () => {
   const root = json("package.json");
   it("every package and manifest carries the same version", () => {

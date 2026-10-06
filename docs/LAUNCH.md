@@ -117,7 +117,7 @@ npm login                      # account with 2FA
 npm run build && npm test
 npm publish --tag beta         # first publish of "papercliped"; check the name is free first: npm view papercliped
 ```
-Users run `npx papercliped@beta`. Pushing a `v*` tag runs [`release.yml`](../.github/workflows/release.yml), which publishes with npm trusted publishing (no token) and creates the GitHub release; one-time setup is in [RELEASING.md](RELEASING.md). If the name `papercliped` is taken, use a scope (`@kpnworld/papercliped`) and change `name` in `package.json`.
+Users run `npx papercliped@beta`. Pushing a new version to `main` runs [`release.yml`](../.github/workflows/release.yml), which publishes with npm trusted publishing (no token) and creates the GitHub release; one-time setup is in [RELEASING.md](RELEASING.md). If the name `papercliped` is taken, use a scope (`@kpnworld/papercliped`) and change `name` in `package.json`.
 
 ## 11. GitHub release "v1.0.0-beta.1"
 Releases → **Draft a new release** → tag `v1.0.0-beta.1` (target `main`) → title *Papercliped v1.0.0-beta.1* → paste [`CHANGELOG.md`](../CHANGELOG.md) → tick **Set as a pre-release** → Publish.

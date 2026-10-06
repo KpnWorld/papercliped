@@ -1,6 +1,6 @@
 # Releasing
 
-Two npm packages ship from one tag: `papercliped` (the bridge, repo root) and `papercliped-paperclip-plugin` (`plugin/`). Publishing uses **npm trusted publishing** (OIDC) from `.github/workflows/release.yml`: no npm token is stored in GitHub, and provenance is attached automatically.
+Two npm packages ship from one version: `papercliped` (the bridge, repo root) and `papercliped-paperclip-plugin` (`plugin/`). Publishing uses **npm trusted publishing** (OIDC) from `.github/workflows/release.yml`: no npm token is stored in GitHub, and provenance is attached automatically.
 
 Requirements: the repository is public, the workflow runs on GitHub-hosted runners, and GitHub Actions is enabled (and billable, if needed) for the `OpenSourcx` organization.
 
@@ -29,12 +29,9 @@ Trusted publishing can only be configured on a package that already exists.
 The website (`web/`) is **not** in the npm package. The Docker image builds it (a separate stage) and the bridge serves it from `/app/web/dist`. The npm package's `papercliped-bridge` serves its built-in Markdown pages instead, unless you point `WEB_DIST` at a built copy (`npm --prefix web ci && npm --prefix web run build`).
 
 ## Each release
-1. Bump `version` in `package.json`, `plugin/package.json`, `plugin/src/manifest.ts` and `.claude-plugin/plugin.json` (they must match the tag; `test/versions.test.ts` checks it), and add a `## vX.Y.Z[-beta.N]` section to `CHANGELOG.md`.
-2. Commit to `main` and let CI pass.
-3. Tag and push:
-   ```sh
-   git tag vX.Y.Z-beta.N
-   git push origin vX.Y.Z-beta.N
-   ```
+Releases are automatic: **every push to `main` whose version isn't released yet becomes a release.** Nobody pushes tags.
 
-The workflow then: checks the tag equals both package versions, installs, builds and tests the root and the plugin, packs and installs both packages as a user would (`scripts/check-packages.mjs`), publishes `papercliped` and `papercliped-paperclip-plugin` (tag contains `-` → `--tag beta`, otherwise `latest`), and creates the GitHub release with that version's changelog section (marked pre-release for `-` tags). The plugin step is skipped if that plugin version is already on npm, and an existing GitHub release is left alone. If the root version is already on npm, the run fails: bump the version and tag again.
+1. Bump `version` in `package.json`, `plugin/package.json`, `plugin/src/manifest.ts` and `.claude-plugin/plugin.json` (they must match; `test/versions.test.ts` checks it), rename `## Unreleased` in `CHANGELOG.md` to `## vX.Y.Z — <title>` (the release notes come from that section), and add the date to `web/src/content/release-dates.json`.
+2. Push to `main`.
+
+On every push to `main`, `.github/workflows/release.yml` reads the version. If the tag `vX.Y.Z` already exists it stops (an ordinary commit). Otherwise it checks that every version string and the changelog section agree, builds and tests the root and the plugin, packs and installs both packages as a user would (`scripts/check-packages.mjs`), publishes `papercliped` and `papercliped-paperclip-plugin` (a version with `-`, like `2.2.0-beta.1`, goes to the `beta` dist-tag, otherwise `latest`), and only then creates the tag `vX.Y.Z` on that exact commit together with the GitHub release. Each publish step skips a version already on npm, and the tag is made last, so a failed run can be re-run from the Actions tab (or with **Run workflow**) once the cause is fixed.

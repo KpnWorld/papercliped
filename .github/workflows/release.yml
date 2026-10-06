@@ -1,74 +1,93 @@
 name: Release
-# npm trusted publishing (OIDC): no npm token is stored anywhere. Register this exact filename (release.yml) on npmjs.com for both
-# packages. See docs/RELEASING.md.
+# Every push to main checks the version in package.json. If `v<version>` isn't released yet, this tests, publishes both npm
+# packages, then tags that exact commit and creates the GitHub release. Bumping the version on main is the whole release:
+# nobody pushes tags by hand. npm trusted publishing (OIDC): no npm token is stored anywhere; register this exact filename
+# (release.yml) on npmjs.com for both packages. See docs/RELEASING.md.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  workflow_dispatch: # re-run by hand (e.g. after fixing the npm setup); still releases only an unreleased version
 permissions:
-  contents: write   # GitHub release
+  contents: write   # tag + GitHub release
   id-token: write   # npm trusted publishing (OIDC)
+concurrency:
+  group: release
+  cancel-in-progress: false
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with: { fetch-depth: 0 }
+
+      - name: Is this version already released?
+        id: v
+        run: |
+          ver="$(node -p "require('./package.json').version")"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "tag=v$ver" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$ver" >/dev/null; then
+            echo "v$ver is already tagged; nothing to release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Every package carries the same version
+        if: steps.v.outputs.release == 'true'
+        run: |
+          want="${{ steps.v.outputs.version }}"
+          for got in "$(node -p "require('./plugin/package.json').version")" "$(node -p "require('./.claude-plugin/plugin.json').version")"; do
+            if [ "$got" != "$want" ]; then echo "::error::version mismatch: $got vs package.json $want"; exit 1; fi
+          done
+          grep -q "^## v$want\b" CHANGELOG.md || { echo "::error::CHANGELOG.md has no '## v$want' section"; exit 1; }
+
       - uses: actions/setup-node@v6
+        if: steps.v.outputs.release == 'true'
         with:
           node-version: "24"   # trusted publishing needs npm >= 11.5.1 and Node >= 22.14
           registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
       - name: Make sure npm supports trusted publishing
-        run: |
-          npm install -g npm@latest
-          npm --version
+        if: steps.v.outputs.release == 'true'
+        run: npm install -g npm@latest && npm --version
 
-      - name: Tag matches the root package.json version
+      - name: Build and test
+        if: steps.v.outputs.release == 'true'
         run: |
-          want="${GITHUB_REF_NAME#v}"
-          have="$(node -p "require('./package.json').version")"
-          if [ "$want" != "$have" ]; then echo "::error::tag $GITHUB_REF_NAME does not match package.json version $have"; exit 1; fi
-      - name: Tag matches the plugin package.json version
-        run: |
-          want="${GITHUB_REF_NAME#v}"
-          have="$(node -p "require('./plugin/package.json').version")"
-          if [ "$want" != "$have" ]; then echo "::error::tag $GITHUB_REF_NAME does not match plugin/package.json version $have"; exit 1; fi
+          npm ci && npm run build && npm test
+          npm --prefix plugin ci && npm --prefix plugin run typecheck && npm --prefix plugin test && npm --prefix plugin run build
+          node scripts/check-packages.mjs
 
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
-      - run: npm --prefix plugin ci
-      - run: npm --prefix plugin run typecheck
-      - run: npm --prefix plugin test
-      - run: npm --prefix plugin run build
-      - name: Both packages pack and install cleanly
-        run: node scripts/check-packages.mjs
-
-      - name: Publish papercliped (pre-releases go to the `beta` tag)
+      # Publishing comes before the tag, and each step skips a version that's already on npm, so a failed run can simply be
+      # re-run (from the Actions tab) once the cause is fixed.
+      - name: Publish papercliped
+        if: steps.v.outputs.release == 'true'
         run: |
-          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then npm publish --tag beta; else npm publish; fi
-      - name: Publish papercliped-paperclip-plugin (skipped if this version is already on npm)
+          ver="${{ steps.v.outputs.version }}"
+          if npm view "papercliped@$ver" version >/dev/null 2>&1; then echo "papercliped@$ver is already on npm; skipping."; exit 0; fi
+          if [[ "$ver" == *-* ]]; then npm publish --tag beta; else npm publish; fi
+      - name: Publish papercliped-paperclip-plugin
+        if: steps.v.outputs.release == 'true'
         working-directory: plugin
         run: |
-          name="$(node -p "require('./package.json').name")"
-          ver="$(node -p "require('./package.json').version")"
-          if npm view "$name@$ver" version >/dev/null 2>&1; then
-            echo "$name@$ver is already on npm; skipping."
-            exit 0
-          fi
-          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then npm publish --tag beta; else npm publish; fi
+          ver="${{ steps.v.outputs.version }}"
+          if npm view "papercliped-paperclip-plugin@$ver" version >/dev/null 2>&1; then echo "papercliped-paperclip-plugin@$ver is already on npm; skipping."; exit 0; fi
+          if [[ "$ver" == *-* ]]; then npm publish --tag beta; else npm publish; fi
 
       - name: Release notes from CHANGELOG.md
+        if: steps.v.outputs.release == 'true'
         run: |
-          awk -v tag="$GITHUB_REF_NAME" '
+          awk -v tag="${{ steps.v.outputs.tag }}" '
             /^## / { if (found) exit; if (index($0, "## " tag) == 1) found = 1 }
             found { print }
           ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
-          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then echo "No section for $GITHUB_REF_NAME; using the whole CHANGELOG."; cp CHANGELOG.md "$RUNNER_TEMP/notes.md"; fi
-      - name: GitHub release
+      - name: Tag this commit and create the GitHub release
+        if: steps.v.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then echo "Release $GITHUB_REF_NAME already exists; skipping."; exit 0; fi
-          flags=()
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then flags+=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" "${flags[@]}" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+          tag="${{ steps.v.outputs.tag }}"
+          flags=(--target "$GITHUB_SHA" --title "$tag" --notes-file "$RUNNER_TEMP/notes.md")
+          if [[ "$tag" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$tag" "${flags[@]}"
