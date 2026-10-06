@@ -4,7 +4,9 @@ import { migrate } from "./migrate.js";
 import { OAuthProvider } from "./oauth/provider.js";
 import { createHttpServer } from "./server.js";
 import { ManageRoutes } from "./manage/routes.js";
+import { PublicApiRoutes } from "./public-api/routes.js";
 import { SiteRoutes } from "./site/site.js";
+import { VERSION } from "./version.js";
 import { createStore } from "./store-factory.js";
 import { AuditRecorder, NodeReporter, SystemSampler } from "./telemetry/recorder.js";
 import { MemoryStore } from "./oauth/store.js";
@@ -26,7 +28,8 @@ async function main() {
     process.exit(1);
   }
 
-  // One store serves OAuth state, accounts and audit telemetry; the operator panel is a separate program that reads it.
+  // One store serves OAuth state, accounts and audit telemetry. The public stats API reads aggregates from it; the private
+  // operator dashboard (a separate, access-controlled service) reads the same telemetry tables.
   const store = http.oauth ? createStore(http.oauth) : new MemoryStore();
   try {
     await store.ping();
@@ -63,8 +66,9 @@ async function main() {
         stats: async () => ({ users: await store.countAccounts(), connections: await store.liveGrantCount() }),
       })
     : undefined;
+  const publicApi = new PublicApiRoutes({ store, version: VERSION, docsUrl: "https://papercliped.co/docs/public-api", publicUrl: siteUrl ?? undefined, proxyHops: http.oauth?.proxyHops ?? 0 });
   const manage = provider && http.oauth?.mode === "multi" ? new ManageRoutes(provider, { secureCookie: !!siteUrl?.startsWith("https:") }) : undefined;
-  const server = createHttpServer(config, http, { oauth: provider, recorder, site, manage });
+  const server = createHttpServer(config, http, { oauth: provider, recorder, site, manage, publicApi });
   server.listen(http.port, http.host, () => {
     const o = http.oauth;
     console.error(

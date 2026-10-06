@@ -7,10 +7,13 @@
 ## What the service does
 Papercliped lets an AI assistant (such as Claude or ChatGPT) that **you** connect act on **your** Paperclip: read status and reports and, only at the access level you choose, control agents and tasks.
 
+## What we publish
+The service publishes **aggregate numbers only** at `/api/public/v1/*` and on the status page: totals and rates (users, live connections, sign-in success, request success rate, latency, error types, load). Nothing in them identifies you: no usernames or aliases, no Paperclip addresses, no app names, no IP addresses, and no per-person breakdown.
+
 ## Data we handle
 | Data | Why | How it is kept |
 | --- | --- | --- |
-| Your **username** | to identify your account and to run the service | stored with your account; shown only in the operator's logs and panel (see Anonymous mode below) |
+| Your **username** | to identify your account and to run the service | stored with your account; shown only in the operator's logs and private dashboard (see Anonymous mode below) |
 | Your **secret key** | to let you sign in again | only a salted one-way hash is stored; we cannot read or recover it |
 | The address of your Paperclip | to connect to it | stored until you disconnect or delete your account |
 | A Paperclip access key, issued when **you** approve in your own Paperclip | to make the requests you authorised | stored **encrypted**; deleted when you disconnect, or after 30 days without use |
@@ -26,7 +29,7 @@ Papercliped lets an AI assistant (such as Claude or ChatGPT) that **you** connec
 We do **not** sell data, use it for advertising, or use it to train models.
 
 ## Anonymous mode
-You can choose to appear anonymously. Your username is then replaced in the logs and the operator panel by a generated alias (for example `Ann02`), and your Paperclip's address by a masked label. Turning it on also replaces your name in earlier log entries. This is **pseudonymity, not secrecy from the operator**: a person with administrator access to the database can still link an alias to an account. It does protect you from anyone who only sees the panel or the logs.
+You can choose to appear anonymously. Your username is then replaced in the logs and the operator's dashboard by a generated alias (for example `Ann02`), and your Paperclip's address by a masked label. Turning it on also replaces your name in earlier log entries. This is **pseudonymity, not secrecy from the operator**: a person with administrator access to the database can still link an alias to an account. It does protect you from anyone who only sees the panel or the logs.
 
 ## Your AI provider
 What the AI app does with the content it receives is governed by that provider's terms and privacy policy (for example Anthropic or OpenAI), not this one.

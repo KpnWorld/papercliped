@@ -6,6 +6,7 @@ import { executeTool, type AuditEvent, type ExecOptions } from "./execute.js";
 import { createMcpServer } from "./mcp.js";
 import { safeEqual } from "./oauth/crypto.js";
 import { OAuthProvider } from "./oauth/provider.js";
+import type { PublicApiRoutes } from "./public-api/routes.js";
 import { ManageRoutes } from "./manage/routes.js";
 import { SiteRoutes } from "./site/site.js";
 import { buildOpenApi } from "./openapi.js";
@@ -23,6 +24,8 @@ export interface ServerOptions {
   recorder?: AuditRecorder;
   /** Public pages: landing, docs, privacy, terms. */
   site?: SiteRoutes;
+  /** Public, aggregate-only statistics (/api/public/v1/*). */
+  publicApi?: PublicApiRoutes;
   /** The beta connection manager (/manage and /api/manage). */
   manage?: ManageRoutes;
 }
@@ -132,6 +135,8 @@ export function createHttpServer(config: BridgeConfig, http: HttpConfig, opts: S
         const host = req.headers.host ?? `${http.host}:${http.port}`;
         return json(res, 200, buildOpenApi(http.oauth?.issuer ?? http.publicUrl ?? `http://${host}`));
       }
+
+      if (opts.publicApi && (await opts.publicApi.handle(req, res, url))) return;
 
       if (opts.site && (await opts.site.handle(req, res, url))) return;
 

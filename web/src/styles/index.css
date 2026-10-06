@@ -124,3 +124,10 @@
 .prose-papercliped th { background: var(--surface); }
 .prose-papercliped strong { font-weight: 700; }
 .prose-papercliped em { font-style: italic; }
+.bar-grow { transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+.chart-line { stroke-dashoffset: 0; }
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); }
+  50% { box-shadow: 0 0 0 6px transparent; }
+}
+.animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }

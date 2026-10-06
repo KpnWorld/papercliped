@@ -137,21 +137,7 @@ export interface AccountStore {
   liveGrantCount(): Promise<number>;
 }
 
-/**
- * Everything the SEPARATE operator panel may do: read telemetry and a few safe aggregates. Deliberately no writes and nothing
- * that touches credentials or secret hashes. The panel's Postgres role can't do more than this even if the panel is compromised.
- */
-export interface PanelData extends AuditReader {
-  userEventsRecent(afterId: number, limit: number): Promise<UserEvent[]>;
-  userEventCounts(from: number, to: number): Promise<UserCounts>;
-  userEventSeries(from: number, to: number, bucketMs: number): Promise<UserEventBucket[]>;
-  countAccounts(): Promise<number>;
-  liveGrantCount(): Promise<number>;
-  nodeSamples(since: number): Promise<NodeSample[]>;
-  ping(): Promise<void>;
-  close(): Promise<void>;
-}
-
+/** Everything the bridge persists: OAuth state, accounts and audit telemetry. */
 export interface Store extends AuditStore, AccountStore {
   putClient(c: OAuthClient): Promise<void>;
   getClient(id: string): Promise<OAuthClient | undefined>;

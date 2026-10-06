@@ -7,11 +7,12 @@ import { Community } from "./pages/Community";
 import { Home } from "./pages/Home";
 import { Legal } from "./pages/Legal";
 import { RenderFrame } from "./pages/Render";
+import { Status } from "./pages/Status";
 import { Kit } from "./pages/Kit";
 import { NotFound, Placeholder } from "./pages/Placeholder";
 
 /** Every route the site serves. scripts/check-routes.mjs loads each of these in a real browser. */
-export const ROUTES = ["/", "/kit", "/docs", "/changelog", "/community", "/brand", "/privacy", "/terms"] as const;
+export const ROUTES = ["/", "/kit", "/docs", "/changelog", "/community", "/brand", "/privacy", "/terms", "/status"] as const;
 
 export function App() {
   return (
@@ -26,6 +27,7 @@ export function App() {
           <Route path="/brand" element={<Brand />} />
           <Route path="/privacy" element={<Legal page="privacy" />} />
           <Route path="/terms" element={<Legal page="terms" />} />
+          <Route path="/status" element={<Status />} />
           <Route path="/__render" element={<RenderFrame />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -8,7 +8,7 @@ export interface Account {
   createdAt: number;
   lastLoginAt: number | null;
   disabled: boolean;
-  /** Opted in to appear under `alias` (and an anonymous instance label) in logs and the panel. */
+  /** Opted in to appear under `alias` (and an anonymous instance label) in logs and the operator dashboard. */
   anonymous?: boolean;
   /** Generated once, stable for the life of the account even if anonymity is toggled. */
   alias?: string | null;
@@ -27,7 +27,7 @@ export interface AccountLink {
   createdAt: number;
   connectedAt: number;
   lastUsedAt: number;
-  /** The host, or "anon-xxxxxx" for anonymous accounts. What logs and the panel show. */
+  /** The host, or "anon-xxxxxx" for anonymous accounts. What logs and the operator dashboard show. */
   instanceLabel?: string | null;
 }
 
@@ -58,7 +58,7 @@ export interface UserEventBucket {
   joined: number;
 }
 
-/** One health reading from a running bridge process (the panel reads these to see the bridge is alive). */
+/** One health reading from a running bridge process (the public status API and the operator dashboard read these to see the bridge is alive). */
 export interface NodeSample {
   at: number;
   node: string;
@@ -74,7 +74,7 @@ export interface NodeSample {
 export interface PrivacyChange {
   anonymous: boolean;
   alias: string;
-  /** The name logs/panel show after the change, and the one they showed before. */
+  /** The name logs and the dashboard show after the change, and the one they showed before. */
   display: string;
   prevDisplay: string;
   instanceLabel: string;

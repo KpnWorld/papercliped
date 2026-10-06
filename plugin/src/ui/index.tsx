@@ -115,7 +115,7 @@ function Linked({ me, call, onUnlinked, onMe }: { me: Me; call: Record<string, (
       <h2 style={{ fontSize: 16 }}>Privacy</h2>
       <label style={card}>
         <input type="checkbox" checked={me.anonymous} onChange={(e) => run(call.privacy({ anonymous: e.target.checked }).then((r) => onMe({ ...me, ...(r as { anonymous: boolean; alias: string | null }) })))} />
-        <span>Appear anonymously in the operator logs and panel{me.alias && me.anonymous ? ` (as ${me.alias})` : ""}.</span>
+        <span>Appear anonymously in the operator logs and dashboard{me.alias && me.anonymous ? ` (as ${me.alias})` : ""}.</span>
       </label>
 
       <h2 style={{ fontSize: 16 }}>This link</h2>

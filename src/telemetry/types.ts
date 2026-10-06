@@ -87,7 +87,7 @@ export interface BreakdownRow {
 /** Upper edges (ms) of the latency histogram; the last bucket is "≥ last edge". */
 export const HIST_EDGES = [25, 50, 100, 200, 400, 800, 1600, 3200];
 
-/** The read side of the audit trail: everything the separate panel is allowed to do. */
+/** The read side of the audit trail: what the public stats API (and the separate operator dashboard) read. */
 export interface AuditReader {
   auditSeries(kind: "tool" | "http", from: number, to: number, bucketMs: number): Promise<SeriesBucket[]>;
   auditTotals(kind: "tool" | "http", from: number, to: number): Promise<Totals>;

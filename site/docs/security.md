@@ -13,7 +13,7 @@ What Papercliped does to protect you, and what it cannot.
 - **Your Paperclip is treated as untrusted.** Papercliped connects only to public `https://` addresses, checks the resolved address on every connection, refuses redirects and private networks, and limits response size and time.
 - **OAuth 2.1 with PKCE**, short-lived access tokens, rotating refresh tokens with reuse detection.
 - **Rate limits** on sign-in, secret-key attempts and tool calls.
-- **A separate operator panel** reads the database through a read-only role that can see only safe views: never your key, secret hash or an anonymous account's real name.
+- **A separate operator dashboard** (an access-controlled service, not part of the open-source bridge) reads the database through a read-only role that can see only safe views: never your key, secret hash or an anonymous account's real name.
 - Revocation is immediate on disconnect, and idle keys are removed after 30 days.
 
 ## What it cannot do

@@ -186,7 +186,7 @@ export class SystemSampler {
 }
 
 /**
- * Writes this bridge process's health to the database every 30 s, so the separate panel can show it and notice when it STOPS
+ * Writes this bridge process's health to the database every 30 s, so the public status API and the operator dashboard can show it and notice when it STOPS
  * (asleep on a free tier, crashed, or cut off from the database). Failures are swallowed: reporting must never hurt the bridge.
  */
 export class NodeReporter {

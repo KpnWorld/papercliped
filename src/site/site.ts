@@ -28,6 +28,7 @@ const NAV: { slug: string; title: string }[] = [
   { slug: "paperclip-plugin", title: "Paperclip plugin (beta)" },
   { slug: "permissions", title: "Permissions" },
   { slug: "anonymous-mode", title: "Anonymous mode" },
+  { slug: "public-api", title: "Public API and status" },
   { slug: "security", title: "Security" },
   { slug: "other-ai-apps", title: "Any AI app (MCP)" },
   { slug: "chatgpt", title: "ChatGPT setup" },

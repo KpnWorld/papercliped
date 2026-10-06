@@ -5,12 +5,11 @@ Everything here costs **$0/month** (Render free, Supabase free, Cloudflare free)
 Never paste database passwords, `service_role` keys or `BRIDGE_SECRET` into chats, issues or commits. They go only into the host's environment settings.
 
 ## 1. Supabase (database)
-1. Open your project → **SQL Editor** → paste all of [`docs/supabase-schema.sql`](supabase-schema.sql) → Run. (This is the full schema: accounts, grants, tokens, audit log, community log, node health, privacy, panel views.)
-2. Create the two least-privilege roles. Edit the passwords, then run [`docs/least-privilege.sql`](least-privilege.sql) (role `bridge_app`, used by the bridge) and [`docs/panel-role.sql`](panel-role.sql) (role `panel_ro`, **read-only**, used by the panel).
+1. Open your project → **SQL Editor** → paste all of [`docs/supabase-schema.sql`](supabase-schema.sql) → Run. (This is the full schema: accounts, grants, tokens, audit log, community log, node health, privacy, and the read-only `panel_*` views used by the separate operator dashboard.)
+2. Create the least-privilege role for the bridge: edit the password, then run [`docs/least-privilege.sql`](least-privilege.sql) (role `bridge_app`). The read-only role for the operator dashboard is set up from that dashboard's own (private) repository.
 3. **Project Settings → Database**: copy the **Transaction pooler** (port 6543) and **Session pooler** (port 5432) host/user details and the **SSL certificate** (CA). Build:
    - `DATABASE_URL` = transaction pooler as `bridge_app`
    - `DATABASE_MIGRATE_URL` = session pooler as the admin (`postgres.<ref>`) role — used only to apply future migrations at start
-   - `PANEL_DATABASE_URL` = transaction pooler as `panel_ro`
 4. Free projects pause after about a week of inactivity. The bridge writes a heartbeat every 10 min while awake and the keep-alive in §5 touches `/readyz` (a database query) every 5 min, so it never goes quiet.
 
 ## 2. Render (the bridge) — Docker web service, no Blueprint
@@ -92,27 +91,16 @@ It runs every 5 minutes (cron `*/5 * * * *`) against `/readyz`. Open the worker'
 
 First sign-in: pick a username (6–32 characters, at least one number or `.` `#` `_`), connect your Paperclip (public https URL; approve in Paperclip), and **save the secret key shown once**. Later: sign in with username + key, or reconnect through Paperclip approval and keep the same account. Tick *Appear anonymously* to be shown as an alias like `Ann02`.
 
-## 7. The operator panel (separate program)
-The panel never sees bridge secrets and only has read access (`panel_ro`). Its environment is exactly:
-```
-PANEL_ADMIN_TOKEN=<openssl rand -hex 32>
-PANEL_DATABASE_URL=<panel_ro URL>   PANEL_DATABASE_SSL=verify   PANEL_DATABASE_CA=<PEM>
-PANEL_ALLOWED_IPS=<your IP>         # strongly recommended
-```
-It refuses to start if `BRIDGE_SECRET` or `DATABASE_URL` is present.
-- **Easiest ($0, no extra hours):** run it on your own machine — `npx papercliped-panel` — and open http://127.0.0.1:3940.
-- **Always-on:** a second free Render service shares the 750 free hours and could suspend the bridge, so don't. Use another free host (Fly.io, Koyeb, a home server) or put it behind Cloudflare Tunnel + Cloudflare Access.
-- Preview with fake data: `PANEL_DEMO=1 PANEL_ADMIN_TOKEN=<24+ chars> npx papercliped-panel`.
-
-The panel shows system health (and turns critical if the bridge stops reporting — asleep, crashed or cut off from the database), latency percentiles, bridge-vs-Paperclip time, faults vs. caller errors, user count, flow success rate and the live log:
-`09:25:30 og.kpnwrld - joined cliped` · `… - left cliped` · `… - updated cliped`.
-Anonymous users appear as their alias. Operator commands: `npx papercliped-admin users | delete-user <name> | grants | revoke <id> | revoke-all --yes`.
+## 7. Watching the service
+- **Public stats (no sign-in):** `https://papercliped.co/api/public/v1/status` and `/api/public/v1/stats?window=24h` give aggregate users, connections, sign-in success, request success rate, latency, error mix and load. The website's `/status` page shows them with charts. Nothing identifying is published (see the public API docs).
+- **Operator dashboard:** lives in a separate, access-controlled service (its own private repository), not in this repo. It reads the same telemetry tables (`audit_events`, `user_events`, `node_samples`) and the read-only `panel_*` views, which the bridge keeps writing and the migrations keep providing.
+- **Operator commands** (on a machine with the bridge's environment): `npx papercliped-admin users | delete-user <name> | grants | revoke <id> | revoke-all --yes`.
 
 ## 8. Smoke test (before announcing)
 1. Add the connector in claude.ai, create an account, connect a real Paperclip, ask "list my agents".
 2. Disconnect, reconnect with the secret key; reconnect again through Paperclip approval (same account).
-3. Toggle anonymity; confirm the panel shows the alias for old and new entries.
-4. Stop traffic for 20 min; confirm the Cloudflare worker keeps the service answering and the panel shows it healthy.
+3. Toggle anonymity; confirm the operator dashboard shows the alias for old and new entries.
+4. Stop traffic for 20 min; confirm the Cloudflare worker keeps the service answering and `/api/public/v1/status` says `ok`.
 
 ## 9. Marketplaces — submit only after the smoke test passes
 Requirements change; confirm each against the current official page before submitting.

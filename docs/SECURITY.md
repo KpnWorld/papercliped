@@ -31,7 +31,7 @@ AI client (claude.ai, ChatGPT)  ──OAuth, scoped, opaque tokens──▶  Bri
 | 12 | Brute force of the instance/consent/token endpoints | per-IP and per-grant limits in the shared store (work across several instances); client IP taken from the trusted-proxy position, not the forgeable left side of `X-Forwarded-For` | `multitenant.test.ts` |
 | 13 | Clickjacking / XSS on consent pages | CSP (`frame-ancestors 'none'`, nonce'd script, restricted `form-action`), `X-Frame-Options`, all dynamic text escaped | `oauth.test.ts` |
 | 14 | Operator error: unsafe public config | the process refuses to start for: http issuer, short secret, `BRIDGE_TOKEN` set in multi mode, static login in multi mode, no database in multi mode | `multitenant.test.ts` |
-| 16 | Telemetry becoming a data leak / a side door | audit rows hold only tool name, outcome, timings, grant id, client name, tenant host, user id (never arguments, results, tokens or credentials); retention 30 days; recorder can't block or fail a request; the panel is a SEPARATE process with its own token (cannot call tools), a read-only database role limited to safe views (no secret hashes, sealed credentials or tokens), refuses to start with bridge secrets in its environment, optional IP allow-list, signed HttpOnly SameSite=Strict sessions, rate-limited sign-in, strict CSP (no external loads), and renders all data with `textContent` | `audit.test.ts` |
+| 16 | Telemetry becoming a data leak / a side door | audit rows hold only tool name, outcome, timings, grant id, client name, tenant host, user id (never arguments, results, tokens or credentials); retention 30 days; recorder can't block or fail a request; the operator dashboard is a SEPARATE, access-controlled service outside this repo (cannot call tools) with a read-only database role limited to safe views (no secret hashes, sealed credentials or tokens); the public stats API returns aggregates only, never identities | `audit.test.ts`, `public-api.test.ts`, `store.test.ts` |
 | 15 | Key compromise / rotation | key ring (`BRIDGE_SECRET_PREVIOUS`), `rotate-keys`, `revoke-all --yes` | `multitenant.test.ts` |
 
 ## Residual risks (not mitigated here)
@@ -61,7 +61,7 @@ Email **support@papercliped.co** with details (put "security" in the subject), o
 ## Accounts, secret keys and anonymity (v1.0.0-beta.1)
 
 - A user's **secret key** is shown once, stored only as a salted scrypt hash, and works like a password for *their Paperclip connection*: anyone holding it can sign in as them. Users can replace it by reconnecting through Paperclip approval.
-- Usernames appear only in the operator's logs and panel. With **anonymous mode** on, logs, grants and audit rows show an alias (`Ann02`) and a masked instance label instead; toggling rewrites history. This is **pseudonymity, not anonymity from the operator**: someone with base-table database access (the bridge role, the Supabase admin) can still map alias → account. The panel role cannot.
+- Usernames appear only in the operator's logs and the private operator dashboard. With **anonymous mode** on, logs, grants and audit rows show an alias (`Ann02`) and a masked instance label instead; toggling rewrites history. This is **pseudonymity, not anonymity from the operator**: someone with base-table database access (the bridge role, the Supabase admin) can still map alias → account. A read-only dashboard role over the safe views cannot.
 - Account actions are rate-limited per username and per address; failed sign-ins never reveal whether a username exists beyond what registration already shows.
 
 ## Connection manager and Paperclip plugin links (v1.2.0-beta.1)
@@ -74,3 +74,9 @@ Email **support@papercliped.co** with details (put "security" in the subject), o
 
 ## Planned (v2): managed subdomains
 See `docs/V3-SUBDOMAINS.md` §7a for the hardening list and the threats to add here when it is built.
+
+## Public stats API and the operator dashboard (v2)
+
+- `GET /api/public/v1/*` publishes **aggregate numbers only**: counts, rates, latency percentiles, fixed error and sign-in failure categories, and tool-name call counts from the public catalogue. It never returns usernames, aliases, account or grant ids, Paperclip hosts, app names, IP addresses, tokens or free-text details, and never breaks numbers down per user or per tenant. Unknown categories are counted as `other` rather than echoed. Tests: `test/public-api.test.ts` seeds recognisable names, hosts and aliases and asserts none appear in any response (memory and Postgres).
+- It is GET-only, CORS-open without credentials or cookies, cached 30 s and rate-limited to 60 requests per minute per address.
+- The **operator dashboard** (per-user and per-tenant views, the community log with usernames) is **not in this repository**. It runs as a separate, access-controlled service with its own credentials and a read-only database role over the `panel_*` views and telemetry tables. `test/store.test.ts` keeps proving that such a role can read nothing sensitive.

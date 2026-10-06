@@ -14,6 +14,7 @@ Current as of v2.0.0 (read from the route code). Items marked **(planned v3)** d
 | `/docs/paperclip-plugin` | Paperclip plugin (beta) |
 | `/docs/permissions` | Permissions |
 | `/docs/anonymous-mode` | Anonymous mode |
+| `/docs/public-api` | Public API and status |
 | `/docs/security` | Security |
 | `/docs/other-ai-apps` | Any AI app (MCP) |
 | `/docs/chatgpt` | ChatGPT setup |
@@ -21,7 +22,7 @@ Current as of v2.0.0 (read from the route code). Items marked **(planned v3)** d
 | `/privacy` | Privacy policy |
 | `/terms` | Terms of service |
 | `/favicon.svg`, `/favicon.ico` | Favicon |
-| `/api/public/stats` | JSON: user and connection counts only |
+| `/api/public/stats` | JSON: user and connection counts only (legacy; see section 6) |
 | `/domain` **(planned v3)** | Get a public address: guide, own domain, or the paid managed subdomain |
 | `/docs/subdomain-terms` **(planned v3)** | Subdomain Terms (drafted separately) |
 
@@ -56,13 +57,17 @@ Current as of v2.0.0 (read from the route code). Items marked **(planned v3)** d
 | `/healthz` | Liveness |
 | `/readyz` | Readiness (database ping) |
 
-## 6. Operator panel (separate program, `papercliped-panel`, own address, read-only DB role) — `src/panel/`
+## 6. Public stats API (no sign-in, aggregate only) — `src/public-api/`
 | Path | Purpose |
 | --- | --- |
-| `GET /` | Panel page (sign-in, latency, faults, success rate, user count, community log) |
-| `POST /login`, `POST /logout` | Panel sign-in |
-| `/api/summary`, `/api/events`, `/api/community/events` | Panel data |
-| `/healthz` | Liveness |
+| `GET /api/public/v1/info` | Version, endpoints, limits |
+| `GET /api/public/v1/status` | ok / degraded / down |
+| `GET /api/public/v1/stats?window=1h\|24h\|7d` | Users, connections, sign-ins, requests, errors, load |
+| `GET /api/public/v1/series?window=…` | The same over time |
+| `GET /api/public/v1/errors?window=…` | Error mix and sign-in failure reasons |
+| `GET /api/public/v1/openapi.json` | OpenAPI for this API (separate from the Actions document) |
+
+The operator dashboard is a separate, access-controlled service and is not part of this repository.
 
 ## 7. Not web pages
 - **Paperclip plugin** (`plugin/`, runs inside Paperclip): sidebar entry "Papercliped" and page at `/<company>/papercliped`.

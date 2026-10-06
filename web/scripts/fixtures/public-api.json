@@ -1,0 +1,336 @@
+{
+ "status": {
+  "schemaVersion": 1,
+  "status": "ok",
+  "version": "2.0.0",
+  "uptimeSeconds": 86400,
+  "checkedAt": "2026-10-06T18:00:00.000Z"
+ },
+ "stats": {
+  "schemaVersion": 1,
+  "window": "24h",
+  "windowSeconds": 86400,
+  "generatedAt": "2026-10-06T18:00:00.000Z",
+  "service": {
+   "version": "2.0.0",
+   "uptimeSeconds": 86400,
+   "status": "ok"
+  },
+  "users": {
+   "total": 42,
+   "active": 17,
+   "new": 3
+  },
+  "connections": {
+   "live": 7
+  },
+  "auth": {
+   "flowsStarted": 40,
+   "flowsCompleted": 36,
+   "flowsFailed": 4,
+   "successRate": 0.9,
+   "failuresByReason": {
+    "bad_credentials": 2,
+    "rate_limited": 0,
+    "denied": 1,
+    "expired": 0,
+    "unreachable": 1,
+    "invalid_instance": 0,
+    "too_many_attempts": 0,
+    "other": 0
+   }
+  },
+  "requests": {
+   "count": 1370,
+   "errors": 60,
+   "faults": 3,
+   "successRate": 0.9562043795620438,
+   "latencyMs": {
+    "p50": 180,
+    "p95": 460,
+    "p99": 910
+   },
+   "callsPerMinute": 0.95,
+   "byTool": {
+    "paperclip_sync_snapshot": 310,
+    "paperclip_list_agents": 220,
+    "paperclip_report_status": 150,
+    "paperclip_list_issues": 120,
+    "paperclip_wake_agent": 30
+   }
+  },
+  "errors": {
+   "total": 65,
+   "byClass": {
+    "invalid_input": 9,
+    "insufficient_scope": 12,
+    "read_only": 3,
+    "upstream_4xx": 8,
+    "upstream_5xx": 3,
+    "upstream_unreachable": 2,
+    "rate_limited": 4,
+    "unauthorized": 5,
+    "internal": 0,
+    "other": 0
+   }
+  },
+  "load": {
+   "eventLoopLagP99Ms": 9,
+   "dbPingMs": 14,
+   "memoryMb": 142,
+   "bridgesReporting": 1
+  }
+ },
+ "series": {
+  "schemaVersion": 1,
+  "window": "24h",
+  "bucketSeconds": 3600,
+  "generatedAt": "2026-10-06T18:00:00.000Z",
+  "buckets": [
+   {
+    "t": "2026-10-05T19:00:00.000Z",
+    "requests": 90,
+    "errors": 4,
+    "faults": 0,
+    "p95Ms": 489,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-05T20:00:00.000Z",
+    "requests": 80,
+    "errors": 3,
+    "faults": 0,
+    "p95Ms": 477,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-05T21:00:00.000Z",
+    "requests": 67,
+    "errors": 3,
+    "faults": 0,
+    "p95Ms": 461,
+    "authCompleted": 2,
+    "authFailed": 1,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-05T22:00:00.000Z",
+    "requests": 51,
+    "errors": 2,
+    "faults": 0,
+    "p95Ms": 443,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-05T23:00:00.000Z",
+    "requests": 70,
+    "errors": 3,
+    "faults": 0,
+    "p95Ms": 423,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T00:00:00.000Z",
+    "requests": 53,
+    "errors": 2,
+    "faults": 0,
+    "p95Ms": 403,
+    "authCompleted": 2,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T01:00:00.000Z",
+    "requests": 37,
+    "errors": 1,
+    "faults": 0,
+    "p95Ms": 384,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T02:00:00.000Z",
+    "requests": 23,
+    "errors": 1,
+    "faults": 0,
+    "p95Ms": 368,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 1
+   },
+   {
+    "t": "2026-10-06T03:00:00.000Z",
+    "requests": 11,
+    "errors": 0,
+    "faults": 0,
+    "p95Ms": 354,
+    "authCompleted": 2,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T04:00:00.000Z",
+    "requests": 38,
+    "errors": 2,
+    "faults": 0,
+    "p95Ms": 345,
+    "authCompleted": 1,
+    "authFailed": 1,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T05:00:00.000Z",
+    "requests": 33,
+    "errors": 1,
+    "faults": 0,
+    "p95Ms": 340,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T06:00:00.000Z",
+    "requests": 31,
+    "errors": 1,
+    "faults": 0,
+    "p95Ms": 341,
+    "authCompleted": 2,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T07:00:00.000Z",
+    "requests": 32,
+    "errors": 1,
+    "faults": 0,
+    "p95Ms": 346,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T08:00:00.000Z",
+    "requests": 34,
+    "errors": 1,
+    "faults": 0,
+    "p95Ms": 356,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T09:00:00.000Z",
+    "requests": 72,
+    "errors": 3,
+    "faults": 0,
+    "p95Ms": 370,
+    "authCompleted": 2,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T10:00:00.000Z",
+    "requests": 75,
+    "errors": 3,
+    "faults": 0,
+    "p95Ms": 387,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 1
+   },
+   {
+    "t": "2026-10-06T11:00:00.000Z",
+    "requests": 76,
+    "errors": 3,
+    "faults": 0,
+    "p95Ms": 406,
+    "authCompleted": 1,
+    "authFailed": 1,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T12:00:00.000Z",
+    "requests": 74,
+    "errors": 9,
+    "faults": 3,
+    "p95Ms": 426,
+    "authCompleted": 2,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T13:00:00.000Z",
+    "requests": 70,
+    "errors": 3,
+    "faults": 0,
+    "p95Ms": 445,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T14:00:00.000Z",
+    "requests": 97,
+    "errors": 4,
+    "faults": 0,
+    "p95Ms": 463,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T15:00:00.000Z",
+    "requests": 86,
+    "errors": 3,
+    "faults": 0,
+    "p95Ms": 479,
+    "authCompleted": 2,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T16:00:00.000Z",
+    "requests": 73,
+    "errors": 3,
+    "faults": 0,
+    "p95Ms": 490,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T17:00:00.000Z",
+    "requests": 57,
+    "errors": 2,
+    "faults": 0,
+    "p95Ms": 498,
+    "authCompleted": 1,
+    "authFailed": 0,
+    "newUsers": 0
+   },
+   {
+    "t": "2026-10-06T18:00:00.000Z",
+    "requests": 40,
+    "errors": 2,
+    "faults": 0,
+    "p95Ms": 500,
+    "authCompleted": 2,
+    "authFailed": 1,
+    "newUsers": 1
+   }
+  ]
+ },
+ "legacy": {
+  "users": 42,
+  "connections": 7
+ }
+}

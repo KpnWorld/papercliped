@@ -131,7 +131,7 @@ const JS = `
     anon.addEventListener("change", function () {
       api("POST", "/privacy", { anonymous: anon.checked }).then(function (r) { pmsg.textContent = r.status === 200 ? (r.body.anonymous ? "You now appear as " + r.body.alias + "." : "You now appear under your username.") : (r.body.error || "Could not save"); });
     });
-    app.appendChild(h("label", { class: "card row", for: "anon" }, anon, h("span", { class: "grow" }, "Appear anonymously in the operator logs and panel (as a name like Ann02)."), pmsg));
+    app.appendChild(h("label", { class: "card row", for: "anon" }, anon, h("span", { class: "grow" }, "Appear anonymously in the operator logs and dashboard (as a name like Ann02)."), pmsg));
 
     app.appendChild(h("h2", {}, "Paperclip plugin"));
     app.appendChild(h("p", { class: "muted" }, "Manage these same connections from inside Paperclip. Install the Papercliped plugin there, then make a one-time code here and paste it into the plugin."));

@@ -1,13 +1,12 @@
 {
   "name": "papercliped",
   "version": "2.0.0",
-  "description": "Papercliped \u2014 connect Claude and ChatGPT to your Paperclip: control agents, sync, report. MCP server + hosted multi-tenant OAuth bridge + separate operator panel.",
+  "description": "Papercliped \u2014 connect Claude, ChatGPT and any MCP app to your Paperclip: control agents, sync, report. MCP server + hosted multi-tenant OAuth bridge + public stats API.",
   "license": "MIT",
   "type": "module",
   "bin": {
     "papercliped": "dist/stdio.js",
     "papercliped-bridge": "dist/http.js",
-    "papercliped-panel": "dist/panel/main.js",
     "papercliped-admin": "dist/cli.js"
   },
   "files": [
@@ -24,7 +23,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "start:stdio": "node dist/stdio.js",
@@ -33,10 +32,7 @@
     "migrate": "node dist/cli.js migrate",
     "start": "node dist/http.js",
     "admin": "node dist/cli.js",
-    "demo": "node dist/demo.js",
     "schema:sql": "node dist/cli.js schema-sql > docs/supabase-schema.sql",
-    "panel": "node dist/panel/main.js",
-    "start:panel": "node dist/panel/main.js",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {

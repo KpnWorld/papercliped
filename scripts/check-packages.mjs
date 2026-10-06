@@ -14,12 +14,12 @@ function pack(dir, mustHave) {
   const [info] = JSON.parse(run("npm", ["pack", "--json", "--pack-destination", out], dir));
   const files = new Set(info.files.map((f) => f.path));
   for (const f of mustHave) if (!files.has(f)) fail(`${info.name}@${info.version} is missing ${f}`);
-  for (const f of files) if (/(^|\/)(\.env|.*\.pem|.*\.key)$/.test(f) || f.startsWith("test/") || f.startsWith("node_modules/")) fail(`${info.name} would publish ${f}`);
+  for (const f of files) if (/(^|\/)(\.env|.*\.pem|.*\.key)$/.test(f) || f.startsWith("test/") || f.startsWith("node_modules/") || f.startsWith("dist/panel/") || f.startsWith("web/")) fail(`${info.name} would publish ${f}`);
   console.log(`packed ${info.name}@${info.version}: ${files.size} files, ${(info.size / 1024).toFixed(0)} kB`);
   return join(out, info.filename);
 }
 
-const rootTgz = pack(root, ["package.json", "README.md", "LICENSE", "dist/stdio.js", "dist/http.js", "dist/cli.js", "dist/panel/main.js", "migrations/001_init.sql", "site/docs/getting-started.md", ".claude-plugin/plugin.json", ".mcp.json"]);
+const rootTgz = pack(root, ["package.json", "README.md", "LICENSE", "dist/stdio.js", "dist/http.js", "dist/cli.js", "migrations/001_init.sql", "site/docs/getting-started.md", ".claude-plugin/plugin.json", ".mcp.json"]);
 const pluginTgz = pack(join(root, "plugin"), ["package.json", "README.md", "dist/manifest.js", "dist/worker.js", "dist/ui/index.js"]);
 
 // Install both into a scratch project, as a user would.
@@ -31,7 +31,7 @@ run("npm", ["install", "--no-audit", "--no-fund", "--omit=dev", rootTgz, pluginT
 // The bridge package: its OpenAPI generator runs without a Paperclip and lists the tools.
 const spec = JSON.parse(run("node", [join(app, "node_modules/papercliped/dist/openapi-cli.js")], app));
 if (!spec.openapi || Object.keys(spec.paths ?? {}).length < 10) fail("papercliped openapi output looks wrong");
-for (const bin of ["papercliped", "papercliped-bridge", "papercliped-panel", "papercliped-admin"]) if (!existsSync(join(app, "node_modules/.bin", bin)) && !existsSync(join(app, "node_modules/.bin", `${bin}.cmd`))) fail(`bin ${bin} was not installed`);
+for (const bin of ["papercliped", "papercliped-bridge", "papercliped-admin"]) if (!existsSync(join(app, "node_modules/.bin", bin)) && !existsSync(join(app, "node_modules/.bin", `${bin}.cmd`))) fail(`bin ${bin} was not installed`);
 
 // The Paperclip plugin: its manifest loads and every entrypoint it names exists in the installed package.
 const pdir = join(app, "node_modules/papercliped-paperclip-plugin");

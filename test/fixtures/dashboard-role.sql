@@ -1,5 +1,5 @@
--- READ-ONLY database role for the operator panel (the separate admin dashboard).
--- Run as your ADMIN role after the migrations (and again after any future migration).
+-- Test fixture: a READ-ONLY role like the one the separate (private) operator dashboard uses. The real script lives in that
+-- private repository; this copy lets test/store.test.ts prove the panel_* views and telemetry tables expose nothing sensitive.
 --
 -- 1. Create the role yourself with a strong generated password (don't commit it):
 --      create role panel_ro login password '<paste a long random password>';

@@ -490,17 +490,3 @@ export class PgStore implements Store {
     await this.pool.end();
   }
 }
-
-/**
- * The operator panel's data access. Connects with the read-only `panel_ro` role (docs/panel-role.sql) and reads accounts and grants
- * ONLY through the safe views, so it cannot see a secret hash, a sealed credential or a real username of an anonymous account.
- * Write methods inherited from PgStore are never called by the panel, and the role could not execute them anyway.
- */
-export class PgPanelStore extends PgStore {
-  async countAccounts() {
-    return num((await this.q("select count(*) as n from bridge.panel_accounts")).rows[0].n);
-  }
-  async liveGrantCount() {
-    return num((await this.q("select count(*) as n from bridge.panel_grants where not revoked")).rows[0].n);
-  }
-}

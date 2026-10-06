@@ -8,6 +8,14 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
 
+const FIX = JSON.parse(readFileSync(new URL("./fixtures/public-api.json", import.meta.url), "utf8"));
+// The bridge serves the public API; the static preview doesn't, so answer it with fixtures.
+const fakeApi = (r) => {
+  const u = r.request().url();
+  const body = u.includes("/v1/status") ? FIX.status : u.includes("/v1/series") ? FIX.series : u.includes("/v1/stats") ? FIX.stats : FIX.legacy;
+  return r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+};
+
 const root = new URL("..", import.meta.url).pathname;
 const ROUTES = JSON.parse(/ROUTES = (\[[^\]]*\])/.exec(readFileSync(join(root, "src/App.tsx"), "utf8"))[1].replace(/'/g, '"'));
 const THEMES = []; // read from the palettes file
@@ -32,9 +40,9 @@ const problems = [];
 try {
   const ctx = await browser.newContext();
   // The bridge serves the stats API; the static preview doesn't, so answer it here with a fixture.
-  await ctx.route("**/api/public/**", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ users: 42, connections: 7 }) }));
+  await ctx.route("**/api/public/**", fakeApi);
   const phone = await browser.newContext({ viewport: { width: 375, height: 800 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
-  await phone.route("**/api/public/**", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ users: 42, connections: 7 }) }));
+  await phone.route("**/api/public/**", fakeApi);
   for (const route of ROUTES) {
     const page = await ctx.newPage();
     const errs = [];
@@ -70,7 +78,7 @@ try {
       const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: mode });
       await c.addInitScript(([t, m]) => { localStorage.setItem("pcl.theme", t); localStorage.setItem("pcl.mode", m); }, [theme, mode]);
       const p = await c.newPage();
-      await c.route("**/api/public/**", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ users: 42, connections: 7 }) }));
+      await c.route("**/api/public/**", fakeApi);
       await p.goto(`${base}/kit`, { waitUntil: "networkidle" });
       await p.screenshot({ path: join(shotsDir, `kit-${theme}-${mode}.png`) });
       await p.goto(`${base}/`, { waitUntil: "networkidle" });

@@ -24,7 +24,7 @@ export const generateAlias = (rand: (n: number) => number = (n) => randomInt(n))
 
 export const isAlias = (s: string | null | undefined) => !!s && ALIAS_RE.test(s);
 
-/** The name that appears in logs, the panel and audit rows. */
+/** The name that appears in logs, the operator dashboard and audit rows. */
 export const displayName = (a: { username: string; anonymous?: boolean; alias?: string | null }) => (a.anonymous && a.alias ? a.alias : a.username);
 
 /**

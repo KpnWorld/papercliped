@@ -121,7 +121,7 @@ export function approvePage(v: Ctx & { approvalUrl: string; instanceHost: string
   );
 }
 
-const ANON_TEXT = "Appear anonymously in the operator's logs and panel (as a name like Ann02), and hide my Paperclip's address there.";
+const ANON_TEXT = "Appear anonymously in the operator's logs and dashboard (as a name like Ann02), and hide my Paperclip's address there.";
 export function usernamePage(v: Ctx & { value?: string; anonymous?: boolean }): string {
   return shell(
     "Choose a username",

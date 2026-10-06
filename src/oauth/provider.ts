@@ -103,7 +103,7 @@ export class OAuthProvider {
     }
   }
 
-  /** The name logs and the panel show for an account: its alias if it opted into anonymity, else its username. */
+  /** The name logs and the operator dashboard show for an account: its alias if it opted into anonymity, else its username. */
   private async who(accountId: string | null | undefined): Promise<{ accountId: string; username: string } | null> {
     if (!accountId) return null;
     const a = await this.store.getAccount(accountId);
@@ -1171,7 +1171,7 @@ export class OAuthProvider {
       instanceUrl: link.instanceUrl,
       sealedCredential: null, // the credential stays on the account link
       accountId: p.accountId,
-      username: displayName(acct), // grants carry the DISPLAY name: that is what audit rows and the panel see
+      username: displayName(acct), // grants carry the DISPLAY name: that is what audit rows and the operator dashboard see
       path: p.path ?? "connect",
       expiresAt: this.now() + CODE_TTL_MS,
     });

@@ -32,7 +32,7 @@ export const MENUS: { label: string; items: MenuItem[] }[] = [
       { to: "/community", title: "Community", desc: "Join in, suggest features, report bugs." },
       { to: "/brand", title: "Brand assets", desc: "The wordmark, the mascot and how to use them." },
       { to: REPO_URL, title: "Source code", desc: "MIT licensed, on GitHub." },
-      { to: "/healthz", title: "Status", desc: "Is the hosted bridge up right now?" },
+      { to: "/status", title: "Status", desc: "Live, public numbers for the hosted service.", badge: "New" },
     ],
   },
 ];
@@ -82,7 +82,7 @@ function NavItem({ item }: { item: MenuItem }) {
     </>
   );
   const cls = "block rounded-lg px-3 py-2 hover:bg-surface";
-  return /^https?:|^\/healthz/.test(item.to) ? <a href={item.to} className={cls} rel="noopener noreferrer">{inner}</a> : <Link to={item.to} className={cls}>{inner}</Link>;
+  return /^https?:/.test(item.to) ? <a href={item.to} className={cls} rel="noopener noreferrer">{inner}</a> : <Link to={item.to} className={cls}>{inner}</Link>;
 }
 
 export function GitHubButton() {
@@ -141,7 +141,7 @@ const FOOTER: { title: string; links: { to: string; label: string }[] }[] = [
   { title: "Product", links: [{ to: "/", label: "Overview" }, { to: "/docs/getting-started", label: "Get started" }, { to: "/docs/paperclip-plugin", label: "Paperclip plugin" }, { to: "/changelog", label: "Changelog" }] },
   { title: "Docs", links: [{ to: "/docs", label: "All topics" }, { to: "/docs/connect-your-paperclip", label: "Set up your Paperclip" }, { to: "/docs/other-ai-apps", label: "Any AI app (MCP)" }, { to: "/docs/troubleshooting", label: "Troubleshooting" }] },
   { title: "Community", links: [{ to: "/community", label: "Join the community" }, { to: community.newIssue, label: "Report a bug" }, { to: "/community#suggest", label: "Suggest a feature" }, { to: "/brand", label: "Brand assets" }] },
-  { title: "Company", links: [{ to: REPO_URL, label: "Open source (MIT)" }, { to: `mailto:${community.email}`, label: "Contact" }, { to: "/healthz", label: "Status" }] },
+  { title: "Company", links: [{ to: REPO_URL, label: "Open source (MIT)" }, { to: `mailto:${community.email}`, label: "Contact" }, { to: "/status", label: "Status" }] },
   { title: "Legal", links: [{ to: "/privacy", label: "Privacy" }, { to: "/terms", label: "Terms" }, { to: "/docs/security", label: "Security" }] },
 ];
 
@@ -165,7 +165,7 @@ export function Footer() {
             <ul className="mt-3 space-y-2 text-sm">
               {col.links.map((l) => (
                 <li key={l.label}>
-                  {/^(https?:|mailto:|\/healthz)/.test(l.to) ? <a href={l.to} rel="noopener noreferrer" className="text-muted hover:text-ink">{l.label}</a> : <Link to={l.to} className="text-muted hover:text-ink">{l.label}</Link>}
+                  {/^(https?:|mailto:)/.test(l.to) ? <a href={l.to} rel="noopener noreferrer" className="text-muted hover:text-ink">{l.label}</a> : <Link to={l.to} className="text-muted hover:text-ink">{l.label}</Link>}
                 </li>
               ))}
             </ul>

@@ -88,7 +88,7 @@ Endpoints (all but `/healthz`, `/openapi.json` and the OAuth endpoints need `Aut
 | **HTTP + OAuth, `BRIDGE_MODE=single`** | a team fronting *their one* Paperclip | OAuth 2.1, scoped | JSON file or Postgres |
 | **HTTP + OAuth, `BRIDGE_MODE=multi`** | **a public service**: every user connects their own (publicly reachable, https) Paperclip | OAuth 2.1, scoped | Postgres (required) |
 
-**Operator panel** (a separate program, `papercliped-panel`): latency, system faults, success rate, user count and a community log — see [docs/LAUNCH.md §7](docs/LAUNCH.md); preview with `npm run demo`. **Supabase schema:** paste [docs/supabase-schema.sql](docs/supabase-schema.sql) into the SQL editor. **Launch guide (Render free, domain, marketplaces, npm):** [docs/LAUNCH.md](docs/LAUNCH.md).
+**Public stats API** (no sign-in): `GET /api/public/v1/stats|status|series|errors|info` gives aggregate users, connections, sign-in success, request success rate, latency, error mix and load, with no identities or per-user data; see the [public API docs](site/docs/public-api.md). The operator dashboard lives in a separate, access-controlled service. **Supabase schema:** paste [docs/supabase-schema.sql](docs/supabase-schema.sql) into the SQL editor. **Launch guide (Render free, domain, marketplaces, npm):** [docs/LAUNCH.md](docs/LAUNCH.md).
 
 Public hosting on Render + Supabase: **[docs/DEPLOY-RENDER.md](docs/DEPLOY-RENDER.md)** · threat model and residual risks: **[docs/SECURITY.md](docs/SECURITY.md)** · policy templates: [docs/legal/](docs/legal/).
 
@@ -120,7 +120,7 @@ src/tools.ts      tool catalogue (schemas + Paperclip calls)     src/reports.ts 
 src/execute.ts    validation, read-only enforcement, errors      src/openapi.ts  OpenAPI from the catalogue
 src/mcp.ts        MCP server    src/stdio.ts   src/server.ts + http.ts  HTTP bridge
 src/oauth/        OAuth 2.1 server: provider, stores (memory/JSON + Postgres), crypto/key ring, scopes, consent pages, Paperclip login adapter
-src/telemetry/    audit events, batching recorder, system sampler, timing   src/panel/  separate operator panel (routes, page, config, server)
+src/telemetry/    audit events, batching recorder, system sampler, timing   src/public-api/  public aggregate stats API (types, routes, health)
 src/net/          SSRF-safe fetch + instance URL validation (multi-tenant egress guard)
 migrations/       Postgres schema (dedicated `bridge` schema, RLS)   Dockerfile   container image (Render free web service)   src/cli.ts  admin CLI
 .claude-plugin/ .mcp.json skills/ commands/    Claude Code plugin

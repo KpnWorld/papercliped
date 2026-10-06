@@ -5,7 +5,8 @@ import { consolidatedSql, migrate } from "../src/migrate.js";
 import { PgStore, sslOption } from "../src/oauth/pg-store.js";
 import { AliasTakenError, type Account, type AccountLink, type UserEvent } from "../src/accounts/types.js";
 import { HIST_EDGES, type AuditRow } from "../src/telemetry/types.js";
-import { PgPanelStore } from "../src/oauth/pg-store.js";
+import { PublicApiRoutes } from "../src/public-api/routes.js";
+import { SECRET, seed as seedPublic } from "./public-api.fixture.js";
 import { MemoryStore, type CodeRecord, type Grant, type PendingRecord, type Store } from "../src/oauth/store.js";
 
 const DB = process.env.TEST_DATABASE_URL;
@@ -464,6 +465,25 @@ describe.skipIf(!DB)("Postgres", () => {
     await c.end();
   };
 
+  it("the public API aggregates from Postgres and leaks nothing identifying", async () => {
+    await reset();
+    await migrate(opts);
+    const t = Date.now();
+    const pgs = new PgStore(opts, () => t);
+    try {
+      await seedPublic(pgs, t);
+      const p = new PublicApiRoutes({ store: pgs, version: "2.0.0", docsUrl: "x", now: () => t });
+      const s = await p.stats("1h");
+      expect(s).toMatchObject({ users: { total: 1, new: 1 }, connections: { live: 1 }, auth: { flowsStarted: 3, flowsCompleted: 1 } });
+      expect(s.requests.count).toBe(5);
+      expect(s.requests.byTool).toEqual({ paperclip_list_agents: 3, paperclip_pause_agent: 1 });
+      const all = JSON.stringify([s, await p.series("24h"), await p.errors("7d"), await p.status()]);
+      for (const x of SECRET) expect(all, x).not.toContain(x);
+    } finally {
+      await pgs.close();
+    }
+  });
+
   it("migrates once, idempotently", async () => {
     await reset();
     expect(await migrate(opts)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql", "005_beta.sql"]);
@@ -590,7 +610,9 @@ describe.skipIf(!DB)("Postgres", () => {
     await c.end();
   });
 
-  describe("the panel's read-only database role", () => {
+  // The panel_* views and telemetry tables stay for the separate (private) operator dashboard. This proves a read-only role
+  // set up like that dashboard's (script copied to test/fixtures/dashboard-role.sql) can see nothing sensitive.
+  describe("an external read-only dashboard role", () => {
     const panelUrl = () => {
       const u = new URL(DB!);
       u.username = "panel_ro";
@@ -605,7 +627,7 @@ describe.skipIf(!DB)("Postgres", () => {
       admin = new pg.Client({ connectionString: DB });
       await admin.connect();
       await admin.query("do $$ begin if not exists (select 1 from pg_roles where rolname='panel_ro') then create role panel_ro login; end if; end $$");
-      await admin.query(readFileSync(new URL("../docs/panel-role.sql", import.meta.url), "utf8"));
+      await admin.query(readFileSync(new URL("./fixtures/dashboard-role.sql", import.meta.url), "utf8"));
       // an anonymous account with a stored credential, events and audit rows
       const store = new PgStore(opts, now);
       await store.createAccount(acct("pa1", "real.person42", { anonymous: true, alias: "Eve31", secretHash: "scrypt$16384$8$1$c2VjcmV0c2FsdA==$VERYSECRETHASH" }));
@@ -650,21 +672,6 @@ describe.skipIf(!DB)("Postgres", () => {
       ]) await expect(panel.query(q), q).rejects.toThrow(/permission denied|must be owner|cannot (update|insert|delete)|not (automatically )?updatable/);
     });
 
-    it("PgPanelStore serves the whole PanelData surface through that role", async () => {
-      const ps = new PgPanelStore({ connectionString: panelUrl(), ssl: "off" }, now);
-      expect(await ps.countAccounts()).toBe(1);
-      expect(await ps.liveGrantCount()).toBe(1);
-      expect((await ps.userEventsRecent(0, 5))[0]).toMatchObject({ username: "Eve31", kind: "joined" });
-      expect((await ps.auditTotals("tool", T0 - 1000, T0 + 1000)).count).toBe(1);
-      expect((await ps.auditBreakdown("tool", "username", T0 - 1000, T0 + 1000, 5))[0].key).toBe("Eve31");
-      expect(await ps.auditActiveUsers(T0 - 1000, T0 + 1000)).toBe(1);
-      expect((await ps.nodeSamples(0))[0].node).toBe("n1");
-      expect((await ps.userEventCounts(T0 - 1000, T0 + 1000)).byKind).toEqual({ joined: 1 });
-      await ps.ping();
-      await ps.close();
-      await panel.end();
-      await admin.end();
-    });
   });
 
   it("the least-privilege role cannot touch anything outside the bridge tables", async () => {
