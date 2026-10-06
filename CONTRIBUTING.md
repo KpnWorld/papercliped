@@ -22,4 +22,4 @@ User-facing pages live in `site/docs/*.md` (add new ones to `NAV` in `src/site/s
 See [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Security reports
-Do not open public issues for vulnerabilities; see "Reporting a vulnerability" in [docs/SECURITY.md](docs/SECURITY.md).
+Do not open public issues for vulnerabilities; email support@papercliped.co or see "Reporting a vulnerability" in [docs/SECURITY.md](docs/SECURITY.md).

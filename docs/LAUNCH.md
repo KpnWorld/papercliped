@@ -63,7 +63,7 @@ Claude's and ChatGPT's servers call the bridge directly, so a challenge page bre
 - Don't put Cloudflare Access in front of the bridge.
 
 **D. Contact address (optional, free)**
-Cloudflare → `papercliped.co` → **Email → Email Routing**: create `support@papercliped.co` forwarding to your inbox (Cloudflare adds the needed DNS records). Then set `SITE_CONTACT=support@papercliped.co` on Render.
+Cloudflare → `papercliped.co` → **Email → Email Routing**: create `support@papercliped.co` forwarding to your inbox and verify the destination address (Cloudflare adds the MX, SPF and DKIM records; leave them alone, they sit beside the root CNAME/A record). Email Routing only receives and forwards; replying *as* support@ needs a separate sending service. Add a DMARC record (`_dmarc` TXT) so the domain can't be spoofed. support@ is also the security contact (docs/SECURITY.md). Then set `SITE_CONTACT=support@papercliped.co` on Render.
 
 **E. Point the bridge at the new domain**
 1. Render → Environment: `BRIDGE_PUBLIC_URL=https://papercliped.co`, then redeploy.

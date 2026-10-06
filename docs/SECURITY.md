@@ -56,7 +56,7 @@ AI client (claude.ai, ChatGPT)  ──OAuth, scoped, opaque tokens──▶  Bri
 - [ ] External security review done (before >~50 users or any directory listing)
 
 ## Reporting a vulnerability
-Email **[SECURITY CONTACT — set before launch]** with details; please don't open public issues for security reports. We aim to acknowledge within 3 business days.
+Email **support@papercliped.co** with details (put "security" in the subject), or open a private GitHub security advisory on `OpenSourcx/papercliped`; please don't open public issues for security reports. We aim to acknowledge within 3 business days.
 
 ## Accounts, secret keys and anonymity (v1.0.0-beta.1)
 
