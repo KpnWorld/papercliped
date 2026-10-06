@@ -1,3 +1,4 @@
+import { FAVICON_LINK } from "../site/favicon.js";
 /**
  * Operator dashboard (served at /admin). One self-contained page: no external scripts, fonts or images, so the CSP can be
  * `default-src 'none'` + a per-response script nonce. All data is drawn with DOM/SVG APIs and `textContent` — client names,
@@ -84,14 +85,14 @@ form.login button{border:1px solid var(--ink);background:var(--ink);color:var(--
 `;
 
 export function loginPage(_nonce: string, error?: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Papercliped panel — sign in</title><style>${CSS}</style></head><body>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Papercliped panel — sign in</title>${FAVICON_LINK}<style>${CSS}</style></head><body>
 <form class="login" method="post" action="/login"><h1>Papercliped panel</h1><p style="color:var(--ink2);margin:6px 0 0">Operator sign-in</p>
 ${error ? `<div class="err" role="alert">${esc(error)}</div>` : ""}
 <label for="t" style="display:block;margin-top:12px">Admin token</label><input id="t" name="token" type="password" autocomplete="off" required autofocus><button type="submit">Sign in</button></form></body></html>`;
 }
 
 export function panelPage(nonce: string, o: { slowMs: number }): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Papercliped panel — live</title><style>${CSS}</style></head>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Papercliped panel — live</title>${FAVICON_LINK}<style>${CSS}</style></head>
 <body data-slow="${Number(o.slowMs) || 1500}"><div class="wrap">
 <header><h1>Papercliped panel<small id="where"></small></h1>
 <div class="ctl"><span id="pill" class="pill idle"><span class="ic">•</span><span>Loading…</span></span>

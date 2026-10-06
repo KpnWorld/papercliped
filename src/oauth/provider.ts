@@ -1,3 +1,4 @@
+import { hkdfSync } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { generateSecretKey, burnVerify, hashSecretKey, normalizeSecretKey, verifySecretKey } from "../accounts/secret.js";
 import { anonInstanceLabel, displayName, generateAlias } from "../accounts/alias.js";
@@ -238,6 +239,103 @@ export class OAuthProvider {
     }
   }
 
+  // ───────────── account management (the beta connection manager) ─────────────
+  // Everything here acts on ONE account and is reached only through ManageRoutes after the owner proved the secret key.
+
+  /** Username + secret key, throttled exactly like the sign-in page (shared counters, so there is no cheaper way to guess). */
+  async manageLogin(req: IncomingMessage, username: string, secret: string): Promise<{ ok: true; account: Account } | { ok: false; reason: "throttled" | "invalid" }> {
+    const typed = username.trim().slice(0, 64);
+    const key = usernameKey(typed);
+    if (!(await this.limit(`login:ip:${this.ip(req)}`, 20)) || !(await this.limit(`login:user:${key}`, 8, 15 * 60_000))) {
+      await this.event("login_failed", null, "rate_limited");
+      return { ok: false, reason: "throttled" };
+    }
+    const account = typed ? await this.store.getAccountByKey(key) : undefined;
+    const valid = account && !account.disabled ? await verifySecretKey(secret, account.secretHash) : (await burnVerify(secret), false);
+    if (!account || !valid) {
+      await this.event("login_failed", account ? { accountId: account.id, username: displayName(account) } : null, "bad_credentials");
+      return { ok: false, reason: "invalid" };
+    }
+    await this.store.touchAccountLogin(account.id, this.now());
+    await this.event("login", { accountId: account.id, username: displayName(account) }, "manager");
+    return { ok: true, account };
+  }
+
+  /** Re-prove the secret key for a sensitive action. Shares the per-account throttle. */
+  async manageReauth(accountId: string, secret: string): Promise<boolean> {
+    const a = await this.store.getAccount(accountId);
+    if (!a || a.disabled || !(await this.limit(`login:user:${a.usernameKey}`, 8, 15 * 60_000))) return false;
+    return verifySecretKey(secret, a.secretHash);
+  }
+
+  /** Key for signing manager session cookies (derived from the service secret; never the secret itself). */
+  manageSigningKey(): Buffer {
+    return Buffer.from(hkdfSync("sha256", this.deps.oauth.secret, "papercliped", "manage-session-v1", 32));
+  }
+
+  manageAccount(accountId: string) {
+    return this.store.getAccount(accountId);
+  }
+
+  async manageSetBeta(a: Account, beta: boolean): Promise<void> {
+    if (!!a.beta === beta) return;
+    await this.store.setAccountBeta(a.id, beta);
+    await this.event("updated", { accountId: a.id, username: displayName(a) }, beta ? "beta_on" : "beta_off");
+  }
+
+  async manageConnections(accountId: string) {
+    return (await this.store.listAccountGrants(accountId))
+      .filter((g) => !g.revoked)
+      .map((g) => ({ id: g.id, app: g.clientName, level: levelOf(g.scopes), createdAt: g.createdAt, lastUsedAt: g.lastUsedAt }));
+  }
+
+  /** Change what a connected app may do. The owner may move it between read and control, or lower an admin grant; admin is never granted here. */
+  async manageSetLevel(a: Account, grantId: string, level: Scope): Promise<boolean> {
+    const g = await this.store.getGrant(grantId);
+    if (!g || g.revoked || g.accountId !== a.id) return false;
+    if (level === "paperclip:admin" && levelOf(g.scopes) !== "paperclip:admin") return false;
+    if (!(await this.store.setGrantScopes(g.id, scopesUpTo(level)))) return false;
+    await this.event("updated", { accountId: a.id, username: displayName(a) }, `level_${level.split(":")[1]}`);
+    return true;
+  }
+
+  async manageRevoke(a: Account, grantId: string): Promise<boolean> {
+    const g = await this.store.getGrant(grantId);
+    if (!g || g.revoked || g.accountId !== a.id) return false;
+    await this.revokeGrant(g.id);
+    return true;
+  }
+
+  manageSetPrivacy(a: Account, anonymous: boolean): Promise<Account> {
+    return a.anonymous === anonymous ? Promise.resolve(a) : this.setPrivacy(a, anonymous);
+  }
+
+  /** A fresh secret key, shown once. The old one stops working at once. */
+  async manageRotateSecret(a: Account): Promise<string> {
+    const secret = generateSecretKey();
+    await this.store.setAccountSecret(a.id, await hashSecretKey(normalizeSecretKey(secret)!));
+    await this.event("updated", { accountId: a.id, username: displayName(a) }, "secret_rotated");
+    return secret;
+  }
+
+  /** Forget the stored Paperclip key (asking that Paperclip to revoke it) and disconnect every app. The account stays. */
+  async manageDisconnectPaperclip(a: Account): Promise<void> {
+    const l = await this.store.getLink(a.id);
+    if (l) await this.dropConnection(l, "disconnected");
+    else await this.store.revokeAccountGrants(a.id);
+  }
+
+  async manageDeleteAccount(a: Account): Promise<void> {
+    const gone = await this.store.deleteAccount(a.id);
+    if (gone) await this.revokeUpstream(gone.instanceUrl, gone.sealedCredential);
+    await this.event("left", { accountId: a.id, username: displayName(a) }, "deleted");
+  }
+
+  async manageInstanceLabel(accountId: string): Promise<{ label: string | null; connected: boolean }> {
+    const l = await this.store.getLink(accountId);
+    return { label: l ? (l.instanceLabel ?? new URL(l.instanceUrl).host) : null, connected: !!l?.sealedCredential };
+  }
+
   // ───────────── operator tools ─────────────
 
   async listUsers(limit = 1000) {
@@ -375,7 +473,7 @@ export class OAuthProvider {
       "X-Frame-Options": "DENY",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
-      "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; ${nonce ? `script-src 'nonce-${nonce}'; connect-src 'self'; ` : ""}form-action 'self'${formOrigin ? ` ${formOrigin}` : ""}; frame-ancestors 'none'; base-uri 'none'`,
+      "Content-Security-Policy": `default-src 'none'; img-src data:; style-src 'unsafe-inline'; ${nonce ? `script-src 'nonce-${nonce}'; connect-src 'self'; ` : ""}form-action 'self'${formOrigin ? ` ${formOrigin}` : ""}; frame-ancestors 'none'; base-uri 'none'`,
     });
     res.end(body);
     return true;
@@ -660,7 +758,7 @@ export class OAuthProvider {
         const link = p.accountId ? await this.store.getLink(p.accountId) : undefined;
         const u = new URL(p.redirectUri);
         const acct = p.accountId ? await this.store.getAccount(p.accountId) : undefined;
-        return this.page(res, status, scopePage({ ...c, requestedMax: p.requestedMax as Scope, loopbackOnly: u.protocol === "http:" && LOOPBACK.has(u.hostname), instanceHost: link ? new URL(link.instanceUrl).host : "your Paperclip", username: p.username ?? "", anonymous: !!acct?.anonymous, alias: acct?.alias ?? null }), p);
+        return this.page(res, status, scopePage({ ...c, requestedMax: p.requestedMax as Scope, loopbackOnly: u.protocol === "http:" && LOOPBACK.has(u.hostname), instanceHost: link ? new URL(link.instanceUrl).host : "your Paperclip", username: p.username ?? "", anonymous: !!acct?.anonymous, alias: acct?.alias ?? null, beta: !!acct?.beta }), p);
       }
       default:
         return this.page(res, status, choosePage(c), p);
@@ -992,6 +1090,13 @@ export class OAuthProvider {
     if (f.get("privacy_present") === "1") {
       const want = f.get("anonymous") === "on";
       if (want !== !!acct.anonymous) acct = await this.setPrivacy(acct, want);
+    }
+    if (f.get("beta_present") === "1") {
+      const want = f.get("beta") === "on";
+      if (want !== !!acct.beta) {
+        await this.manageSetBeta(acct, want);
+        acct = { ...acct, beta: want };
+      }
     }
     const code = `pcb_ac_${randomToken(32)}`;
     await this.store.putCode(sha256Hex(code), {

@@ -210,7 +210,7 @@ export class PgStore implements Store {
   // ───────────── accounts ─────────────
 
   private static toAccount(x: any): Account {
-    return { id: x.id, username: x.username, usernameKey: x.username_key, secretHash: x.secret_hash, createdAt: num(x.created_at), lastLoginAt: x.last_login_at == null ? null : num(x.last_login_at), disabled: x.disabled, anonymous: !!x.anonymous, alias: x.alias ?? null };
+    return { id: x.id, username: x.username, usernameKey: x.username_key, secretHash: x.secret_hash, createdAt: num(x.created_at), lastLoginAt: x.last_login_at == null ? null : num(x.last_login_at), disabled: x.disabled, anonymous: !!x.anonymous, alias: x.alias ?? null, beta: !!x.beta };
   }
   private static toLink(x: any): AccountLink {
     return { accountId: x.account_id, instanceUrl: x.instance_url, paperclipUserId: x.paperclip_user_id, sealedCredential: x.sealed_credential, createdAt: num(x.created_at), connectedAt: num(x.connected_at), lastUsedAt: num(x.last_used_at), instanceLabel: x.instance_label ?? null };
@@ -227,6 +227,15 @@ export class PgStore implements Store {
       if ((e as { code?: string; constraint?: string }).code === "23505" && (e as { constraint?: string }).constraint === "accounts_alias_idx") throw new AliasTakenError(a.alias ?? "");
       throw e;
     }
+  }
+  async setAccountBeta(id: string, beta: boolean) {
+    await this.q("update bridge.accounts set beta = $2 where id = $1", [id, beta]);
+  }
+  async listAccountGrants(accountId: string) {
+    return (await this.q("select * from bridge.grants where account_id = $1 order by created_at", [accountId])).rows.map(toGrant);
+  }
+  async setGrantScopes(id: string, scopes: string[]) {
+    return ((await this.q("update bridge.grants set scopes = $2 where id = $1 and not revoked", [id, scopes])).rowCount ?? 0) === 1;
   }
   async setAccountPrivacy(id: string, c: PrivacyChange) {
     const cl = await this.pool.connect();

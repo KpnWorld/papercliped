@@ -32,6 +32,7 @@ Blueprints are not needed (and the paid features are not used). The repo ships a
 | `DATABASE_CA` | Supabase CA PEM (`\n` for newlines); without it use `require` (weaker) |
 | `BRIDGE_PROXY_HOPS` | `1` |
 | `BRIDGE_KEEPALIVE` | `1` |
+| `SITE_CONTACT` | an email address or support URL shown on the privacy and terms pages |
 
 4. **Create Web Service.** Watch the logs for `migrations applied` and `paperclip-bridge listening`, then open `https://<service>.onrender.com/healthz`.
 5. Free-plan facts: the service sleeps after ~15 min without traffic (cold start ≈ 1 min) and the free allowance (750 h/month) is shared across the workspace, so keep **only the bridge** on Render (the panel is §7).

@@ -94,6 +94,11 @@ export interface UserCounts {
 export interface AccountStore {
   /** False if the username (case-insensitively) is taken. Throws AliasTakenError if the alias is. */
   createAccount(a: Account): Promise<boolean>;
+  setAccountBeta(id: string, beta: boolean): Promise<void>;
+  /** Every grant (live or revoked) of an account, oldest first. */
+  listAccountGrants(accountId: string): Promise<Grant[]>;
+  /** Replace a LIVE grant's scopes (takes effect on the next call). False if it is missing or revoked. */
+  setGrantScopes(id: string, scopes: string[]): Promise<boolean>;
   /** Turn anonymity on/off: updates the account and rewrites what logs, grants and audit rows show. */
   setAccountPrivacy(id: string, change: PrivacyChange): Promise<"ok" | "alias_taken" | "missing">;
   getAccountByKey(usernameKey: string): Promise<Account | undefined>;
@@ -401,6 +406,23 @@ export class MemoryStore implements Store {
     if (Object.values(this.accts).some((x) => x.usernameKey === a.usernameKey)) return false;
     if (a.alias && Object.values(this.accts).some((x) => x.alias?.toLowerCase() === a.alias!.toLowerCase())) throw new AliasTakenError(a.alias);
     this.accts[a.id] = { anonymous: false, alias: null, ...a };
+    this.save();
+    return true;
+  }
+  async setAccountBeta(id: string, beta: boolean) {
+    const a = this.accts[id];
+    if (a) {
+      a.beta = beta;
+      this.save();
+    }
+  }
+  async listAccountGrants(accountId: string) {
+    return Object.values(this.d.grants).filter((g) => g.accountId === accountId).sort((a, b) => a.createdAt - b.createdAt);
+  }
+  async setGrantScopes(id: string, scopes: string[]) {
+    const g = this.d.grants[id];
+    if (!g || g.revoked) return false;
+    g.scopes = [...scopes];
     this.save();
     return true;
   }

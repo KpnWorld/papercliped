@@ -48,7 +48,7 @@ describe.each(pages)("%s page", (_name, html) => {
   });
   it("has no inline event handlers and no external resources", () => {
     expect(html).not.toMatch(/\son[a-z]+\s*=\s*["']/i);
-    expect(html).not.toMatch(/<link\b|@import|url\(\s*["']?https?:|<script[^>]+src=|<iframe|<object|<embed/i);
+    expect(html.replace(/<link rel="icon" type="image\/svg\+xml" href="data:image\/svg\+xml,[^"]*">/, "")).not.toMatch(/<link\b|@import|url\(\s*["']?https?:|<script[^>]+src=|<iframe|<object|<embed/i);
     expect(html).not.toMatch(/<form[^>]+action=["']https?:/i); // forms only post back to this bridge
   });
   it("any script carries the CSP nonce", () => {

@@ -113,7 +113,7 @@ export class PanelRoutes {
   private html(res: ServerResponse, status: number, build: (nonce: string) => string, extra: Record<string, string> = {}): true {
     const nonce = randomToken(12);
     return this.send(res, status, build(nonce), "text/html; charset=utf-8", {
-      "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
+      "Content-Security-Policy": `default-src 'none'; img-src data:; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
       "X-Frame-Options": "DENY",
       ...extra,
     });

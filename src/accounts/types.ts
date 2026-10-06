@@ -12,6 +12,8 @@ export interface Account {
   anonymous?: boolean;
   /** Generated once, stable for the life of the account even if anonymity is toggled. */
   alias?: string | null;
+  /** Joined the beta: gets the connection manager and its API. */
+  beta?: boolean;
 }
 
 /** The account's connection to its Paperclip (one per account). The credential is sealed in the app. */

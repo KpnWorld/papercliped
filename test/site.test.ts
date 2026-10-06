@@ -33,9 +33,9 @@ describe("markdown renderer", () => {
 describe("public site", () => {
   let srv: Server, base: string, site: SiteRoutes;
   beforeAll(async () => {
-    site = new SiteRoutes({ url: "https://papercliped.example.com", contact: "support@example.com", effective: "2026-10-06" });
-    srv = createServer((req, res) => {
-      if (!site.handle(req, res, new URL(req.url!, "http://x"))) res.writeHead(404).end("nope");
+    site = new SiteRoutes({ url: "https://papercliped.example.com", contact: "support@example.com", effective: "2026-10-06", stats: async () => ({ users: 42, connections: 7 }) });
+    srv = createServer(async (req, res) => {
+      if (!(await site.handle(req, res, new URL(req.url!, "http://x")))) res.writeHead(404).end("nope");
     });
     await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
     base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
@@ -49,7 +49,7 @@ describe("public site", () => {
       const html = await res.text();
       expect(res.headers.get("content-security-policy")).toMatch(/default-src 'none'/);
       expect(res.headers.get("content-security-policy")).toMatch(/frame-ancestors 'none'/);
-      expect(html, p).not.toMatch(/<script/i);
+      expect(html, p).not.toMatch(/<script(?![^>]*nonce=)/i); // any script carries the per-request nonce
       expect(html, p).not.toMatch(/(src|href)=["']https?:\/\/(?!github\.com|papercliped\.example\.com)/); // nothing third-party is loaded
       expect(html, p).not.toContain("{{"); // every placeholder was filled
     }
@@ -67,6 +67,37 @@ describe("public site", () => {
       const html = await (await fetch(`${base}${p}`)).text();
       for (const m of html.matchAll(/href="(\/[^"#]*)"/g)) expect(known.has(m[1]) || m[1] === "/docs", `${p} → ${m[1]}`).toBe(true);
     }
+  });
+  it("the landing page is interactive, says the line, has a nonce'd script and valid JavaScript", async () => {
+    const res = await fetch(`${base}/`);
+    const html = await res.text();
+    expect(html).toContain("Papercliped, not Paperclipped.");
+    const nonce = /script-src 'nonce-([^']+)'/.exec(res.headers.get("content-security-policy")!)![1];
+    const m = /<script nonce="([^"]+)">([\s\S]*?)<\/script>/.exec(html)!;
+    expect(m[1]).toBe(nonce);
+    expect(() => new Function(m[2])).not.toThrow();
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(html).toContain('id="mascot"');
+    expect(html).toContain("Try the permissions");
+    expect(html).toContain('rel="icon"');
+    const again = await (await fetch(`${base}/`)).text();
+    expect(/<script nonce="([^"]+)">/.exec(again)![1]).not.toBe(nonce); // a fresh nonce each time
+  });
+  it("shows only aggregate numbers, and serves the favicon", async () => {
+    expect(await (await fetch(`${base}/api/public/stats`)).json()).toEqual({ users: 42, connections: 7 });
+    for (const p of ["/favicon.svg", "/favicon.ico"]) {
+      const r = await fetch(`${base}${p}`);
+      expect(r.status).toBe(200);
+      expect(r.headers.get("content-type")).toBe("image/svg+xml");
+      expect(await r.text()).toMatch(/^<svg /);
+    }
+  });
+  it("documents the signup process and the connection manager", async () => {
+    const su = await (await fetch(`${base}/docs/signup`)).text();
+    expect(su).toContain("Create your account");
+    expect(su).toContain("secret key");
+    expect(su).toContain("6 to 32 characters");
+    expect(await (await fetch(`${base}/docs/manage`)).text()).toContain("Manage connections");
   });
   it("only answers GET/HEAD for its own paths", async () => {
     expect((await fetch(`${base}/privacy`, { method: "POST" })).status).toBe(404);

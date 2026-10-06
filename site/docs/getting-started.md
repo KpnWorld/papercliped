@@ -29,6 +29,8 @@ This starts a local server for one Paperclip, using `PAPERCLIP_API_URL` and `PAP
 ## ChatGPT
 Papercliped publishes an OpenAPI description at `{{URL}}/openapi.json` for GPT Actions. See [ChatGPT setup](/docs/chatgpt).
 
+See [Create your account](/docs/signup) for every screen in detail.
+
 ## Your username
 - 6 to 32 characters.
 - At least one number or one of these symbols: `.` `#` `_`.

@@ -2,6 +2,9 @@ import { readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { esc, THEME } from "../oauth/pages.js";
 import { VERSION } from "../version.js";
+import { randomToken } from "../oauth/crypto.js";
+import { FAVICON_LINK, FAVICON_SVG } from "./favicon.js";
+import { LANDING_CSS, LANDING_SCRIPT, landingBody } from "./landing.js";
 import { renderMarkdown } from "./markdown.js";
 
 export interface SiteOptions {
@@ -13,10 +16,14 @@ export interface SiteOptions {
   effective: string;
   /** Directory holding privacy.md, terms.md and docs/*.md. */
   dir?: URL;
+  /** Aggregate counts for the landing page. Only numbers: never names. */
+  stats?: () => Promise<{ users: number; connections: number }>;
 }
 
 const NAV: { slug: string; title: string }[] = [
   { slug: "getting-started", title: "Getting started" },
+  { slug: "signup", title: "Create your account" },
+  { slug: "manage", title: "Manage connections (beta)" },
   { slug: "permissions", title: "Permissions" },
   { slug: "anonymous-mode", title: "Anonymous mode" },
   { slug: "security", title: "Security" },
@@ -57,6 +64,7 @@ const SECURITY_HEADERS = {
   "Referrer-Policy": "no-referrer",
   "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
 };
+const CSP = (nonce?: string) => `default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; ${nonce ? `script-src 'nonce-${nonce}'; connect-src 'self'; ` : ""}base-uri 'none'; frame-ancestors 'none'; form-action 'none'`;
 
 export class SiteRoutes {
   private pages = new Map<string, { title: string; html: string }>();
@@ -70,9 +78,9 @@ export class SiteRoutes {
     for (const n of NAV) this.pages.set(`/docs/${n.slug}`, { title: n.title, html: load(`docs/${n.slug}.md`) });
   }
 
-  private layout(title: string, body: string, current: string): string {
+  private layout(title: string, body: string, current: string, script?: { nonce: string; code: string; css: string }): string {
     const nav = `<nav aria-label="Main"><a href="/docs/getting-started"${current.startsWith("/docs") ? " aria-current=page" : ""}>Docs</a><a href="/privacy"${current === "/privacy" ? " aria-current=page" : ""}>Privacy</a><a href="/terms"${current === "/terms" ? " aria-current=page" : ""}>Terms</a><a href="https://github.com/KpnWorld/papercliped" rel="noopener noreferrer">GitHub</a></nav>`;
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(title)} · Papercliped</title><meta name="description" content="Connect Claude and ChatGPT to your Paperclip: control agents, sync and get reports, with permissions you choose."><style>${CSS}</style></head><body><header><a class="brand" href="/">${CLIP}<span>Papercliped</span></a>${nav}</header>${body}<footer>Papercliped ${esc(VERSION)} (beta) · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/docs/security">Security</a></footer></body></html>`;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(title)} · Papercliped</title>${FAVICON_LINK}<meta name="description" content="Connect Claude and ChatGPT to your Paperclip: control agents, sync and get reports, with permissions you choose."><style>${CSS}${script?.css ?? ""}</style></head><body><header><a class="brand" href="/">${CLIP}<span>Papercliped</span></a>${nav}</header>${body}<footer>Papercliped ${esc(VERSION)} (beta) · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/docs/security">Security</a></footer>${script ? `<script nonce="${script.nonce}">${script.code}</script>` : ""}</body></html>`;
   }
 
   private doc(path: string): string {
@@ -83,26 +91,45 @@ export class SiteRoutes {
     return this.layout(p.title, `<div class="wrap">${side}<article>${p.html}</article></div>`, path);
   }
 
-  private home(): string {
-    return this.layout(
-      "Control your Paperclip from Claude",
-      `<section class="hero"><h1>Control your Paperclip from Claude and ChatGPT.</h1><p>See your agents, sync their work and get reports, and, if you choose, let your AI assistant pause, wake and assign them. You decide how much it may do, and you can cut access any time.</p><a class="cta" href="/docs/getting-started">Get started</a><a class="cta ghost" href="/docs/permissions">How permissions work</a></section>
-       <section class="cards"><div class="card"><h2>You choose the access</h2><p>Read only by default. Full control (beta) is opt-in, every time you connect.</p></div><div class="card"><h2>Your keys stay sealed</h2><p>Your Paperclip key is stored encrypted and is never shown to the AI app.</p></div><div class="card"><h2>Optionally anonymous</h2><p>Show up as an alias like Ann02 in the operator's logs instead of your username.</p></div><div class="card"><h2>Works with your Paperclip</h2><p>Just a public https address and an approval in Paperclip. Nothing to install on your side.</p></div></section>`,
-      "/",
-    );
+  private home(nonce: string): string {
+    return this.layout("Control your Paperclip from Claude", landingBody(), "/", { nonce, code: LANDING_SCRIPT, css: LANDING_CSS });
+  }
+
+  private statsCache: { at: number; v: { users: number; connections: number } | null } = { at: 0, v: null };
+  private async stats(): Promise<{ users: number; connections: number } | null> {
+    if (!this.o.stats) return null;
+    if (Date.now() - this.statsCache.at > 60_000) {
+      this.statsCache = { at: Date.now(), v: await this.o.stats().catch(() => null) };
+    }
+    return this.statsCache.v;
   }
 
   /** True when the request was served. */
-  handle(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
+  async handle(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     if (req.method !== "GET" && req.method !== "HEAD") return false;
     let path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname;
+    const head = req.method === "HEAD";
+    if (path === "/favicon.svg" || path === "/favicon.ico") {
+      res.writeHead(200, { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff" });
+      res.end(head ? undefined : FAVICON_SVG);
+      return true;
+    }
+    if (path === "/api/public/stats") {
+      const v = await this.stats();
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "public, max-age=30", "X-Content-Type-Options": "nosniff" });
+      res.end(head ? undefined : JSON.stringify(v ?? {}));
+      return true;
+    }
     if (path === "/docs") path = "/docs/getting-started";
-    let html: string;
-    if (path === "/") html = this.home();
-    else if (this.pages.has(path)) html = this.doc(path);
-    else return false;
-    res.writeHead(200, SECURITY_HEADERS);
-    res.end(req.method === "HEAD" ? undefined : html);
+    if (path === "/") {
+      const nonce = randomToken(12); // the landing page has a script, so it carries a per-request nonce and is not cached
+      res.writeHead(200, { ...SECURITY_HEADERS, "Cache-Control": "no-store", "Content-Security-Policy": CSP(nonce) });
+      res.end(head ? undefined : this.home(nonce));
+      return true;
+    }
+    if (!this.pages.has(path)) return false;
+    res.writeHead(200, { ...SECURITY_HEADERS, "Content-Security-Policy": CSP() });
+    res.end(head ? undefined : this.doc(path));
     return true;
   }
 

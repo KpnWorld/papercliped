@@ -1,6 +1,6 @@
 {
   "name": "papercliped",
-  "version": "1.0.0-beta.1",
+  "version": "1.1.0-beta.1",
   "description": "Papercliped \u2014 connect Claude and ChatGPT to your Paperclip: control agents, sync, report. MCP server + hosted multi-tenant OAuth bridge + separate operator panel.",
   "license": "MIT",
   "type": "module",
