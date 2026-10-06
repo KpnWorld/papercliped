@@ -64,6 +64,7 @@ async function main() {
   const site = siteUrl
     ? new SiteRoutes({
         url: siteUrl,
+        mcpUrl: http.oauth?.issuer ?? http.publicUrl ?? undefined,
         contact: process.env.SITE_CONTACT?.trim() || "https://github.com/OpenSourcx/papercliped/issues",
         effective: process.env.SITE_EFFECTIVE_DATE?.trim() || "2026-10-06",
         stats: async () => ({ users: await store.countAccounts(), connections: await store.liveGrantCount() }),

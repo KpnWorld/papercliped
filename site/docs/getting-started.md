@@ -8,7 +8,7 @@ Papercliped connects Claude (and ChatGPT) to **your** Paperclip. You keep contro
 
 ## Connect from Claude
 1. In Claude open **Settings → Connectors → Add custom connector**.
-2. Use the address `{{URL}}/mcp` and click **Connect**.
+2. Use the address `{{MCP}}/mcp` and click **Connect**.
 3. On the Papercliped page choose **Connect your Paperclip**, enter your Paperclip's address, and approve the request in your Paperclip.
 4. Pick a **username** (see below). Papercliped then shows your **secret key once**. Save it in a password manager.
 5. Choose how much to allow (see [Permissions](/docs/permissions)) and click **Allow**.
@@ -16,7 +16,7 @@ Papercliped connects Claude (and ChatGPT) to **your** Paperclip. You keep contro
 
 ## Claude Code
 ```
-claude mcp add --transport http papercliped {{URL}}/mcp
+claude mcp add --transport http papercliped {{MCP}}/mcp
 ```
 Or install the plugin: `/plugin marketplace add OpenSourcx/papercliped`, then `/plugin install papercliped@papercliped`.
 
@@ -33,7 +33,7 @@ Any app that supports MCP can use Papercliped. See [Any AI app (MCP)](/docs/othe
 The Papercliped plugin for Paperclip adds a page where you link your account and manage connected apps. See [Paperclip plugin](/docs/paperclip-plugin).
 
 ## ChatGPT
-Papercliped publishes an OpenAPI description at `{{URL}}/openapi.json` for GPT Actions. See [ChatGPT setup](/docs/chatgpt).
+Papercliped publishes an OpenAPI description at `{{MCP}}/openapi.json` for GPT Actions. See [ChatGPT setup](/docs/chatgpt).
 
 See [Create your account](/docs/signup) for every screen in detail.
 

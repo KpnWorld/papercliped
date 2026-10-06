@@ -22,7 +22,7 @@ Blueprints are not needed (and the paid features are not used). The repo ships a
 |---|---|
 | `BRIDGE_OAUTH` | `1` |
 | `BRIDGE_MODE` | `multi` |
-| `BRIDGE_PUBLIC_URL` | `https://papercliped.co` |
+| `BRIDGE_PUBLIC_URL` | `https://mcp.papercliped.co` (the OAuth issuer; see [DOMAINS.md](DOMAINS.md)) |
 | `BRIDGE_SECRET` | output of `openssl rand -hex 32` — **back it up now**; losing it disconnects every user |
 | `DATABASE_URL` | transaction pooler as `bridge_app` (§1) |
 | `DATABASE_MIGRATE_URL` | session pooler, admin role |
@@ -67,8 +67,8 @@ Cloudflare → `papercliped.co` → **Email → Email Routing**: create `support
 **More hosts (docs., mcp., api., forum.):** see [DOMAINS.md](DOMAINS.md) for the DNS records, Render domains, `PUBLIC_HOSTS` and the OAuth issuer decision.
 
 **E. Point the bridge at the new domain**
-1. Render → Environment: `BRIDGE_PUBLIC_URL=https://papercliped.co`, then redeploy.
-2. `BRIDGE_PUBLIC_URL` is the OAuth issuer and is baked into every token. Changing it disconnects every app that connected under the old address; those users connect again with `https://papercliped.co/mcp`. Set it to the final domain before inviting more users.
+1. Render → Environment: `BRIDGE_PUBLIC_URL=https://mcp.papercliped.co` (where AI apps connect; the website stays on `papercliped.co`), then redeploy.
+2. `BRIDGE_PUBLIC_URL` is the OAuth issuer and is baked into every token. Changing it disconnects every app that connected under the old address; those users connect again with `https://mcp.papercliped.co/mcp`. Set it to the final domain before inviting more users.
 3. Keep-alive worker (§5): `deploy/wrangler.toml` already targets `https://papercliped.co/readyz`; redeploy it with `npx wrangler deploy`.
 4. Paperclip plugin: its default bridge URL is `https://papercliped.co` (instances that changed the setting keep their own value).
 
@@ -86,10 +86,10 @@ cd deploy && npx wrangler login && npx wrangler deploy      # edit TARGET_URL in
 It runs every 5 minutes (cron `*/5 * * * *`) against `/readyz`. Open the worker's URL once to see the last result. Alternative: a free UptimeRobot HTTP monitor on `/readyz` at a 5-minute interval. Free hosting can still have occasional cold starts — the first request after a platform restart may take about a minute.
 
 ## 6. Install paths for users
-- **Claude (claude.ai / Desktop / mobile):** Settings → Connectors → *Add custom connector* → `https://papercliped.co/mcp`. Claude opens the Papercliped sign-in page.
-- **Claude Code:** `claude mcp add --transport http papercliped https://papercliped.co/mcp`, or install the plugin: `/plugin marketplace add OpenSourcx/papercliped` then `/plugin install papercliped@papercliped`.
+- **Claude (claude.ai / Desktop / mobile):** Settings → Connectors → *Add custom connector* → `https://mcp.papercliped.co/mcp`. Claude opens the Papercliped sign-in page.
+- **Claude Code:** `claude mcp add --transport http papercliped https://mcp.papercliped.co/mcp`, or install the plugin: `/plugin marketplace add OpenSourcx/papercliped` then `/plugin install papercliped@papercliped`.
 - **npm / local stdio:** `npx papercliped` with `PAPERCLIP_API_URL` and `PAPERCLIP_API_KEY` set.
-- **ChatGPT:** custom MCP app with the same `/mcp` URL (where your plan offers it), or import `https://papercliped.co/openapi.json` as a GPT Action (see [chatgpt.md](chatgpt.md)).
+- **ChatGPT:** custom MCP app with the same `/mcp` URL (where your plan offers it), or import `https://mcp.papercliped.co/openapi.json` as a GPT Action (see [chatgpt.md](chatgpt.md)).
 
 First sign-in: pick a username (6–32 characters, at least one number or `.` `#` `_`), connect your Paperclip (public https URL; approve in Paperclip), and **save the secret key shown once**. Later: sign in with username + key, or reconnect through Paperclip approval and keep the same account. Tick *Appear anonymously* to be shown as an alias like `Ann02`.
 
@@ -107,7 +107,7 @@ First sign-in: pick a username (6–32 characters, at least one number or `.` `#
 ## 9. Marketplaces — submit only after the smoke test passes
 Requirements change; confirm each against the current official page before submitting.
 
-**Claude directory (connectors / plugins)** — have ready: public GitHub repo (done), plugin manifest [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json), the remote MCP URL `https://papercliped.co/mcp`, OAuth callbacks (`https://claude.ai/api/mcp/auth_callback`, Claude Code's localhost loopback), privacy policy and terms (served by the bridge at `https://papercliped.co/privacy` and `/terms`; set `SITE_CONTACT` to a real contact address), a support contact, tool descriptions with read/write annotations, and a **test account** with a demo Paperclip for reviewers. Submit through Anthropic's connector/plugin submission form linked from the Claude docs. Until listed, users install through the custom-connector or `/plugin marketplace add` paths above.
+**Claude directory (connectors / plugins)** — have ready: public GitHub repo (done), plugin manifest [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json), the remote MCP URL `https://mcp.papercliped.co/mcp`, OAuth callbacks (`https://claude.ai/api/mcp/auth_callback`, Claude Code's localhost loopback), privacy policy and terms (served by the bridge at `https://papercliped.co/privacy` and `/terms`; set `SITE_CONTACT` to a real contact address), a support contact, tool descriptions with read/write annotations, and a **test account** with a demo Paperclip for reviewers. Submit through Anthropic's connector/plugin submission form linked from the Claude docs. Until listed, users install through the custom-connector or `/plugin marketplace add` paths above.
 
 **ChatGPT (apps / GPT Store)** — an MCP app needs a public https MCP endpoint with OAuth (you have it), a privacy policy URL, and domain verification in the OpenAI developer dashboard; a GPT with Actions needs the OpenAPI URL and OAuth settings (see [chatgpt.md](chatgpt.md)). Submission details for the apps directory are still moving — follow OpenAI's current "apps SDK / submit your app" guide.
 

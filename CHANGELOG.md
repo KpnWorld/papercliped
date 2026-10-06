@@ -17,6 +17,8 @@
 - **New tool `papercliped_service_status`** (read only): the AI can check whether the hosted service is working, from the public status API. The catalogue is now 30 tools.
 - **Paperclip plugin:** a "Papercliped service" card shows the bridge's public status (no link needed).
 
+- **AI apps now connect at `https://mcp.papercliped.co/mcp`** (the OAuth issuer moves to `mcp.papercliped.co`; the website, docs and `/manage` stay on `papercliped.co`). Docs show the connector address through a new `{{MCP}}` placeholder, so self-hosted bridges show their own. Anyone connected before must remove the connector and add the new address.
+
 ## v2.0.0 — stable open-source build
 
 Papercliped v2 is the free, open-source foundation: the bridge, the connector for Claude and any MCP app, and the Paperclip plugin. Paid features (managed subdomains, pricing, legal) are planned for v3 (`docs/V3-SUBDOMAINS.md`).

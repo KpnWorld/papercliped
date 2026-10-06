@@ -7,7 +7,8 @@ One bridge service answers every host; it routes by the `Host` header. Nothing h
 | `papercliped.co` | The website (landing, status, changelog, community, brand, privacy, terms), `/manage`, and every API |
 | `www.papercliped.co` | Redirects to `papercliped.co` (same path) |
 | `docs.papercliped.co` | The docs at `/topics` and `/topics/<page>`; `/` and old `/docs/...` paths redirect there |
-| `mcp.papercliped.co`, `api.papercliped.co` | MCP, OAuth, ChatGPT Actions, `/openapi.json` and `/api/public/v1/*`; web pages redirect to `papercliped.co` |
+| `mcp.papercliped.co` | **Where AI apps connect** (`/mcp`, the OAuth issuer), ChatGPT Actions and `/openapi.json`; web pages redirect to `papercliped.co` |
+| `api.papercliped.co` | `/api/public/v1/*` and `/openapi.json`; web pages redirect to `papercliped.co` |
 | `forum.papercliped.co` | Redirects to the forum (`FORUM_URL`; GitHub Discussions to start, see `docs/COMMUNITY.md`) |
 
 Every host also answers the protocol and API paths (`/mcp`, `/authorize`, `/token`, `/register`, `/revoke`, `/.well-known/*`, `/actions/*`, `/openapi.json`, `/api/*`, `/manage`, `/healthz`, `/readyz`), so nothing breaks if an app or person uses another host for them.
@@ -36,17 +37,17 @@ FORUM_URL=https://github.com/OpenSourcx/papercliped/discussions
 ```
 The first `marketing` host is the canonical one. Hosts you don't list (like `<service>.onrender.com`) still serve the whole site, so the service stays reachable while DNS changes. The Docker image builds the website and the bridge finds it at `/app/web/dist` (override with `WEB_DIST`).
 
-## 4. The OAuth issuer: decide once
-`BRIDGE_PUBLIC_URL` is the OAuth issuer **and** the resource AI apps connect to. An app's connector URL must be `<BRIDGE_PUBLIC_URL>/mcp`; using another host's `/mcp` fails the sign-in (the token's resource wouldn't match).
+## 4. The OAuth issuer: mcp.papercliped.co (decided)
+`BRIDGE_PUBLIC_URL` is the OAuth issuer **and** the resource AI apps connect to, so an app's connector URL must be `<BRIDGE_PUBLIC_URL>/mcp`. Papercliped uses:
+```
+BRIDGE_PUBLIC_URL=https://mcp.papercliped.co
+```
+Connector URL: **`https://mcp.papercliped.co/mcp`** (ChatGPT Actions: `https://mcp.papercliped.co/openapi.json`). The website, docs and `/manage` stay on `papercliped.co`; the docs show the connector URL through the `{{MCP}}` placeholder.
 
-- **Option A (no change, works today):** keep `BRIDGE_PUBLIC_URL=https://papercliped.co`. Connector URL: `https://papercliped.co/mcp` (what the docs say now). `mcp.`/`api.` serve the public API and OpenAPI; their `/mcp` is not used for sign-in.
-- **Option B (cleaner split):** set `BRIDGE_PUBLIC_URL=https://mcp.papercliped.co`. Connector URL becomes `https://mcp.papercliped.co/mcp`.
-
-**Changing `BRIDGE_PUBLIC_URL` invalidates every existing token.** Everyone connected must connect again. Right now that's only the owner, so if you want option B, do it before inviting anyone, and update in the same go:
-- the Claude connector (Settings → Connectors: remove, add the new URL) and Claude Code (`claude mcp add --transport http papercliped <new>/mcp`);
-- a ChatGPT connector or GPT Action (re-import `<new>/openapi.json`);
-- the Paperclip plugin's **Papercliped bridge URL** setting (the plugin talks to `/api/manage` and `/api/public`, which work on any host, so it only matters if you want it on the new host);
-- the docs and website text that show `https://papercliped.co/mcp` (`site/docs/*.md` use `{{URL}}/mcp`; the website's landing page and kit have it written out).
+**Changing `BRIDGE_PUBLIC_URL` invalidates every existing token**, so everyone connected must connect again (at the time of the switch, only the owner). After switching:
+- Claude: Settings → Connectors → remove the old connector, add `https://mcp.papercliped.co/mcp`. Claude Code: `claude mcp remove papercliped` then `claude mcp add --transport http papercliped https://mcp.papercliped.co/mcp`.
+- ChatGPT: re-add the connector, or re-import `https://mcp.papercliped.co/openapi.json` into the GPT.
+- The Paperclip plugin needs nothing: it talks to `/api/manage` and `/api/public`, which work on every host (its default bridge URL stays `https://papercliped.co`).
 
 ## 5. Check
 ```
@@ -54,7 +55,7 @@ curl -sI https://www.papercliped.co/status         # 301 → https://papercliped
 curl -sI https://docs.papercliped.co/              # 301 → /topics
 curl -sI https://papercliped.co/docs/permissions   # 301 → https://docs.papercliped.co/topics/permissions
 curl -s  https://api.papercliped.co/api/public/v1/status
-curl -s  https://papercliped.co/.well-known/oauth-authorization-server | head -c 200
+curl -s  https://mcp.papercliped.co/.well-known/oauth-authorization-server | head -c 200   # issuer: https://mcp.papercliped.co
 curl -sI https://forum.papercliped.co/             # 302 → the forum
 ```
 

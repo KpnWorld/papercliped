@@ -12,7 +12,7 @@ import tools from "../generated/tools.json";
 import { useLiveStats } from "../lib/useLiveStats";
 import { usePageTitle } from "./usePageTitle";
 
-const MCP_URL = "https://papercliped.co/mcp";
+const MCP_URL = "https://mcp.papercliped.co/mcp";
 
 function Section({ id, eyebrow, title, lede, children }: { id: string; eyebrow: string; title: string; lede?: string; children: React.ReactNode }) {
   return (

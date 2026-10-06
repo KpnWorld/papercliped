@@ -7,7 +7,7 @@ Creating a Papercliped account takes about a minute. You do it the first time yo
 - You must be able to sign in to that Paperclip, because you approve the connection there.
 
 ## Steps
-1. **Add the connector.** In Claude open **Settings → Connectors → Add custom connector** and use `{{URL}}/mcp`, then click **Connect**.
+1. **Add the connector.** In Claude open **Settings → Connectors → Add custom connector** and use `{{MCP}}/mcp`, then click **Connect**.
 2. **Choose "Connect your Paperclip".** (If you already have an account, you can use **Log in** with your username and secret key instead.)
 3. **Enter your Paperclip's address**, for example `https://workforce.example.com`. Use only the address, with no path after it.
 4. **Approve in Paperclip.** Papercliped shows a link. Open it, sign in to your Paperclip and approve the request, then come back to the Papercliped tab.

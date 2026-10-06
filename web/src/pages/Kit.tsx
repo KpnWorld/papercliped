@@ -82,9 +82,9 @@ export function Kit() {
 
       <section className="mt-10" aria-labelledby="k-code">
         <h2 id="k-code" className="text-2xl font-bold">Code</h2>
-        <CodeBlock label="Claude Code" code="claude mcp add --transport http papercliped https://papercliped.co/mcp" />
+        <CodeBlock label="Claude Code" code="claude mcp add --transport http papercliped https://mcp.papercliped.co/mcp" />
         <Tabs label="Install" tabs={[
-          { id: "claude", label: "Claude", content: <p>Settings → Connectors → Add custom connector → <code className="font-mono">https://papercliped.co/mcp</code></p> },
+          { id: "claude", label: "Claude", content: <p>Settings → Connectors → Add custom connector → <code className="font-mono">https://mcp.papercliped.co/mcp</code></p> },
           { id: "code", label: "Claude Code", content: <CodeBlock code="/plugin marketplace add OpenSourcx/papercliped" /> },
           { id: "npm", label: "npm", content: <CodeBlock code="npx papercliped@latest" /> },
         ]} />

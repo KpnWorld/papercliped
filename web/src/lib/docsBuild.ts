@@ -16,8 +16,8 @@ export interface Doc {
   updated: string | null; // YYYY-MM-DD from git, null when unknown
 }
 
-const SITE = { url: "https://papercliped.co", contact: "support@papercliped.co", effective: "2026-10-06" };
-const fill = (md: string) => md.replace(/\{\{URL\}\}/g, SITE.url).replace(/\{\{CONTACT\}\}/g, SITE.contact).replace(/\{\{DATE\}\}/g, SITE.effective);
+const SITE = { url: "https://papercliped.co", mcp: "https://mcp.papercliped.co", contact: "support@papercliped.co", effective: "2026-10-06" };
+const fill = (md: string) => md.replace(/\{\{MCP\}\}/g, SITE.mcp).replace(/\{\{URL\}\}/g, SITE.url).replace(/\{\{CONTACT\}\}/g, SITE.contact).replace(/\{\{DATE\}\}/g, SITE.effective);
 const strip = (html: string) => html.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
 export const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "section";
 

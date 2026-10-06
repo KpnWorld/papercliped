@@ -3,7 +3,7 @@
 Requires a ChatGPT plan that can create GPTs with Actions.
 
 1. Create a GPT, then **Configure → Create new action**.
-2. **Import from URL:** `{{URL}}/openapi.json`.
+2. **Import from URL:** `{{MCP}}/openapi.json`.
 3. **Authentication:** OAuth, using the endpoints listed at `{{URL}}/.well-known/oauth-authorization-server`.
 4. Add these instructions:
 

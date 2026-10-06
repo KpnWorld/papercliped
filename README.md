@@ -24,7 +24,7 @@ ChatGPT Custom GPT ──/actions/* + /openapi.json─▶ ┘
 | | **Papercliped for AI apps** (the main one) | **Papercliped plugin for Paperclip** (beta) |
 | --- | --- | --- |
 | What | Lets Claude, ChatGPT or any MCP client control and report on your Paperclip | A page inside your Paperclip to link your Papercliped account and manage connected AI apps |
-| Where it runs | Hosted at `https://papercliped.co` (connector URL `https://papercliped.co/mcp`), or self-hosted / local (this repo, npm `papercliped`) | Inside Paperclip, installed by the instance admin (npm `papercliped-paperclip-plugin`, source in `plugin/`) |
+| Where it runs | Hosted at `https://papercliped.co` (connector URL `https://mcp.papercliped.co/mcp`), or self-hosted / local (this repo, npm `papercliped`) | Inside Paperclip, installed by the instance admin (npm `papercliped-paperclip-plugin`, source in `plugin/`) |
 | Docs | [Getting started](site/docs/getting-started.md), [any AI app](site/docs/other-ai-apps.md), [ChatGPT](docs/chatgpt.md) | [Paperclip plugin](site/docs/paperclip-plugin.md), [plugin/README.md](plugin/README.md) |
 
 Papercliped is free and open source (MIT). The hosted service at `https://papercliped.co` runs this code.

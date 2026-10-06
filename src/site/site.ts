@@ -13,6 +13,8 @@ export interface SiteOptions {
   /** Where people reach the operator (privacy requests, vulnerability reports). */
   contact: string;
   /** Effective date shown on the legal pages (YYYY-MM-DD). */
+  /** Where AI apps connect (the OAuth issuer), for {{MCP}} in the pages; defaults to url. */
+  mcpUrl?: string;
   effective: string;
   /** Directory holding privacy.md, terms.md and docs/*.md. */
   dir?: URL;
@@ -83,7 +85,7 @@ export class SiteRoutes {
 
   constructor(private o: SiteOptions) {
     const dir = o.dir ?? new URL("../../site/", import.meta.url);
-    const fill = (md: string) => md.replaceAll("{{URL}}", o.url).replaceAll("{{CONTACT}}", o.contact).replaceAll("{{DATE}}", o.effective);
+    const fill = (md: string) => md.replaceAll("{{MCP}}", o.mcpUrl ?? o.url).replaceAll("{{URL}}", o.url).replaceAll("{{CONTACT}}", o.contact).replaceAll("{{DATE}}", o.effective);
     const load = (rel: string) => renderMarkdown(fill(readFileSync(new URL(rel, dir), "utf8")));
     this.pages.set("/privacy", { title: "Privacy", html: load("privacy.md") });
     this.pages.set("/terms", { title: "Terms", html: load("terms.md") });

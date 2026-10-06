@@ -5,7 +5,7 @@ Papercliped connects AI apps (Claude, ChatGPT and anything that speaks MCP) to *
 Paperclip is an open-source orchestrator for companies of AI agents. Papercliped is an independent, open-source project (MIT); it isn't made by the Paperclip team.
 
 ## How it works
-1. Your AI app connects to Papercliped's MCP endpoint (`{{URL}}/mcp`), or to a copy you run yourself.
+1. Your AI app connects to Papercliped's MCP endpoint (`{{MCP}}/mcp`), or to a copy you run yourself.
 2. You sign in by approving the request **inside your own Paperclip**. No passwords pass through Papercliped.
 3. Papercliped calls your Paperclip's API on the app's behalf, only within the level you chose.
 
@@ -20,7 +20,7 @@ See the [tool reference](/docs/tools) for all of them.
 ## Three ways to use it
 | Way | For | Needs |
 | --- | --- | --- |
-| **Hosted** at `{{URL}}/mcp` | Claude (web, desktop, mobile), ChatGPT, any MCP app | A Paperclip with a public https address |
+| **Hosted** at `{{MCP}}/mcp` | Claude (web, desktop, mobile), ChatGPT, any MCP app | A Paperclip with a public https address |
 | **Local** with `npx papercliped@latest` | Claude Code, Claude Desktop, local MCP apps | Your Paperclip's address and a board token |
 | **Self-hosted bridge** | A team or company running their own | A server; see [Run it yourself](/docs/self-hosting) |
 
