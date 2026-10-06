@@ -1,6 +1,6 @@
 {
   "name": "papercliped",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Control Paperclip agents, sync with them, and pull reports from Claude.",
   "author": {
     "name": "KpnWorld"

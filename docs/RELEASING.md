@@ -7,7 +7,7 @@ Requirements: the repository is public, the workflow runs on GitHub-hosted runne
 ## One-time setup (npmjs.com)
 Trusted publishing can only be configured on a package that already exists.
 
-**State as of v2.0.0:** `papercliped` already exists on npm (you published 1.1.0-beta.2), so skip step 1 for it. `papercliped-paperclip-plugin` does **not** exist yet, so publish it by hand once (step 1) **before** pushing the `v2.0.0` tag; otherwise the plugin step in the release run fails.
+**State as of v2.1.0:** both packages exist on npm (`papercliped` 1.1.0-beta.2, `papercliped-paperclip-plugin` 2.0.0), so step 1 is done. `papercliped-paperclip-plugin@2.0.0` predates the move of account management into the plugin and links with the old one-time codes, which the bridge no longer accepts: v2.1.0 replaces it. Do step 2 for the plugin before tagging if you want the workflow to publish it; otherwise publish 2.1.0 by hand and the workflow skips it.
 
 1. Publish the first version by hand, with 2FA (the plugin needs Node 24.11 or newer):
    ```sh
