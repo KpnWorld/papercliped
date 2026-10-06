@@ -332,5 +332,14 @@
  "legacy": {
   "users": 42,
   "connections": 7
+ },
+ "repo": {
+  "schemaVersion": 1,
+  "repo": "OpenSourcx/papercliped",
+  "url": "https://github.com/OpenSourcx/papercliped",
+  "stars": 1234,
+  "forks": 56,
+  "openIssues": 7,
+  "fetchedAt": "2026-10-06T18:00:00.000Z"
  }
 }

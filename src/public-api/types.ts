@@ -88,3 +88,14 @@ export interface PublicInfo {
   rateLimit: { requestsPerMinute: number };
   cacheSeconds: number;
 }
+
+/** The project's GitHub repository numbers, fetched by the bridge (cached for an hour) so browsers never call GitHub directly. */
+export interface PublicRepo {
+  schemaVersion: typeof PUBLIC_SCHEMA_VERSION;
+  repo: string; // "OpenSourcx/papercliped"
+  url: string;
+  stars: number | null; // null when GitHub couldn't be reached yet
+  forks: number | null;
+  openIssues: number | null;
+  fetchedAt: string | null;
+}

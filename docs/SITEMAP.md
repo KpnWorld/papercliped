@@ -8,6 +8,14 @@ Current as of v2.0.0 (read from the route code). Items marked **(planned v3)** d
 | `/` | Landing page ("Papercliped, not Paperclipped."), live user count |
 | `/docs` | Redirects to `/docs/getting-started` |
 | `/docs/getting-started` | Getting started |
+| `/docs/what-is-papercliped` | What is Papercliped? (overview and glossary) |
+| `/docs/self-hosting` | Run it yourself |
+| `/docs/tools` | Tool reference (generated from `src/tools.ts`) |
+| `/docs/manage-api` | Manage API |
+| `/docs/environment` | Environment variables |
+| `/docs/cli` | Command line |
+| `/docs/limits-and-errors` | Limits and errors |
+| `/docs/faq` | FAQ |
 | `/docs/signup` | Create your account |
 | `/docs/connect-your-paperclip` | Set up your Paperclip (public address, tunnels, domains) |
 | `/docs/manage` | Manage connections (beta) |
@@ -65,6 +73,7 @@ Current as of v2.0.0 (read from the route code). Items marked **(planned v3)** d
 | `GET /api/public/v1/stats?window=1h\|24h\|7d` | Users, connections, sign-ins, requests, errors, load |
 | `GET /api/public/v1/series?window=…` | The same over time |
 | `GET /api/public/v1/errors?window=…` | Error mix and sign-in failure reasons |
+| `GET /api/public/v1/repo` | GitHub stars, forks and open issues (cached hourly, fetched by the bridge) |
 | `GET /api/public/v1/openapi.json` | OpenAPI for this API (separate from the Actions document) |
 
 The operator dashboard is a separate, access-controlled service and is not part of this repository.

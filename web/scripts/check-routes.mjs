@@ -12,12 +12,16 @@ const FIX = JSON.parse(readFileSync(new URL("./fixtures/public-api.json", import
 // The bridge serves the public API; the static preview doesn't, so answer it with fixtures.
 const fakeApi = (r) => {
   const u = r.request().url();
-  const body = u.includes("/v1/status") ? FIX.status : u.includes("/v1/series") ? FIX.series : u.includes("/v1/stats") ? FIX.stats : FIX.legacy;
+  const body = u.includes("/v1/status") ? FIX.status : u.includes("/v1/series") ? FIX.series : u.includes("/v1/stats") ? FIX.stats : u.includes("/v1/repo") ? FIX.repo : FIX.legacy;
   return r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
 };
 
 const root = new URL("..", import.meta.url).pathname;
-const ROUTES = JSON.parse(/ROUTES = (\[[^\]]*\])/.exec(readFileSync(join(root, "src/App.tsx"), "utf8"))[1].replace(/'/g, '"'));
+const BASE_ROUTES = JSON.parse(/ROUTES = (\[[^\]]*\])/.exec(readFileSync(join(root, "src/App.tsx"), "utf8"))[1].replace(/'/g, '"'));
+const DOC_SLUGS = [...readFileSync(join(root, "src/content/docs-nav.ts"), "utf8").matchAll(/slugs: \[([^\]]*)\]/g)].flatMap((m) => JSON.parse(`[${m[1]}]`));
+const ROUTES = [...BASE_ROUTES, ...DOC_SLUGS.map((s) => `/docs/${s}`)];
+/** Paths only the bridge serves (not the static preview); links to them are fine but can't be loaded here. */
+const BRIDGE_ONLY = /^\/(manage|api\/|mcp|healthz|readyz|authorize|openapi\.json)/;
 const THEMES = []; // read from the palettes file
 const palettes = readFileSync(join(root, "src/theme/palettes.ts"), "utf8");
 for (const m of palettes.matchAll(/^  (\w+): \{\n    id: "\1"/gm)) THEMES.push(m[1]);
@@ -37,6 +41,7 @@ for (let i = 0; i < 60; i++) {
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
 const problems = [];
+const links = new Set();
 try {
   const ctx = await browser.newContext();
   // The bridge serves the stats API; the static preview doesn't, so answer it here with a fixture.
@@ -54,6 +59,7 @@ try {
     if (!res || res.status() !== 200) errs.push(`status ${res?.status()}`);
     const h1 = await page.locator("h1").count();
     if (h1 !== 1) errs.push(`expected one <h1>, found ${h1}`);
+    for (const href of await page.evaluate(() => [...document.querySelectorAll("a[href^='/']")].map((a) => a.getAttribute("href")))) links.add(href.split("#")[0]);
     const theme = await page.evaluate(() => document.documentElement.dataset.theme);
     if (!THEMES.includes(theme)) errs.push(`no theme applied before render (data-theme=${theme})`);
     // Mobile: nothing may scroll sideways on a 375px-wide phone.
@@ -71,6 +77,24 @@ try {
     else console.log(`ok ${route} (theme ${theme})`);
     await page.close();
   }
+
+  // Every internal link found on any page must resolve: app pages render (not "Page not found"), static files exist.
+  const visited = new Set(ROUTES);
+  for (const href of [...links].sort()) {
+    if (!href || visited.has(href) || BRIDGE_ONLY.test(href)) continue;
+    visited.add(href);
+    if (/\.[a-z0-9]+$/i.test(href)) {
+      const r = await fetch(base + href);
+      if (!r.ok) problems.push(`link ${href}: ${r.status}`);
+      continue;
+    }
+    const p = await ctx.newPage();
+    await p.goto(base + href, { waitUntil: "networkidle" });
+    const h1 = await p.locator("h1").first().textContent().catch(() => null);
+    if (!h1 || /Page not found/.test(h1)) problems.push(`link ${href}: renders "${h1}"`);
+    await p.close();
+  }
+  console.log(`checked ${visited.size} internal paths`);
 
   if (shotsDir) {
     mkdirSync(shotsDir, { recursive: true });

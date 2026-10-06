@@ -131,3 +131,9 @@
   50% { box-shadow: 0 0 0 6px transparent; }
 }
 .animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+.docs-body h2, .docs-body h3 { scroll-margin-top: 5.5rem; position: relative; }
+.docs-body .anchor { position: absolute; left: -1.1em; padding-right: 0.3em; color: var(--muted); text-decoration: none; opacity: 0; transition: opacity 0.15s; }
+.docs-body h2:hover .anchor, .docs-body h3:hover .anchor, .docs-body .anchor:focus { opacity: 1; }
+.docs-body pre { position: relative; padding-right: 5rem; }
+.docs-body .copy-code { position: absolute; top: 0.5rem; right: 0.5rem; border: 1px solid var(--field); background: var(--bg); color: var(--ink); border-radius: 0.375rem; padding: 0.15rem 0.5rem; font: 600 0.75rem var(--font-sans); cursor: pointer; }
+.docs-body table td:first-child code { white-space: nowrap; }

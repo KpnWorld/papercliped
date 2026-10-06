@@ -9,8 +9,8 @@ export function CountUp({ value, duration = 900 }: { value: number | null; durat
     if (reduce) return setShown(value);
     const start = performance.now();
     let raf = 0;
-    const step = (t: number) => {
-      const k = Math.min(1, (t - start) / duration);
+    const step = () => {
+      const k = Math.min(1, (performance.now() - start) / duration); // one clock: rAF timestamps can use a different origin
       setShown(Math.round(value * (1 - (1 - k) ** 3)));
       if (k < 1) raf = requestAnimationFrame(step);
     };

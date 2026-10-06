@@ -12,6 +12,7 @@ import {
   type ErrorClass,
   type PublicErrors,
   type PublicInfo,
+  type PublicRepo,
   type PublicSeries,
   type PublicStats,
   type PublicStatus,
@@ -34,6 +35,19 @@ export interface PublicApiOptions {
   slowMs?: number;
   now?: () => number;
   startedAt?: number;
+  /** GitHub repository whose star count the docs show ("owner/name"). */
+  repo?: string;
+  /** Fetches the repository's numbers; injectable for tests. Defaults to GitHub's public REST API. */
+  repoFetcher?: (repo: string) => Promise<{ stars: number; forks: number; openIssues: number }>;
+}
+
+const REPO_CACHE_MS = 3_600_000;
+async function githubRepo(repo: string) {
+  const r = await fetch(`https://api.github.com/repos/${repo}`, { headers: { accept: "application/vnd.github+json", "user-agent": "papercliped-bridge" }, signal: AbortSignal.timeout(5000) });
+  if (!r.ok) throw new Error(`github ${r.status}`);
+  const j = (await r.json()) as { stargazers_count?: unknown; forks_count?: unknown; open_issues_count?: unknown };
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
+  return { stars: n(j.stargazers_count), forks: n(j.forks_count), openIssues: n(j.open_issues_count) };
 }
 
 const WINDOW_SPEC: Record<PublicWindow, { span: number; bucket: number }> = {
@@ -54,6 +68,7 @@ const ENDPOINTS: PublicInfo["endpoints"] = [
   { path: "/api/public/v1/stats?window=1h|24h|7d", description: "Aggregate users, connections, sign-ins, requests, errors and load." },
   { path: "/api/public/v1/series?window=1h|24h|7d", description: "The same numbers over time, in fixed buckets." },
   { path: "/api/public/v1/errors?window=1h|24h|7d", description: "Error mix by class and sign-in failures by reason." },
+  { path: "/api/public/v1/repo", description: "GitHub stars, forks and open issues of the project (cached for an hour)." },
   { path: "/api/public/stats", description: "Legacy: total users and live connections." },
 ];
 
@@ -65,6 +80,7 @@ export class PublicApiRoutes {
   private now: () => number;
   private startedAt: number;
   private cache = new Map<string, { at: number; body: unknown }>();
+  private repoState: { at: number; v: PublicRepo | null; inflight: Promise<void> | null } = { at: 0, v: null, inflight: null };
 
   constructor(private o: PublicApiOptions) {
     this.now = o.now ?? Date.now;
@@ -121,6 +137,7 @@ export class PublicApiRoutes {
     try {
       if (route === "/info") return this.send(res, 200, this.info());
       if (route === "/openapi.json") return this.send(res, 200, buildPublicOpenApi(this.o.publicUrl ?? `${url.protocol}//${req.headers.host ?? "localhost"}`, this.o.version));
+      if (route === "/repo") return this.send(res, 200, await this.repo());
       if (route === "/status") return this.send(res, 200, await this.cached("status", () => this.status()));
       if (route === "/stats") return this.send(res, 200, await this.cached(`stats:${win}`, () => this.stats(win)));
       if (route === "/series") return this.send(res, 200, await this.cached(`series:${win}`, () => this.series(win)));
@@ -133,6 +150,29 @@ export class PublicApiRoutes {
 
   info(): PublicInfo {
     return { schemaVersion: PUBLIC_SCHEMA_VERSION, service: "papercliped", version: this.o.version, docs: this.o.docsUrl, endpoints: ENDPOINTS, windows: PUBLIC_WINDOWS, rateLimit: { requestsPerMinute: RATE_PER_MIN }, cacheSeconds: CACHE_MS / 1000 };
+  }
+
+  /** Stale-while-revalidate: always answers at once; refreshes from GitHub at most once an hour (and after a failure, after 10 min). */
+  async repo(): Promise<PublicRepo> {
+    const name = this.o.repo ?? "OpenSourcx/papercliped";
+    const st = this.repoState;
+    const age = this.now() - st.at;
+    const due = !st.v ? true : st.v.stars == null ? age > 600_000 : age > REPO_CACHE_MS;
+    if (due && !st.inflight) {
+      st.inflight = (async () => {
+        try {
+          const n = await (this.o.repoFetcher ?? githubRepo)(name);
+          st.v = { schemaVersion: PUBLIC_SCHEMA_VERSION, repo: name, url: `https://github.com/${name}`, ...n, fetchedAt: iso(this.now()) };
+        } catch {
+          st.v = st.v?.stars != null ? st.v : { schemaVersion: PUBLIC_SCHEMA_VERSION, repo: name, url: `https://github.com/${name}`, stars: null, forks: null, openIssues: null, fetchedAt: null };
+        } finally {
+          st.at = this.now();
+          st.inflight = null;
+        }
+      })();
+      if (!st.v) await st.inflight; // the very first request waits (up to the 5 s timeout)
+    }
+    return st.v!;
   }
 
   private uptime = () => Math.max(0, Math.round((this.now() - this.startedAt) / 1000));

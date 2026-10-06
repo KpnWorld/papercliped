@@ -1,12 +1,15 @@
 import { build } from "esbuild";
 import type { Plugin } from "vite";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 export const SITE_URL = "https://papercliped.co";
 
 const VIRTUAL = "virtual:themes.css";
 const RESOLVED = "\0virtual:themes.css";
+const DOCS = "virtual:docs";
+const DOCS_RESOLVED = "\0virtual:docs";
 const BOOT = "theme-boot.js";
 
 /**
@@ -36,6 +39,30 @@ async function compile(root: string, file: string) {
   const r = await build({ entryPoints: [resolve(root, file)], bundle: true, write: false, format: "esm", platform: "node", loader: { ".json": "json" } });
   return import(`data:text/javascript;base64,${Buffer.from(r.outputFiles[0].text).toString("base64")}`);
 }
+/** Every site/docs/*.md rendered for the docs app; last-updated dates come from git when the history is available. */
+async function buildDocs(root: string, watch: (f: string) => void) {
+  const lib = await compile(root, "src/lib/docsBuild.ts");
+  const dir = resolve(root, "../site/docs");
+  // In a shallow clone (CI, most deploys) every file would show the latest commit's date, which would be wrong: show none.
+  let gitOk = false;
+  try {
+    gitOk = execFileSync("git", ["rev-parse", "--is-shallow-repository"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() === "false";
+  } catch {
+    /* not a git checkout */
+  }
+  return readdirSync(dir).filter((f) => f.endsWith(".md")).sort().map((f) => {
+    const file = resolve(dir, f);
+    watch(file);
+    let updated: string | null = null;
+    if (gitOk) try {
+      updated = execFileSync("git", ["log", "-1", "--format=%cs", "--", file], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
+    } catch {
+      /* no git (e.g. a Docker build): no date */
+    }
+    return lib.buildDoc(f.replace(/\.md$/, ""), readFileSync(file, "utf8"), updated);
+  });
+}
+
 async function themeStylesheet(root: string): Promise<string> {
   return (await compile(root, "src/theme/css.ts")).themeCss();
 }
@@ -48,9 +75,10 @@ export function papercliped(): Plugin {
       root = c.root;
     },
     resolveId(id) {
-      return id === VIRTUAL ? RESOLVED : null;
+      return id === VIRTUAL ? RESOLVED : id === DOCS ? DOCS_RESOLVED : null;
     },
     async load(id) {
+      if (id === DOCS_RESOLVED) return `export default ${JSON.stringify(await buildDocs(root, (f) => this.addWatchFile(f)))};`;
       if (id !== RESOLVED) return null;
       for (const f of ["css.ts", "palettes.ts"]) this.addWatchFile(resolve(root, "src/theme", f));
       return themeStylesheet(root);

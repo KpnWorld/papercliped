@@ -4,12 +4,13 @@ import { ToastProvider } from "./components/Toast";
 import { Brand } from "./pages/Brand";
 import { Changelog } from "./pages/Changelog";
 import { Community } from "./pages/Community";
+import { DocPage, DocsIndex } from "./pages/Docs";
 import { Home } from "./pages/Home";
 import { Legal } from "./pages/Legal";
 import { RenderFrame } from "./pages/Render";
 import { Status } from "./pages/Status";
 import { Kit } from "./pages/Kit";
-import { NotFound, Placeholder } from "./pages/Placeholder";
+import { NotFound } from "./pages/Placeholder";
 
 /** Every route the site serves. scripts/check-routes.mjs loads each of these in a real browser. */
 export const ROUTES = ["/", "/kit", "/docs", "/changelog", "/community", "/brand", "/privacy", "/terms", "/status"] as const;
@@ -21,7 +22,8 @@ export function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/kit" element={<Kit />} />
-          <Route path="/docs/*" element={<Placeholder title="Docs" note="The new docs site is coming in phase 3. The current docs are served by the bridge and on GitHub." />} />
+          <Route path="/docs" element={<DocsIndex />} />
+          <Route path="/docs/:slug" element={<DocPage />} />
           <Route path="/changelog" element={<Changelog />} />
           <Route path="/community" element={<Community />} />
           <Route path="/brand" element={<Brand />} />

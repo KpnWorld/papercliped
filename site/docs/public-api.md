@@ -18,6 +18,7 @@ Base URL: `{{URL}}`
 | `GET /api/public/v1/stats?window=24h` | Users, connections, sign-ins, requests, errors and load for the window |
 | `GET /api/public/v1/series?window=24h` | The same numbers over time, in fixed buckets |
 | `GET /api/public/v1/errors?window=24h` | Error mix by class and sign-in failures by reason |
+| `GET /api/public/v1/repo` | The project's GitHub stars, forks and open issues (the bridge fetches them and caches for an hour) |
 | `GET /api/public/v1/openapi.json` | An OpenAPI description of this API |
 | `GET /api/public/stats` | Legacy: `{ "users": n, "connections": n }` |
 

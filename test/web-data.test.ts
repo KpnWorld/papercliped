@@ -9,4 +9,9 @@ describe("website data", () => {
     const want = tools.map((t) => ({ name: t.name, title: t.title, description: t.description, access: t.access, scope: requiredScope(t, {}) }));
     expect(JSON.parse(readFileSync(new URL("../web/src/generated/tools.json", import.meta.url), "utf8"))).toEqual(want);
   });
+  it("site/docs/tools.md lists every tool", () => {
+    const md = readFileSync(new URL("../site/docs/tools.md", import.meta.url), "utf8");
+    for (const t of tools) expect(md, t.name).toContain(`\`${t.name}\``);
+    expect(md).toContain(`${tools.length} tools in total`);
+  });
 });

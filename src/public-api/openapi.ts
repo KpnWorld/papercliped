@@ -24,6 +24,7 @@ export function buildPublicOpenApi(serverUrl: string, version: string) {
       "/api/public/v1/status": { get: { tags: ["public"], operationId: "publicStatus", summary: "Service status", responses: ok("PublicStatus") } },
       "/api/public/v1/stats": { get: { tags: ["public"], operationId: "publicStats", summary: "Aggregate statistics", parameters: [win], responses: ok("PublicStats") } },
       "/api/public/v1/series": { get: { tags: ["public"], operationId: "publicSeries", summary: "Statistics over time", parameters: [win], responses: ok("PublicSeries") } },
+      "/api/public/v1/repo": { get: { tags: ["public"], operationId: "publicRepo", summary: "GitHub stars, forks and open issues (cached for an hour)", responses: { "200": { description: "OK", content: { "application/json": { schema: { type: "object", properties: { repo: { type: "string" }, url: { type: "string" }, stars: { type: ["integer", "null"] }, forks: { type: ["integer", "null"] }, openIssues: { type: ["integer", "null"] }, fetchedAt: { type: ["string", "null"] } } } } } } } } },
       "/api/public/v1/errors": { get: { tags: ["public"], operationId: "publicErrors", summary: "Error mix", parameters: [win], responses: ok("PublicErrors") } },
     },
     components: {

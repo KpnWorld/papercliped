@@ -3,7 +3,9 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import { community, liveSocials, REPO_URL } from "../config/community";
 import { cx } from "./cx";
 import { Mascot } from "./Mascot";
+import { SearchButton, SearchHost } from "./Search";
 import { ThemePicker } from "./ThemePicker";
+import { compact, useRepoStars } from "../lib/useRepo";
 import { Badge } from "./ui";
 
 export function Wordmark({ className }: { className?: string }) {
@@ -85,10 +87,16 @@ function NavItem({ item }: { item: MenuItem }) {
   return /^https?:/.test(item.to) ? <a href={item.to} className={cls} rel="noopener noreferrer">{inner}</a> : <Link to={item.to} className={cls}>{inner}</Link>;
 }
 
+/** GitHub link with the live star count (served by the bridge; no request to GitHub from the browser). */
 export function GitHubButton() {
+  const stars = useRepoStars();
   return (
-    <a href={REPO_URL} rel="noopener noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-field px-3 text-sm font-medium hover:bg-surface">
-      <GitHubIcon /> <span>Star on GitHub</span>
+    <a href={REPO_URL} rel="noopener noreferrer" aria-label={stars == null ? "Star Papercliped on GitHub" : `Star Papercliped on GitHub, ${stars} stars`}
+      className="inline-flex h-9 items-stretch overflow-hidden rounded-lg border border-field text-sm font-medium transition-transform duration-150 hover:-translate-y-0.5">
+      <span className="flex items-center gap-2 px-3 hover:bg-surface"><GitHubIcon /> Star</span>
+      <span className="flex items-center gap-1 border-l border-field bg-surface px-2.5 tabular-nums" aria-hidden="true">
+        <span>★</span>{stars == null ? "—" : compact(stars)}
+      </span>
     </a>
   );
 }
@@ -104,6 +112,7 @@ export function GitHubIcon({ size = 16 }: { size?: number }) {
 export function Header() {
   const [mobile, setMobile] = useState(false);
   const loc = useLocation();
+  const inDocs = loc.pathname.startsWith("/docs");
   useEffect(() => setMobile(false), [loc.pathname]);
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-bg/90 backdrop-blur">
@@ -115,6 +124,7 @@ export function Header() {
           <NavLink to="/community" className="rounded-lg px-3 py-2 text-sm font-medium hover:bg-surface">Community</NavLink>
         </nav>
         <div className="ml-auto hidden items-center gap-3 md:flex">
+          {!inDocs && <SearchButton className="hidden w-52 lg:flex" />}
           <ThemePicker compact />
           <GitHubButton />
         </div>
@@ -188,6 +198,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <Header />
       <main id="main" className="flex-1">{children}</main>
       <Footer />
+      <SearchHost />
     </div>
   );
 }

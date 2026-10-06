@@ -9,6 +9,9 @@
 - **Status page** on the new website (`/status`): live status badge, people, connections, request and sign-in success, latency percentiles, and charts for requests and errors, response time and sign-ins, plus error-mix, sign-in-failure and top-tool bars. Every chart has a text summary and a table view and never relies on colour alone; it refreshes every 30 seconds.
 - **Removed the operator panel from this repository** (`papercliped-panel`, `src/panel/`, the demo, `PANEL_*` settings, `docs/panel-role.sql`). The operator dashboard now lives in a separate, access-controlled service. Nothing changed in the database: the telemetry tables and the read-only `panel_*` views are still written and kept for it. `npm run build` now cleans `dist/` first.
 
+- **New website, phase 3 (docs):** a docs site at `/docs` with a three-column layout (collapsible sections with counts, the article with breadcrumb, last-updated date, copy link and edit-on-GitHub, and an "On this page" outline that follows your scroll), previous/next links, copy buttons on code, and **Ctrl/Cmd-K search** built at compile time (no outside service). The **GitHub star count** shows in the header: the bridge fetches it from GitHub and caches it for an hour (`GET /api/public/v1/repo`), so browsers never call GitHub directly.
+- **Much more documentation:** new pages What is Papercliped? (with a glossary), Run it yourself, Tool reference (generated from the code), Manage API, Environment variables, Command line, Limits and errors, and FAQ. Docs now have 20 pages in five sections; the bridge serves the same pages until the new site goes live.
+
 ## v2.0.0 — stable open-source build
 
 Papercliped v2 is the free, open-source foundation: the bridge, the connector for Claude and any MCP app, and the Paperclip plugin. Paid features (managed subdomains, pricing, legal) are planned for v3 (`docs/V3-SUBDOMAINS.md`).

@@ -18,7 +18,7 @@ const row = (over: Partial<AuditRow>) => fixtureRow(t, over);
 beforeAll(async () => {
   store = new MemoryStore();
   await seed(store, t);
-  api = new PublicApiRoutes({ store, version: "2.0.0", docsUrl: "https://papercliped.co/docs/public-api", now, startedAt: t - 3_600_000 });
+  api = new PublicApiRoutes({ store, version: "2.0.0", docsUrl: "https://papercliped.co/docs/public-api", now, startedAt: t - 3_600_000, repoFetcher: async () => ({ stars: 9, forks: 1, openIssues: 0 }) });
   srv = createServer(async (req, res) => {
     if (!(await api.handle(req, res, new URL(req.url!, "http://x")))) res.writeHead(404).end();
   });
@@ -64,7 +64,7 @@ describe("public API: content", () => {
 
   it("never exposes usernames, aliases, ids, hosts, app names or free text", async () => {
     const bodies: string[] = [];
-    for (const p of ["/api/public/v1/stats?window=1h", "/api/public/v1/stats?window=24h", "/api/public/v1/stats?window=7d", "/api/public/v1/series?window=1h", "/api/public/v1/series?window=7d", "/api/public/v1/errors?window=24h", "/api/public/v1/status", "/api/public/v1/info", "/api/public/v1/openapi.json"])
+    for (const p of ["/api/public/v1/stats?window=1h", "/api/public/v1/stats?window=24h", "/api/public/v1/stats?window=7d", "/api/public/v1/series?window=1h", "/api/public/v1/series?window=7d", "/api/public/v1/errors?window=24h", "/api/public/v1/status", "/api/public/v1/info", "/api/public/v1/openapi.json", "/api/public/v1/repo"])
       bodies.push(await (await get(p, { "x-forwarded-for": "203.0.113.9" })).text());
     const all = bodies.join("\n");
     for (const s of SECRET) expect(all, s).not.toContain(s);
@@ -73,6 +73,25 @@ describe("public API: content", () => {
 
   it("the public API is not in the Actions document", () => {
     expect(Object.keys(buildOpenApi("https://x").paths).some((p) => p.startsWith("/api/public"))).toBe(false);
+  });
+});
+
+describe("public API: repository stars", () => {
+  it("serves cached GitHub numbers, refreshing at most hourly, and degrades to nulls", async () => {
+    let calls = 0;
+    let fail = false;
+    let clock = Date.now();
+    const r = new PublicApiRoutes({ store: new MemoryStore(), version: "2.0.0", docsUrl: "x", now: () => clock, repoFetcher: async () => { calls++; if (fail) throw new Error("down"); return { stars: 1234, forks: 56, openIssues: 7 }; } });
+    expect(await r.repo()).toMatchObject({ repo: "OpenSourcx/papercliped", stars: 1234, forks: 56, openIssues: 7 });
+    await r.repo();
+    expect(calls).toBe(1); // cached
+    clock += 3_600_001;
+    fail = true;
+    expect((await r.repo()).stars).toBe(1234); // stale value served while refreshing
+    await new Promise((x) => setTimeout(x, 0));
+    expect((await r.repo()).stars).toBe(1234); // a failed refresh keeps the last good value
+    const down = new PublicApiRoutes({ store: new MemoryStore(), version: "2.0.0", docsUrl: "x", repoFetcher: async () => { throw new Error("offline"); } });
+    expect(await down.repo()).toMatchObject({ stars: null, forks: null, fetchedAt: null });
   });
 });
 
