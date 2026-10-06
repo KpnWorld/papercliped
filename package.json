@@ -1,14 +1,14 @@
 {
   "name": "papercliped",
-  "version": "1.1.0-beta.1",
+  "version": "1.1.0-beta.2",
   "description": "Papercliped \u2014 connect Claude and ChatGPT to your Paperclip: control agents, sync, report. MCP server + hosted multi-tenant OAuth bridge + separate operator panel.",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "papercliped": "./dist/stdio.js",
-    "papercliped-bridge": "./dist/http.js",
-    "papercliped-panel": "./dist/panel/main.js",
-    "papercliped-admin": "./dist/cli.js"
+    "papercliped": "dist/stdio.js",
+    "papercliped-bridge": "dist/http.js",
+    "papercliped-panel": "dist/panel/main.js",
+    "papercliped-admin": "dist/cli.js"
   },
   "files": [
     "dist",
@@ -69,7 +69,6 @@
     "oauth"
   ],
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   }
 }

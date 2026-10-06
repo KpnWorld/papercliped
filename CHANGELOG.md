@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.1.0-beta.1 — connection manager, public site
+## v1.1.0-beta.2 — connection manager, public site
 
 - **Beta connection manager** at `/manage` and a management API (`/api/manage/*`): sign in with username + secret key, see every connected app, switch it between Read only and Full control (beta) with immediate effect, disconnect it, toggle anonymity, make a new secret key, disconnect your Paperclip, delete your account. Sensitive actions re-ask for the secret key; Admin is never grantable from here. Opt in with **Join the beta** on the permission screen (migration `005_beta.sql`, applied automatically).
 - **Full control (beta)** is offered to everyone on the permission screen; Admin only when the app asks for it.

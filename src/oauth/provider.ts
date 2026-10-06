@@ -273,6 +273,62 @@ export class OAuthProvider {
     return Buffer.from(hkdfSync("sha256", this.deps.oauth.secret, "papercliped", "manage-session-v1", 32));
   }
 
+  // ── the Paperclip plugin link: a one-time code (typed into the plugin) is exchanged for a long-lived plugin token ──
+  // The token is stored as a hash on a synthetic grant (client "paperclip-plugin", NO scopes), so it appears in no tool list,
+  // cannot call any Paperclip tool, and is revoked like any grant. It only opens the manage API for its own account.
+
+  /** A single-use code the user types into the Paperclip plugin. Valid 10 minutes. */
+  async manageIssueLinkCode(a: Account): Promise<{ code: string; expiresInSec: number }> {
+    const raw = randomToken(9).replace(/[^A-Za-z0-9]/g, "").toUpperCase().padEnd(10, "7").slice(0, 10);
+    const code = `pcl_${raw.slice(0, 5)}-${raw.slice(5)}`;
+    const ttl = 10 * 60_000;
+    await this.store.putCode(sha256Hex(code), { clientId: "plugin-link", redirectUri: "", codeChallenge: "", scopes: [], clientName: "Paperclip plugin", userId: null, instanceUrl: null, sealedCredential: null, accountId: a.id, username: displayName(a), path: "plugin", expiresAt: this.now() + ttl });
+    await this.event("updated", { accountId: a.id, username: displayName(a) }, "plugin_code");
+    return { code, expiresInSec: ttl / 1000 };
+  }
+
+  /** Trade a link code for a plugin token. Wrong, used and expired codes all look the same. */
+  async manageExchangeLinkCode(req: IncomingMessage, code: string, meta: { instanceHost: string | null; paperclipUserId: string | null }): Promise<{ token: string } | null> {
+    if (!(await this.limit(`plink:ip:${this.ip(req)}`, 20))) return null;
+    const norm = code.trim().toUpperCase();
+    if (!/^PCL_[A-Z0-9]{5}-[A-Z0-9]{5}$/.test(norm)) return null;
+    const taken = await this.store.takeCode(sha256Hex(`pcl_${norm.slice(4)}`));
+    if (taken.status !== "ok" || taken.record.clientId !== "plugin-link" || taken.record.expiresAt < this.now() || !taken.record.accountId) return null;
+    const a = await this.store.getAccount(taken.record.accountId);
+    if (!a || a.disabled) return null;
+    const id = `pcb_pg_${randomToken(10)}`;
+    const token = `pcb_pl_${randomToken(32)}`;
+    await this.store.putGrant({ id, clientId: "paperclip-plugin", clientName: "Paperclip plugin", userId: meta.paperclipUserId, scopes: [], resource: "manage", instanceUrl: meta.instanceHost ? `https://${meta.instanceHost}` : null, sealedCredential: null, accountId: a.id, username: displayName(a), createdAt: this.now(), lastUsedAt: this.now(), revoked: false });
+    await this.store.putAccess(sha256Hex(token), { grantId: id, expiresAt: this.now() + 180 * DAY_MS });
+    await this.event("updated", { accountId: a.id, username: displayName(a) }, "plugin_linked");
+    return { token };
+  }
+
+  /** The account a plugin token belongs to (null if unknown, expired, revoked, or not a plugin token). */
+  async manageAccountForPluginToken(token: string): Promise<Account | null> {
+    if (!token.startsWith("pcb_pl_")) return null;
+    const rec = await this.store.getAccess(sha256Hex(token));
+    if (!rec || rec.expiresAt < this.now()) return null;
+    const g = await this.store.getGrant(rec.grantId);
+    if (!g || g.revoked || g.clientId !== "paperclip-plugin" || !g.accountId) return null;
+    const a = await this.store.getAccount(g.accountId);
+    if (!a || a.disabled) return null;
+    await this.store.touchGrant(g.id);
+    return a;
+  }
+
+  async manageListPluginLinks(accountId: string) {
+    return (await this.store.listAccountGrants(accountId)).filter((g) => g.clientId === "paperclip-plugin" && !g.revoked).map((g) => ({ id: g.id, host: g.instanceUrl ? new URL(g.instanceUrl).host : null, createdAt: g.createdAt, lastUsedAt: g.lastUsedAt }));
+  }
+
+  async manageRevokePluginLink(a: Account, id: string): Promise<boolean> {
+    const g = await this.store.getGrant(id);
+    if (!g || g.revoked || g.accountId !== a.id || g.clientId !== "paperclip-plugin") return false;
+    await this.store.revokeGrant(id);
+    await this.event("updated", { accountId: a.id, username: displayName(a) }, "plugin_unlinked");
+    return true;
+  }
+
   manageAccount(accountId: string) {
     return this.store.getAccount(accountId);
   }
@@ -285,14 +341,14 @@ export class OAuthProvider {
 
   async manageConnections(accountId: string) {
     return (await this.store.listAccountGrants(accountId))
-      .filter((g) => !g.revoked)
+      .filter((g) => !g.revoked && g.clientId !== "paperclip-plugin")
       .map((g) => ({ id: g.id, app: g.clientName, level: levelOf(g.scopes), createdAt: g.createdAt, lastUsedAt: g.lastUsedAt }));
   }
 
   /** Change what a connected app may do. The owner may move it between read and control, or lower an admin grant; admin is never granted here. */
   async manageSetLevel(a: Account, grantId: string, level: Scope): Promise<boolean> {
     const g = await this.store.getGrant(grantId);
-    if (!g || g.revoked || g.accountId !== a.id) return false;
+    if (!g || g.revoked || g.accountId !== a.id || g.clientId === "paperclip-plugin") return false;
     if (level === "paperclip:admin" && levelOf(g.scopes) !== "paperclip:admin") return false;
     if (!(await this.store.setGrantScopes(g.id, scopesUpTo(level)))) return false;
     await this.event("updated", { accountId: a.id, username: displayName(a) }, `level_${level.split(":")[1]}`);
@@ -301,7 +357,7 @@ export class OAuthProvider {
 
   async manageRevoke(a: Account, grantId: string): Promise<boolean> {
     const g = await this.store.getGrant(grantId);
-    if (!g || g.revoked || g.accountId !== a.id) return false;
+    if (!g || g.revoked || g.accountId !== a.id || g.clientId === "paperclip-plugin") return false;
     await this.revokeGrant(g.id);
     return true;
   }

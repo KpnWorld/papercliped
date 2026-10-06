@@ -16,7 +16,7 @@ jobs:
       - run: npm run build && npm test
       - name: Publish to npm (pre-releases go to the `beta` tag)
         run: |
-          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then npm publish --tag beta; else npm publish; fi
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then npm publish --tag beta --provenance; else npm publish --provenance; fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: GitHub release
