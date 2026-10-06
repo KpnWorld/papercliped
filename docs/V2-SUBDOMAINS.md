@@ -10,6 +10,7 @@ Users who cannot get a public `https://` address for their Paperclip can pay **$
 - **The name is the user's username.** Usernames cannot be changed, so the subdomain label never changes. We never create domains for users, only a subdomain under our domain.
 - **Base domain may change** (today `kpnsolute.com`). The registry stores the **label**, not the full address; the base domain is configuration. The label stays registered to the user across any domain change.
 - **Purpose is limited:** the subdomain is an access address for the user's own Paperclip, like a handle on a platform, not a place to run a business's public site.
+- **Anonymous mode does not affect the subdomain.** Anonymous only hides a user from the public live log and the operator panel (it shows an alias there). The username is still the username, so anonymous users get the same `<username>.<domain>` as everyone else.
 - **Entry point:** a link on the connect screen ("No public address? We've got you covered.") to `/domain` on the bridge site. `/domain` offers: (1) buy a domain yourself and follow the guide, (2) use a domain you own and follow the guide, (3) let us do it ($5).
 - **Provisioner runs on the owner's home server**, using Cloudflare.
 - Legal documents are drafted later (not in this doc).
@@ -42,7 +43,7 @@ bridge (Render) ── job queue (Postgres) ◀── polls (outbound HTTPS only
 - Address shown to users = `label + primary base domain`. The stored Paperclip instance URL for the account is updated centrally on a domain change.
 
 ## 6. Hard problems and proposed answers
-1. **Anonymous mode leaks the username.** DNS and certificate-transparency logs publish hostnames, so `<username>.<domain>` reveals the real username. **PROPOSED:** anonymous accounts cannot buy the managed subdomain. **OPEN:** alternative is a separate public label, which is no longer "your username".
+1. **Anonymous mode (resolved).** It only hides the user from the public live log and counts, so it does not block the subdomain. Two guardrails: (a) never write a user's label or hostname into public events or the live log, so an alias can't be matched to a username (the live log and panel keep showing only the alias); (b) the order screen tells anonymous users that their subdomain is public and shows their username.
 2. **Usernames are not valid hostnames.** Allowed username characters include `.` `#` `_`, which are not valid in a single DNS label (and `.` would create a second label the free certificate does not cover). **PROPOSED:** lowercase, map `.` `#` `_` to `-`, trim leading and trailing `-`; enforce **uniqueness of the resulting label** at claim time, first come first served (`og_dev7`, `og.dev7`, `og-dev7` collide). Alternative: refuse such usernames for this service. Add a reserved-label list (www, api, mail, admin and similar) on top of the existing username reserved list in `src/accounts/username.ts`.
 3. **Released names can be re-taken.** Deleting an account currently frees its username. **PROPOSED:** quarantine a released label for about 12 months, and delete its DNS record and tunnel on release (prevents subdomain takeover).
 4. **Signup order.** Today an account exists only after the user approves in their Paperclip (`src/oauth/provider.ts`, account creation at the pending-approval step), which a user with no public address cannot do. A **register-first path** is needed: username + secret key without a Paperclip link, then pay, then connect. This touches the account model and the recovery-by-approval path, and is the largest piece of v2.
@@ -64,12 +65,11 @@ Stripe Checkout (no card data on our side); orders confirmed only by a verified 
 Cover: purpose limit (access address for your own Paperclip; internal use that supports a business is fine, using the name as the public face of a business or hosting other services is not); the name is a revocable licence tied to the account, not property, not transferable, one per account; our rights to suspend/reclaim for abuse or breach and to change base domains with notice; no uptime promise (depends on Cloudflare and the user's machine); refunds only if provisioning fails; conduct and impersonation/trademark rules; what metadata we keep (hostname, tunnel status, not traffic content); acceptance recorded at checkout. Needs a lawyer's review before taking payments, including sales tax.
 
 ## 10. Open questions
-1. Anonymous accounts: not allowed, or a separate public label?
-2. Hyphen mapping vs refusing symbol usernames?
-3. 12-month quarantine and idle-reclaim periods?
-4. Which domain (dedicated, one level)?
-5. Open to everyone or beta only at launch?
-6. Verify with Cloudflare's current docs: tunnels per account, DNS records per zone, free-plan terms for this use, certificate coverage for subdomains, per-OS service install steps.
+1. Hyphen mapping vs refusing symbol usernames?
+2. 12-month quarantine and idle-reclaim periods?
+3. Which domain (dedicated, one level)?
+4. Open to everyone or beta only at launch?
+5. Verify with Cloudflare's current docs: tunnels per account, DNS records per zone, free-plan terms for this use, certificate coverage for subdomains, per-OS service install steps.
 
 ## 11. Phases
 1. **Provisioning core:** migration, provider interface + fake, job queue, home-server worker, claim/release/suspend, label rules.
