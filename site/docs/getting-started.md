@@ -18,7 +18,7 @@ Papercliped connects Claude (and ChatGPT) to **your** Paperclip. You keep contro
 ```
 claude mcp add --transport http papercliped {{URL}}/mcp
 ```
-Or install the plugin: `/plugin marketplace add KpnWorld/papercliped`, then `/plugin install papercliped@papercliped`.
+Or install the plugin: `/plugin marketplace add OpenSourced/papercliped`, then `/plugin install papercliped@papercliped`.
 
 ## Run it yourself (npm)
 ```

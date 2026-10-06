@@ -15,7 +15,7 @@ Never paste database passwords, `service_role` keys or `BRIDGE_SECRET` into chat
 
 ## 2. Render (the bridge) — Docker web service, no Blueprint
 Blueprints are not needed (and the paid features are not used). The repo ships a [`Dockerfile`](../Dockerfile); you create the service by hand:
-1. Render → **New → Web Service** → connect `KpnWorld/papercliped` → branch `main`.
+1. Render → **New → Web Service** → connect `OpenSourced/papercliped` → branch `main`.
 2. **Language: Docker** (Render finds the Dockerfile). **Region: Oregon** (next to Supabase us-west-2). **Instance type: Free**. Leave start command empty (the image runs `node dist/http.js`). Set **Health Check Path** to `/readyz`.
 3. **Environment variables** (Advanced → Add):
 
@@ -60,7 +60,7 @@ It runs every 5 minutes (cron `*/5 * * * *`) against `/readyz`. Open the worker'
 
 ## 6. Install paths for users
 - **Claude (claude.ai / Desktop / mobile):** Settings → Connectors → *Add custom connector* → `https://papercliped.kpnsolute.com/mcp`. Claude opens the Papercliped sign-in page.
-- **Claude Code:** `claude mcp add --transport http papercliped https://papercliped.kpnsolute.com/mcp`, or install the plugin: `/plugin marketplace add KpnWorld/papercliped` then `/plugin install papercliped@papercliped`.
+- **Claude Code:** `claude mcp add --transport http papercliped https://papercliped.kpnsolute.com/mcp`, or install the plugin: `/plugin marketplace add OpenSourced/papercliped` then `/plugin install papercliped@papercliped`.
 - **npm / local stdio:** `npx papercliped` with `PAPERCLIP_API_URL` and `PAPERCLIP_API_KEY` set.
 - **ChatGPT:** custom MCP app with the same `/mcp` URL (where your plan offers it), or import `https://papercliped.kpnsolute.com/openapi.json` as a GPT Action (see [chatgpt.md](chatgpt.md)).
 

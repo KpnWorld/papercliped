@@ -22,4 +22,4 @@ What Papercliped does to protect you, and what it cannot.
 - This is a beta and has not had an independent security audit.
 
 ## Reporting a problem
-Report vulnerabilities privately through the contact on the [Privacy](/privacy) page, or via a private GitHub security advisory on the `KpnWorld/papercliped` repository. Please do not post exploits publicly.
+Report vulnerabilities privately through the contact on the [Privacy](/privacy) page, or via a private GitHub security advisory on the `OpenSourced/papercliped` repository. Please do not post exploits publicly.

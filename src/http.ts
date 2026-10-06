@@ -58,7 +58,7 @@ async function main() {
   const site = siteUrl
     ? new SiteRoutes({
         url: siteUrl,
-        contact: process.env.SITE_CONTACT?.trim() || "https://github.com/KpnWorld/papercliped/issues",
+        contact: process.env.SITE_CONTACT?.trim() || "https://github.com/OpenSourced/papercliped/issues",
         effective: process.env.SITE_EFFECTIVE_DATE?.trim() || "2026-10-06",
         stats: async () => ({ users: await store.countAccounts(), connections: await store.liveGrantCount() }),
       })
