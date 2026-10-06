@@ -10,24 +10,38 @@ export const esc = (s: string) =>
  * accents, no card chrome) so connecting feels native; colours were sampled from it and the enabled button is darkened so text
  * meets WCAG AA (contrast is asserted in the tests). One self-contained document per page: no external fonts, scripts or images.
  */
+/**
+ * The website's type and colours, for the server-rendered pages. Fonts load from /fonts/ when the website is deployed with the
+ * bridge (web/dist); otherwise the system fallbacks are used.
+ */
+export const FONTS_CSS = `@font-face{font-family:"Inter Variable";font-style:normal;font-display:swap;font-weight:100 900;src:url(/fonts/inter-latin-wght-normal.woff2) format("woff2-variations")}
+@font-face{font-family:"Bricolage Grotesque Variable";font-style:normal;font-display:swap;font-weight:200 800;src:url(/fonts/bricolage-grotesque-latin-wght-normal.woff2) format("woff2-variations")}
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-display:swap;font-weight:400;src:url(/fonts/jetbrains-mono-latin-400-normal.woff2) format("woff2")}`;
+export const SANS = `"Inter Variable",Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif`;
+export const DISPLAY = `"Bricolage Grotesque Variable","Inter Variable",ui-sans-serif,system-ui,sans-serif`;
+export const MONO = `"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace`;
+/** The default "clip" theme in dark mode (same values as web/src/theme/palettes.ts). */
+export const THEME_DARK = { bg: "#16150f", ink: "#f4f1d6", ink2: "#e9e4b0", muted: "#bdb99f", line: "#5c5a49", btn: "#e9e4b0", btnText: "#16150f", disabled: "#7d7a64" };
+
 export const THEME = { bg: "#fffddc", ink: "#0b0a07", ink2: "#47463c", muted: "#6b6959", line: "#b0a993", btn: "#47463c", btnText: "#fffddc", disabled: "#8c8a77", errBg: "#fde8e3", errInk: "#8a1f11", warnBg: "#fff1c2" };
 
-const CSS = `
-:root{--bg:${THEME.bg};--ink:${THEME.ink};--ink2:${THEME.ink2};--muted:${THEME.muted};--line:${THEME.line};--btn:${THEME.btn};--btntext:${THEME.btnText};--off:${THEME.disabled}}
+const CSS = `${FONTS_CSS}
+:root{--bg:${THEME.bg};--ink:${THEME.ink};--ink2:${THEME.ink2};--muted:${THEME.muted};--line:${THEME.line};--btn:${THEME.btn};--btntext:${THEME.btnText};--off:${THEME.disabled};color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:${THEME_DARK.bg};--ink:${THEME_DARK.ink};--ink2:${THEME_DARK.ink2};--muted:${THEME_DARK.muted};--line:${THEME_DARK.line};--btn:${THEME_DARK.btn};--btntext:${THEME_DARK.btnText};--off:${THEME_DARK.disabled};color-scheme:dark}}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
-body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;position:relative;overflow-x:hidden}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font:15px/1.55 ${SANS};position:relative;overflow-x:hidden}
 body::before{content:"";position:fixed;right:5vw;top:5vh;width:min(26vw,300px);height:min(48vh,420px);pointer-events:none;opacity:.55;
 background-image:radial-gradient(var(--line) 1.1px,transparent 1.3px);background-size:13px 13px;-webkit-mask-image:linear-gradient(135deg,#000 0%,transparent 75%);mask-image:linear-gradient(135deg,#000 0%,transparent 75%)}
 @media (max-width:900px){body::before{display:none}}
 main{position:relative;width:min(400px,100% - 40px);margin:9vh 0 6vh max(20px,min(14vw,240px))}
 @media (max-width:900px){main{margin:6vh auto}}
-.brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:17px;margin-bottom:34px}.brand svg{width:20px;height:20px}
-h1{font-size:21px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.brand{display:flex;align-items:center;gap:8px;font-family:${DISPLAY};font-weight:700;font-size:19px;text-transform:lowercase;margin-bottom:34px}.brand svg{width:20px;height:20px}
+h1{font-family:${DISPLAY};font-size:24px;line-height:1.2;font-weight:700;letter-spacing:-.01em;margin:0 0 6px}
 p.lede{margin:0 0 20px;color:var(--muted)}
 label.f{display:block;font-size:12px;color:var(--muted);margin:14px 0 5px}
 input[type=text],input[type=password]{width:100%;height:42px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);font:inherit}
 input:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--ink2);outline-offset:2px}
-.btn{display:block;width:100%;height:42px;margin-top:18px;border:1px solid var(--btn);border-radius:8px;background:var(--btn);color:var(--btntext);font:inherit;font-weight:600;cursor:pointer}
+.btn{display:block;width:100%;height:42px;margin-top:18px;border:1px solid var(--btn);border-radius:8px;background:var(--btn);color:var(--btntext);font:inherit;font-weight:600;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease}.btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(0,0,0,.12)}.btn:active{transform:translateY(0) scale(.98)}@media (prefers-reduced-motion:reduce){.btn{transition:none}.btn:hover{transform:none}}
 .btn:hover{filter:brightness(1.15)}.btn:disabled{background:var(--off);border-color:var(--off);cursor:not-allowed;filter:none}
 .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}.btn.ghost:hover{background:rgba(71,70,60,.07);filter:none}
 .row{display:flex;gap:10px}.row .btn{margin-top:18px}
@@ -37,7 +51,7 @@ input:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible{o
 .opt{display:block;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;cursor:pointer}.opt:has(input:checked){border-color:var(--ink2);box-shadow:0 0 0 1px var(--ink2)}
 .opt strong{font-weight:600}.opt small{display:block;color:var(--muted);margin-top:2px;font-size:13px}
 small.hint{display:block;color:var(--muted);font-size:12.5px;margin-top:6px}
-code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+code,.mono{font-family:${MONO}}
 .secret{display:block;margin:14px 0 8px;padding:14px 12px;border:1px dashed var(--ink2);border-radius:8px;font-size:13px;letter-spacing:0;overflow-wrap:normal;background:rgba(255,255,255,.35);user-select:all}
 a{color:var(--ink)}
 .fine{color:var(--muted);font-size:12.5px;margin-top:22px}
@@ -48,7 +62,7 @@ ul.rules{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:13px}
 const CLIP = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`;
 
 function shell(title: string, body: string, nonce?: string, script?: string) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(title)} · Papercliped</title>${FAVICON_LINK}<style>${CSS}</style></head><body><main><div class="brand">${CLIP}<span>Papercliped</span></div>${body}</main>${script ? `<script nonce="${nonce}">${script}</script>` : ""}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>${esc(title)} · Papercliped</title>${FAVICON_LINK}<style>${CSS}</style></head><body><main><div class="brand">${CLIP}<span>Papercliped</span></div>${body}</main>${script ? `<script nonce="${nonce}">${script}</script>` : ""}</body></html>`;
 }
 
 const hidden = (rid: string, csrf: string) => `<input type="hidden" name="rid" value="${esc(rid)}"><input type="hidden" name="csrf" value="${esc(csrf)}">`;

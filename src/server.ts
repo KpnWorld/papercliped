@@ -7,6 +7,7 @@ import { createMcpServer } from "./mcp.js";
 import { safeEqual } from "./oauth/crypto.js";
 import { OAuthProvider } from "./oauth/provider.js";
 import type { PublicApiRoutes } from "./public-api/routes.js";
+import type { WebAppRoutes } from "./web/routes.js";
 import { ManageRoutes } from "./manage/routes.js";
 import { SiteRoutes } from "./site/site.js";
 import { buildOpenApi } from "./openapi.js";
@@ -26,6 +27,8 @@ export interface ServerOptions {
   site?: SiteRoutes;
   /** Public, aggregate-only statistics (/api/public/v1/*). */
   publicApi?: PublicApiRoutes;
+  /** The React website (web/dist) with host routing; when absent the bridge serves its own Markdown pages. */
+  web?: WebAppRoutes;
   /** The beta connection manager (/manage and /api/manage). */
   manage?: ManageRoutes;
 }
@@ -137,6 +140,8 @@ export function createHttpServer(config: BridgeConfig, http: HttpConfig, opts: S
       }
 
       if (opts.publicApi && (await opts.publicApi.handle(req, res, url))) return;
+
+      if (opts.web && (await opts.web.handle(req, res, url))) return;
 
       if (opts.site && (await opts.site.handle(req, res, url))) return;
 

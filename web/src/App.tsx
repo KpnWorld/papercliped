@@ -24,6 +24,9 @@ export function App() {
           <Route path="/kit" element={<Kit />} />
           <Route path="/docs" element={<DocsIndex />} />
           <Route path="/docs/:slug" element={<DocPage />} />
+          {/* On the docs host the same pages live at /topics (the bridge maps hosts; see web/src/lib/hosts.ts). */}
+          <Route path="/topics" element={<DocsIndex />} />
+          <Route path="/topics/:slug" element={<DocPage />} />
           <Route path="/changelog" element={<Changelog />} />
           <Route path="/community" element={<Community />} />
           <Route path="/brand" element={<Brand />} />

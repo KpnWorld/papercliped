@@ -535,7 +535,7 @@ export class OAuthProvider {
       "X-Frame-Options": "DENY",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
-      "Content-Security-Policy": `default-src 'none'; img-src data:; style-src 'unsafe-inline'; ${nonce ? `script-src 'nonce-${nonce}'; connect-src 'self'; ` : ""}form-action 'self'${formOrigin ? ` ${formOrigin}` : ""}; frame-ancestors 'none'; base-uri 'none'`,
+      "Content-Security-Policy": `default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src 'self'; ${nonce ? `script-src 'nonce-${nonce}'; connect-src 'self'; ` : ""}form-action 'self'${formOrigin ? ` ${formOrigin}` : ""}; frame-ancestors 'none'; base-uri 'none'`,
     });
     res.end(body);
     return true;

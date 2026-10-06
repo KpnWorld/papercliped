@@ -1,3 +1,4 @@
+import { AppLink } from "../components/AppLink";
 import { Mascot } from "../components/Mascot";
 import { ButtonLink, Card, Table } from "../components/ui";
 import { PALETTES } from "../theme/palettes";
@@ -61,7 +62,7 @@ export function Brand() {
 
       <section aria-labelledby="col-h" className="mt-12">
         <h2 id="col-h" className="text-2xl font-bold">Colours and type</h2>
-        <p className="mt-2 text-muted">The default "clip" theme. The site also rotates seasonal palettes; see the <a className="text-link underline" href="/kit">design kit</a>.</p>
+        <p className="mt-2 text-muted">The default "clip" theme. The site also rotates seasonal palettes; see the <AppLink className="text-link underline" to="/kit">design kit</AppLink>.</p>
         <div className="mt-4">
           <Table caption="Brand colours" head={["Role", "Light", "Dark"]} rows={[
             ["Background", c.light.bg, c.dark.bg], ["Ink (text)", c.light.ink, c.dark.ink], ["Brand olive / cream", c.light.accent, c.dark.accent], ["Muted text", c.light.muted, c.dark.muted],

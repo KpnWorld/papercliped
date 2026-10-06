@@ -20,6 +20,8 @@ export async function startFakeBridge(): Promise<FakeBridge> {
     const body = raw ? JSON.parse(raw) : undefined;
     f.seen.push({ method: req.method!, path: req.url!, headers: req.headers, body });
     const send = (s: number, j: unknown) => { res.writeHead(s, { "content-type": "application/json" }); res.end(JSON.stringify(j)); };
+    if (req.url === "/api/public/v1/status") return send(200, { schemaVersion: 1, status: "ok", version: "2.0.0", uptimeSeconds: 60, checkedAt: new Date().toISOString() });
+    if (req.url === "/api/public/v1/stats?window=24h") return send(200, { users: { total: 42 }, connections: { live: 7 }, requests: { successRate: 0.95, latencyMs: { p95: 460 } }, auth: { successRate: 0.9 } });
     const route = req.url!.replace("/api/manage", "");
     if (req.method === "POST" && route === "/plugin-link/exchange") {
       const c = f.codes.get(body?.code);

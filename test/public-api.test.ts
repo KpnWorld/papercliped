@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildOpenApi } from "../src/openapi.js";
+import { toolsByName } from "../src/tools.js";
 import { MemoryStore, type Store } from "../src/oauth/store.js";
 import { assessHealth } from "../src/public-api/health.js";
 import { PublicApiRoutes } from "../src/public-api/routes.js";
@@ -73,6 +74,24 @@ describe("public API: content", () => {
 
   it("the public API is not in the Actions document", () => {
     expect(Object.keys(buildOpenApi("https://x").paths).some((p) => p.startsWith("/api/public"))).toBe(false);
+  });
+});
+
+describe("the papercliped_service_status tool", () => {
+  it("reads the public API and returns a short summary, never identities", async () => {
+    const prev = process.env.PAPERCLIPED_URL;
+    process.env.PAPERCLIPED_URL = base; // http is allowed only on loopback
+    try {
+      const out: any = await toolsByName.get("papercliped_service_status")!.run(null as any, { window: "1h" });
+      expect(out).toMatchObject({ service: base, version: "2.0.0", window: "1h", users: { total: 1 }, liveConnections: 1, statusPage: `${base}/status` });
+      expect(["ok", "degraded", "down"]).toContain(out.status);
+      for (const x of SECRET) expect(JSON.stringify(out)).not.toContain(x);
+      process.env.PAPERCLIPED_URL = "http://example.com";
+      await expect(toolsByName.get("papercliped_service_status")!.run(null as any, {})).rejects.toThrow(/https/);
+    } finally {
+      if (prev === undefined) delete process.env.PAPERCLIPED_URL;
+      else process.env.PAPERCLIPED_URL = prev;
+    }
   });
 });
 

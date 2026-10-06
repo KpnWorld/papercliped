@@ -7,6 +7,35 @@ const muted: React.CSSProperties = { opacity: 0.65, fontSize: 13 };
 const field: React.CSSProperties = { font: "inherit", color: "inherit", background: "transparent", border: "1px solid currentColor", borderColor: "color-mix(in srgb, currentColor 30%, transparent)", borderRadius: 6, padding: "6px 10px" };
 const btn: React.CSSProperties = { ...field, cursor: "pointer" };
 
+interface Service { status: "ok" | "degraded" | "down"; version: string; users: number | null; liveConnections: number | null; requestSuccessRate: number | null; signInSuccessRate: number | null; p95Ms: number | null; statusPage: string }
+const STATUS_TEXT = { ok: "All systems normal", degraded: "Degraded performance", down: "Major problem" } as const;
+const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 1000) / 10}%`);
+
+/** The Papercliped service's public status (aggregate numbers only), from the bridge's /api/public/v1. */
+function ServiceCard({ load }: { load: () => Promise<unknown> }) {
+  const [s, setS] = useState<Service | null>(null);
+  const [err, setErr] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const run = () => load().then((x) => alive && (setS(x as Service), setErr(false))).catch(() => alive && setErr(true));
+    run();
+    const t = setInterval(run, 60_000);
+    return () => { alive = false; clearInterval(t); };
+  }, [load]);
+  return (
+    <section aria-label="Papercliped service" style={{ ...card, display: "block" }}>
+      <strong>Papercliped service: </strong>
+      {err ? <span>status unavailable</span> : !s ? <span style={muted}>checking…</span> : (
+        <>
+          <span>{s.status === "ok" ? "✓" : s.status === "degraded" ? "!" : "✕"} {STATUS_TEXT[s.status]}</span>
+          <span style={muted}> · v{s.version} · {s.users ?? "—"} people · {s.liveConnections ?? "—"} live connections · requests {pct(s.requestSuccessRate)} ok · p95 {s.p95Ms ?? "—"} ms · </span>
+          <a href={s.statusPage} target="_blank" rel="noopener noreferrer" style={{ color: "inherit" }}>status page</a>
+        </>
+      )}
+    </section>
+  );
+}
+
 interface Conn { id: string; app: string; level: string; createdAt: number; lastUsedAt: number | null }
 interface Me { name: string; anonymous: boolean; alias: string | null; beta: boolean; paperclip: string | null; connected: boolean }
 type Status = { linked: false; expired?: boolean } | { linked: true; me: Me };
@@ -28,7 +57,9 @@ export function PapercliedPage() {
   const call = {
     status: usePluginAction("status"), link: usePluginAction("link"), connections: usePluginAction("connections"),
     setLevel: usePluginAction("setLevel"), disconnect: usePluginAction("disconnect"), privacy: usePluginAction("privacy"), unlink: usePluginAction("unlink"),
+    serviceStatus: usePluginAction("serviceStatus"),
   };
+  const loadService = useCallback(() => call.serviceStatus(), []); // eslint-disable-line react-hooks/exhaustive-deps
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,6 +73,7 @@ export function PapercliedPage() {
     <div style={{ maxWidth: 720, padding: 24 }}>
       <h1 style={{ fontSize: 22, margin: "0 0 4px" }}>Papercliped</h1>
       <p style={{ ...muted, margin: "0 0 16px" }}>See the AI apps connected to your Paperclip and choose what each may do.</p>
+      <ServiceCard load={loadService} />
       {error && <div role="alert" style={{ ...card, display: "block" }}>{error}</div>}
       {!status && !error && <p style={muted}>Loading…</p>}
       {status && !status.linked && <LinkForm expired={!!status.expired} onLink={(code) => call.link({ code, instanceHost: window.location.host }).then(refresh)} />}

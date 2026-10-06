@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { APP_PATH, AppLink } from "../components/AppLink";
+import { isExternal, resolveHref } from "../lib/hosts";
 import { cx } from "../components/cx";
 import { SearchButton } from "../components/Search";
 import { Card } from "../components/ui";
@@ -8,8 +10,6 @@ import { getDoc, neighbours, sections, type Doc } from "../lib/docs";
 import { NotFound } from "./Placeholder";
 import { usePageTitle } from "./usePageTitle";
 
-/** Routes the React app serves; other same-site links (like /manage) are left to the browser. */
-const APP_PATH = /^\/(docs(\/|$)|changelog$|community$|brand$|status$|privacy$|terms$|$)/;
 
 function Sidebar({ current, onNavigate }: { current?: string; onNavigate?: () => void }) {
   return (
@@ -26,10 +26,10 @@ function Sidebar({ current, onNavigate }: { current?: string; onNavigate?: () =>
           <ul className="mt-1 border-l border-line pl-2">
             {s.docs.map((d) => (
               <li key={d.slug}>
-                <NavLink to={`/docs/${d.slug}`} onClick={onNavigate} aria-current={current === d.slug ? "page" : undefined}
+                <AppLink to={`/docs/${d.slug}`} onClick={onNavigate} aria-current={current === d.slug ? "page" : undefined}
                   className={cx("block rounded-md px-2 py-1 transition-colors", current === d.slug ? "bg-accent font-semibold text-accent-ink" : "text-muted hover:bg-surface hover:text-ink")}>
                   {d.title}
-                </NavLink>
+                </AppLink>
               </li>
             ))}
           </ul>
@@ -120,10 +120,10 @@ export function DocsIndex() {
           <ul className="mt-4 grid gap-3 sm:grid-cols-2">
             {s.docs.map((d) => (
               <Card as="li" interactive key={d.slug} className="p-0">
-                <Link to={`/docs/${d.slug}`} className="block rounded-2xl p-4">
+                <AppLink to={`/docs/${d.slug}`} className="block rounded-2xl p-4">
                   <span className="font-semibold">{d.title}</span>
                   <span className="mt-1 line-clamp-2 block text-sm text-muted">{d.description}</span>
-                </Link>
+                </AppLink>
               </Card>
             ))}
           </ul>
@@ -180,17 +180,25 @@ export function DocPage() {
     const href = a?.getAttribute("href");
     if (!a || !href || e.metaKey || e.ctrlKey || e.shiftKey || a.target) return;
     if (href.startsWith("#")) return;
-    const path = href.split("#")[0];
-    if (href.startsWith("/") && APP_PATH.test(path)) {
+    if (!href.startsWith("/")) return;
+    const target = resolveHref(href);
+    if (isExternal(target)) {
+      if (target !== href) {
+        e.preventDefault();
+        window.location.assign(target); // a page on another host (e.g. docs → marketing)
+      }
+      return;
+    }
+    if (APP_PATH.test(target.split("#")[0])) {
       e.preventDefault();
-      nav(href);
+      nav(target);
     }
   };
   return (
     <DocsShell current={doc.slug} aside={<Toc doc={doc} />}>
       <nav aria-label="Breadcrumb" className="text-sm text-muted">
         <ol className="flex flex-wrap items-center gap-1">
-          <li><Link to="/docs" className="hover:text-ink">Docs</Link></li>
+          <li><AppLink to="/docs" className="hover:text-ink">Docs</AppLink></li>
           <li aria-hidden="true">›</li>
           <li>{sectionOf(doc.slug)}</li>
           <li aria-hidden="true">›</li>
@@ -211,11 +219,11 @@ export function DocPage() {
       <div ref={body} onClick={onClick} className="prose-papercliped docs-body mt-6" dangerouslySetInnerHTML={{ __html: doc.html }} />
       <div className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-6 text-sm">
         <a href={editUrl(doc.slug)} rel="noopener noreferrer" className="text-link underline">Edit this page on GitHub</a>
-        <span className="text-muted">Something wrong? <Link to="/community" className="text-link underline">Tell us</Link></span>
+        <span className="text-muted">Something wrong? <AppLink to="/community" className="text-link underline">Tell us</AppLink></span>
       </div>
       <nav aria-label="Previous and next" className="mt-6 grid gap-3 sm:grid-cols-2">
-        {prev ? <Link to={`/docs/${prev.slug}`} className="rounded-2xl border border-line p-4 transition-transform duration-150 hover:-translate-y-0.5"><span className="text-xs text-muted">← Previous</span><span className="block font-semibold">{prev.title}</span></Link> : <span />}
-        {next && <Link to={`/docs/${next.slug}`} className="rounded-2xl border border-line p-4 text-right transition-transform duration-150 hover:-translate-y-0.5"><span className="text-xs text-muted">Next →</span><span className="block font-semibold">{next.title}</span></Link>}
+        {prev ? <AppLink to={`/docs/${prev.slug}`} className="rounded-2xl border border-line p-4 transition-transform duration-150 hover:-translate-y-0.5"><span className="text-xs text-muted">← Previous</span><span className="block font-semibold">{prev.title}</span></AppLink> : <span />}
+        {next && <AppLink to={`/docs/${next.slug}`} className="rounded-2xl border border-line p-4 text-right transition-transform duration-150 hover:-translate-y-0.5"><span className="text-xs text-muted">Next →</span><span className="block font-semibold">{next.title}</span></AppLink>}
       </nav>
     </DocsShell>
   );

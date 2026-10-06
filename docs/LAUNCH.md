@@ -64,6 +64,8 @@ Claude's and ChatGPT's servers call the bridge directly, so a challenge page bre
 **D. Contact address (optional, free)**
 Cloudflare → `papercliped.co` → **Email → Email Routing**: create `support@papercliped.co` forwarding to your inbox and verify the destination address (Cloudflare adds the MX, SPF and DKIM records; leave them alone, they sit beside the root CNAME/A record). Email Routing only receives and forwards; replying *as* support@ needs a separate sending service. Add a DMARC record (`_dmarc` TXT) so the domain can't be spoofed. support@ is also the security contact (docs/SECURITY.md). Then set `SITE_CONTACT=support@papercliped.co` on Render.
 
+**More hosts (docs., mcp., api., forum.):** see [DOMAINS.md](DOMAINS.md) for the DNS records, Render domains, `PUBLIC_HOSTS` and the OAuth issuer decision.
+
 **E. Point the bridge at the new domain**
 1. Render → Environment: `BRIDGE_PUBLIC_URL=https://papercliped.co`, then redeploy.
 2. `BRIDGE_PUBLIC_URL` is the OAuth issuer and is baked into every token. Changing it disconnects every app that connected under the old address; those users connect again with `https://papercliped.co/mcp`. Set it to the final domain before inviting more users.

@@ -25,6 +25,9 @@ Trusted publishing can only be configured on a package that already exists.
 
 `repository.url` in both `package.json` files must stay exactly `git+https://github.com/OpenSourcx/papercliped.git` (npm checks it against the workflow's repository), and `publishConfig` must stay `{ "access": "public" }`.
 
+## The website
+The website (`web/`) is **not** in the npm package. The Docker image builds it (a separate stage) and the bridge serves it from `/app/web/dist`. The npm package's `papercliped-bridge` serves its built-in Markdown pages instead, unless you point `WEB_DIST` at a built copy (`npm --prefix web ci && npm --prefix web run build`).
+
 ## Each release
 1. Bump `version` in `package.json`, `plugin/package.json`, `plugin/src/manifest.ts` and `.claude-plugin/plugin.json` (they must match the tag; `test/versions.test.ts` checks it), and add a `## vX.Y.Z[-beta.N]` section to `CHANGELOG.md`.
 2. Commit to `main` and let CI pass.

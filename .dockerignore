@@ -1,9 +1,14 @@
-node_modules
+**/node_modules
 dist
+web/dist
+plugin/dist
 .git
 .github
 test
+web/test
+plugin
 docs
 deploy
 *.md
+!CHANGELOG.md
 .env*

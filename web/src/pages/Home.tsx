@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { AppLink } from "../components/AppLink";
 import { Accordion } from "../components/Accordion";
 import { CodeBlock } from "../components/CodeBlock";
 import { CountUp } from "../components/CountUp";
@@ -125,7 +125,7 @@ export function Home() {
             <h2 id="cta-h" className="text-3xl font-bold">Build it with us</h2>
             <p className="mt-2 max-w-xl opacity-90">Papercliped is a community project. Suggest a feature, report a bug, or send a pull request.</p>
           </div>
-          <Link to="/community" className="inline-flex h-12 items-center rounded-lg bg-bg px-6 font-semibold text-ink transition-transform duration-150 hover:-translate-y-0.5 active:scale-[0.97]">Join the community</Link>
+          <AppLink to="/community" className="inline-flex h-12 items-center rounded-lg bg-bg px-6 font-semibold text-ink transition-transform duration-150 hover:-translate-y-0.5 active:scale-[0.97]">Join the community</AppLink>
         </div>
       </section>
 

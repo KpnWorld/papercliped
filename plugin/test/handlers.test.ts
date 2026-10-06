@@ -103,6 +103,11 @@ describe("plugin actions against a fake bridge", () => {
     expect(mem.get(k(linkScope("user-ann")))).toBeTruthy(); // a network error does not unlink
   });
 
+  it("shows the service's public status without needing a link", async () => {
+    const s = await h.serviceStatus({}, { type: "user", userId: "someone-unlinked" });
+    expect(s).toEqual({ status: "ok", version: "2.0.0", users: 42, liveConnections: 7, requestSuccessRate: 0.95, signInSuccessRate: 0.9, p95Ms: 460, statusPage: `${fake.url}/status` });
+  });
+
   it("refuses a non-https bridge URL from config", async () => {
     const bad = createHandlers({ state, fetch: (u, i) => fetch(u, i), bridgeUrl: async () => fake.url }); // no loopback exemption: what the worker does
     await expect(bad.link({ code: newCode(fake) }, bob)).rejects.toThrow(/https/);

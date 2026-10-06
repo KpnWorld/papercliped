@@ -12,22 +12,8 @@ const DOCS = "virtual:docs";
 const DOCS_RESOLVED = "\0virtual:docs";
 const BOOT = "theme-boot.js";
 
-/**
- * The CSP the bridge sends for these pages (kept here so `vite preview` enforces the same thing and the route check catches
- * violations): everything from our own origin, no inline scripts or styles, no third parties.
- */
-export const SITE_CSP = [
-  "default-src 'none'",
-  "script-src 'self'",
-  "style-src 'self'",
-  "font-src 'self'",
-  "img-src 'self' data:",
-  "connect-src 'self'",
-  "manifest-src 'self'",
-  "frame-ancestors 'none'",
-  "base-uri 'none'",
-  "form-action 'self'",
-].join("; ");
+// The same CSP the bridge sends for these pages, so `vite preview` (and the route check) enforce exactly that.
+export { SITE_CSP } from "../../src/web/csp.ts";
 
 async function bootScript(root: string): Promise<string> {
   const r = await build({ entryPoints: [resolve(root, "src/theme/boot.ts")], bundle: true, write: false, format: "iife", minify: true, target: "es2019" });
@@ -99,17 +85,11 @@ export function papercliped(): Plugin {
       this.emitFile({ type: "asset", fileName: "changelog.xml", source: lib.atomFeed(lib.parseChangelog(md, dates), SITE_URL) });
       const routes: string[] = JSON.parse(/ROUTES = (\[[^\]]*\])/.exec(readFileSync(resolve(root, "src/App.tsx"), "utf8"))![1]).filter((r: string) => !r.startsWith("/kit"));
       this.emitFile({ type: "asset", fileName: "sitemap.xml", source: `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${routes.map((r) => `  <url><loc>${SITE_URL}${r}</loc></url>`).join("\n")}\n</urlset>\n` });
+      // Every path the app renders, for the bridge: anything else gets the app's not-found page with a real 404 status.
+      const docs = readdirSync(resolve(root, "../site/docs")).filter((f) => f.endsWith(".md")).map((f) => f.replace(/\.md$/, ""));
+      const all = [...JSON.parse(/ROUTES = (\[[^\]]*\])/.exec(readFileSync(resolve(root, "src/App.tsx"), "utf8"))![1]), "/topics", ...docs.flatMap((d) => [`/docs/${d}`, `/topics/${d}`])];
+      this.emitFile({ type: "asset", fileName: "routes.json", source: JSON.stringify([...new Set(all)].sort()) + "\n" });
       this.emitFile({ type: "asset", fileName: "robots.txt", source: `User-agent: *\nAllow: /\nDisallow: /kit\nDisallow: /__render\nSitemap: ${SITE_URL}/sitemap.xml\n` });
-    },
-    transformIndexHtml: {
-      order: "post",
-      handler(html, ctx) {
-        // Preload the two faces every page uses, by their hashed names.
-        if (!ctx.bundle) return html;
-        const fonts = Object.keys(ctx.bundle).filter((f) => /(inter|bricolage-grotesque)-latin-wght-normal-.*\.woff2$/.test(f));
-        const links = fonts.map((f) => `<link rel="preload" href="/${f}" as="font" type="font/woff2" crossorigin>`).join("\n    ");
-        return html.replace("</title>", `</title>\n    ${links}`);
-      },
     },
   };
 }

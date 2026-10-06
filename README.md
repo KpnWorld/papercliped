@@ -9,7 +9,7 @@ Drive a [Paperclip](https://github.com/paperclipai/paperclip) instance (AI-agent
 | Reports | status, costs, agent performance, activity digest — markdown for people plus structured data |
 | Use the API | every tool is a thin call to Paperclip's `/api`; `paperclip_api_request` reaches anything without a dedicated tool |
 
-One tool catalogue (`src/tools.ts`, 29 tools) feeds three surfaces, so they cannot drift:
+One tool catalogue (`src/tools.ts`, 30 tools) feeds three surfaces, so they cannot drift:
 
 ```
 Claude Code / Claude Desktop ──stdio──▶ ┐
@@ -111,7 +111,7 @@ Set `BRIDGE_OAUTH=1`, `BRIDGE_PUBLIC_URL`, `BRIDGE_SECRET`, `BRIDGE_DATA_FILE` (
 - **A public bridge holds other people's Paperclip keys.** A bridge compromise exposes all of them until revoked. Read [docs/SECURITY.md](docs/SECURITY.md) before opening it up. The code is unaudited and the Render/Supabase/claude.ai/ChatGPT specifics are untested against the live services.
 - **Hosted mode only reaches Paperclips on the public internet over https.** `localhost`/private-network instances use the local stdio plugin.
 - `paperclip_sync_changes` polls the activity log (no push). Activity has no server-side `since` filter, so it fetches up to `limit` recent entries and filters locally; raise `limit` if you poll infrequently on a busy company.
-- ChatGPT Actions allow ~30 operations per GPT; the catalogue is at 29. Adding tools means removing some for that surface.
+- ChatGPT Actions allow ~30 operations per GPT; the catalogue is at 30, the limit. Adding tools means removing some for that surface.
 
 ## Layout
 

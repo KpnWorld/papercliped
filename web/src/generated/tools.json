@@ -196,6 +196,13 @@
     "scope": "paperclip:read"
   },
   {
+    "name": "papercliped_service_status",
+    "title": "Papercliped service status",
+    "description": "Is the hosted Papercliped service working? Returns its status (ok, degraded, down), version and aggregate 24-hour numbers (requests, success rate, latency, sign-ins). Public data only; does not touch Paperclip.",
+    "access": "read",
+    "scope": "paperclip:read"
+  },
+  {
     "name": "paperclip_api_request",
     "title": "Raw API request",
     "description": "Call any Paperclip REST endpoint under /api (path like '/companies/{id}/routines'). For endpoints without a dedicated tool. DELETE and any non-GET require confirm=true.",

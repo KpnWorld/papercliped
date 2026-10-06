@@ -1,9 +1,12 @@
-import { THEME, esc } from "../oauth/pages.js";
+import { DISPLAY, FONTS_CSS, MONO, SANS, THEME, THEME_DARK, esc } from "../oauth/pages.js";
 import { FAVICON_LINK } from "../site/favicon.js";
 
 const CSS = `
-:root{--bg:${THEME.bg};--ink:${THEME.ink};--ink2:${THEME.ink2};--muted:${THEME.muted};--line:${THEME.line};--err:${THEME.errInk}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+${FONTS_CSS}
+:root{--bg:${THEME.bg};--ink:${THEME.ink};--ink2:${THEME.ink2};--muted:${THEME.muted};--line:${THEME.line};--err:${THEME.errInk};color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:${THEME_DARK.bg};--ink:${THEME_DARK.ink};--ink2:${THEME_DARK.ink2};--muted:${THEME_DARK.muted};--line:${THEME_DARK.line};color-scheme:dark}.card{background:rgba(255,255,255,.04)!important}}
+h1,h2,.brand{font-family:${DISPLAY}}.brand{text-transform:lowercase;font-weight:700}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 ${SANS}}
 a{color:var(--ink)}button,input,select{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--ink2);outline-offset:2px}
 header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px max(20px,5vw);border-bottom:1px solid var(--line)}
@@ -20,7 +23,7 @@ input[type=text],input[type=password]{width:100%;height:42px;padding:0 12px;bord
 .muted{color:var(--muted);font-size:13.5px}
 .err{background:#fde8e3;border:1px solid #e9a99c;color:var(--err);border-radius:8px;padding:9px 12px;margin:12px 0}
 .ok{background:#e9f3df;border:1px solid #b9d49b;color:#2f5a14;border-radius:8px;padding:9px 12px;margin:12px 0}
-.secret{display:block;margin:12px 0;padding:14px 12px;border:1px dashed var(--ink2);border-radius:8px;font:13px ui-monospace,Menlo,monospace;user-select:all;overflow-wrap:anywhere}
+.secret{display:block;margin:12px 0;padding:14px 12px;border:1px dashed var(--ink2);border-radius:8px;font:13px ${MONO};user-select:all;overflow-wrap:anywhere}
 select{height:34px;border:1px solid var(--line);border-radius:8px;background:transparent;padding:0 8px}
 .hide{display:none}
 `;
@@ -189,7 +192,7 @@ const JS = `
 `;
 
 export function managePage(nonce: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="robots" content="noindex"><title>Manage connections · Papercliped</title>${FAVICON_LINK}<style>${CSS}</style></head><body><header><a class="brand" href="/" style="text-decoration:none;color:inherit"><img alt="" src="data:image/svg+xml,${encodeURIComponent(FAV)}"><span>Papercliped</span></a><span class="pill">beta</span></header><main id="app" aria-live="polite"><noscript>${esc("This page needs JavaScript.")}</noscript></main><script nonce="${nonce}">${JS}</script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="robots" content="noindex"><title>Manage connections · Papercliped</title>${FAVICON_LINK}<style>${CSS}</style></head><body><header><a class="brand" href="/" style="text-decoration:none;color:inherit"><img alt="" src="data:image/svg+xml,${encodeURIComponent(FAV)}"><span>Papercliped</span></a><span class="pill">beta</span></header><main id="app" aria-live="polite"><noscript>${esc("This page needs JavaScript.")}</noscript></main><script nonce="${nonce}">${JS}</script></body></html>`;
 }
 
 import { FAVICON_SVG as FAV } from "../site/favicon.js";

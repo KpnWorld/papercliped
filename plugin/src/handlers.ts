@@ -94,6 +94,11 @@ export function createHandlers(d: Deps) {
       return authed(who(actor), (c, t) => c.setPrivacy(t, anonymous));
     },
 
+    /** The Papercliped service's public status (aggregate numbers only; no account or link needed). */
+    async serviceStatus(_p: Record<string, unknown>, _actor: Actor) {
+      return (await client()).serviceStatus();
+    },
+
     /** Forget the token here, and ask the bridge to revoke it. Local forgetting happens even if the bridge cannot be reached. */
     async unlink(_p: Record<string, unknown>, actor: Actor) {
       const userId = who(actor);

@@ -7,6 +7,9 @@ import { ManageRoutes } from "./manage/routes.js";
 import { PublicApiRoutes } from "./public-api/routes.js";
 import { SiteRoutes } from "./site/site.js";
 import { VERSION } from "./version.js";
+import { fileURLToPath } from "node:url";
+import { parseHosts } from "./web/hosts.js";
+import { WebAppRoutes } from "./web/routes.js";
 import { createStore } from "./store-factory.js";
 import { AuditRecorder, NodeReporter, SystemSampler } from "./telemetry/recorder.js";
 import { MemoryStore } from "./oauth/store.js";
@@ -67,8 +70,13 @@ async function main() {
       })
     : undefined;
   const publicApi = new PublicApiRoutes({ store, version: VERSION, docsUrl: "https://papercliped.co/docs/public-api", publicUrl: siteUrl ?? undefined, proxyHops: http.oauth?.proxyHops ?? 0 });
+  // The React website, when built (web/dist next to the package, or WEB_DIST); otherwise the bridge's own Markdown pages.
+  const hosts = parseHosts(process.env.PUBLIC_HOSTS);
+  const webDir = WebAppRoutes.locate(process.env, fileURLToPath(new URL("../web/dist", import.meta.url)));
+  const web = webDir ? new WebAppRoutes({ dir: webDir, hosts, forumUrl: process.env.FORUM_URL?.trim() || null }) : undefined;
+  if (web) console.error(`website: ${webDir}${process.env.PUBLIC_HOSTS ? ` (hosts: ${process.env.PUBLIC_HOSTS})` : ""}`);
   const manage = provider && http.oauth?.mode === "multi" ? new ManageRoutes(provider, { secureCookie: !!siteUrl?.startsWith("https:") }) : undefined;
-  const server = createHttpServer(config, http, { oauth: provider, recorder, site, manage, publicApi });
+  const server = createHttpServer(config, http, { oauth: provider, recorder, site, manage, publicApi, web });
   server.listen(http.port, http.host, () => {
     const o = http.oauth;
     console.error(

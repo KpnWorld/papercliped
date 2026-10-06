@@ -1,3 +1,4 @@
+import tools from "../generated/tools.json";
 import { CodeBlock } from "../components/CodeBlock";
 import { Accordion } from "../components/Accordion";
 import { Mascot } from "../components/Mascot";
@@ -61,7 +62,7 @@ export function Kit() {
         <h2 id="k-cards" className="sr-only">Cards and stats</h2>
         <Card><h3 className="text-lg font-bold">Card</h3><p className="text-muted">Surfaces sit on the page background with a hairline border.</p></Card>
         <Stat label="Users" value="42" hint="Live from /api/public/stats" />
-        <Stat label="Tools" value="29" hint="One catalogue for every surface" />
+        <Stat label="Tools" value={String(tools.length)} hint="One catalogue for every surface" />
       </section>
 
       <section className="mt-10 max-w-md" aria-labelledby="k-form">

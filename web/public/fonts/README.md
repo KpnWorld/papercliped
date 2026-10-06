@@ -8,4 +8,4 @@ Self-hosted so the site makes no third-party requests. Latin subset only. All th
 | `inter-latin-wght-normal.woff2` | Inter (variable, weight 100–900): body and interface | `@fontsource-variable/inter` |
 | `jetbrains-mono-latin-400-normal.woff2`, `-700-` | JetBrains Mono: code and keys | `@fontsource/jetbrains-mono` |
 
-To update: bump the `@fontsource*` dev dependencies in `web/package.json`, `npm install`, and copy the same files (and `LICENSE`) from `node_modules/<package>/files/`.
+To update: bump the `@fontsource*` dev dependencies in `web/package.json`, `npm install`, and copy the same files (and `LICENSE`) from `node_modules/<package>/files/` into `web/public/fonts/` (stable names, so the bridge's server-rendered pages can use them too).

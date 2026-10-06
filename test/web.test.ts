@@ -1,0 +1,131 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { createServer, request, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { SITE_CSP } from "../src/web/csp.js";
+import { parseHosts, roleOf } from "../src/web/hosts.js";
+import { WebAppRoutes } from "../src/web/routes.js";
+
+let dir: string, srv: Server, base: string, single: Server, singleBase: string;
+const HOSTS = "marketing=papercliped.co,www.papercliped.co;docs=docs.papercliped.co;api=mcp.papercliped.co,api.papercliped.co;forum=forum.papercliped.co";
+/** fetch() can't set Host, so use http.request; returns a small fetch-like response. */
+function get(b: string, path: string, host?: string, method = "GET"): Promise<{ status: number; headers: { get(k: string): string | null }; text(): Promise<string> }> {
+  const u = new URL(b);
+  return new Promise((ok, fail) => {
+    const req = request({ host: u.hostname, port: u.port, path, method, headers: host ? { host } : {} }, (res) => {
+      let body = "";
+      res.on("data", (c) => (body += c));
+      res.on("end", () => ok({ status: res.statusCode!, headers: { get: (k) => { const v = res.headers[k.toLowerCase()]; return v == null ? null : String(v); } }, text: async () => body }));
+    });
+    req.on("error", fail);
+    req.end();
+  });
+}
+
+function serve(web: WebAppRoutes) {
+  return createServer(async (req, res) => {
+    if (!(await web.handle(req, res, new URL(req.url!, "http://x")))) res.writeHead(418).end("bridge"); // stands for the rest of the bridge
+  });
+}
+
+beforeAll(async () => {
+  dir = mkdtempSync(join(tmpdir(), "pcl-web-"));
+  mkdirSync(join(dir, "assets"));
+  mkdirSync(join(dir, "fonts"));
+  writeFileSync(join(dir, "index.html"), '<!doctype html><html><head><meta name="pcl-hosts" content="{}" /></head><body><div id="root"></div></body></html>');
+  writeFileSync(join(dir, "routes.json"), JSON.stringify(["/", "/community", "/changelog", "/status", "/docs", "/docs/faq", "/topics", "/topics/faq"]));
+  writeFileSync(join(dir, "assets", "index-abc.js"), "console.log(1)");
+  writeFileSync(join(dir, "fonts", "inter.woff2"), "x");
+  writeFileSync(join(dir, "changelog.xml"), "<feed/>");
+  writeFileSync(join(dir, "..", "secret.txt"), "nope");
+  srv = serve(new WebAppRoutes({ dir, hosts: parseHosts(HOSTS), forumUrl: "https://github.com/OpenSourcx/papercliped/discussions" }));
+  single = serve(new WebAppRoutes({ dir, hosts: parseHosts("") }));
+  await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+  await new Promise<void>((r) => single.listen(0, "127.0.0.1", r));
+  base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+  singleBase = `http://127.0.0.1:${(single.address() as AddressInfo).port}`;
+});
+afterAll(() => {
+  srv.close();
+  single.close();
+});
+
+describe("PUBLIC_HOSTS", () => {
+  it("parses roles and rejects bad input", () => {
+    const m = parseHosts(HOSTS);
+    expect(m.marketing).toEqual(["papercliped.co", "www.papercliped.co"]);
+    expect(roleOf(m, "API.papercliped.co")).toBe("api");
+    expect(roleOf(m, "papercliped.onrender.com")).toBeNull();
+    expect(() => parseHosts("blog=x.co")).toThrow(/unknown role/);
+    expect(() => parseHosts("docs=not a host")).toThrow(/not a host/);
+    expect(() => parseHosts("docs=a.co;marketing=a.co")).toThrow(/twice/);
+  });
+});
+
+describe("website routing", () => {
+  it("marketing: pages with the strict CSP and the host map; docs move to the docs host", async () => {
+    const r = await get(base, "/community", "papercliped.co");
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-security-policy")).toBe(SITE_CSP);
+    expect(await r.text()).toContain('content="{&quot;marketing&quot;:&quot;papercliped.co&quot;,&quot;docs&quot;:&quot;docs.papercliped.co&quot;}"');
+    const d = await get(base, "/docs/faq?x=1", "papercliped.co");
+    expect([d.status, d.headers.get("location")]).toEqual([301, "https://docs.papercliped.co/topics/faq?x=1"]);
+    expect((await get(base, "/docs", "papercliped.co")).headers.get("location")).toBe("https://docs.papercliped.co/topics");
+  });
+  it("www redirects to the apex, keeping the path and query", async () => {
+    const r = await get(base, "/changelog?a=b", "www.papercliped.co");
+    expect([r.status, r.headers.get("location")]).toEqual([301, "https://papercliped.co/changelog?a=b"]);
+  });
+  it("docs host: / and /docs/* go to /topics; /topics/* render; other pages go to the marketing host", async () => {
+    expect((await get(base, "/", "docs.papercliped.co")).headers.get("location")).toBe("/topics");
+    expect((await get(base, "/docs/faq", "docs.papercliped.co")).headers.get("location")).toBe("/topics/faq");
+    expect((await get(base, "/topics/faq", "docs.papercliped.co")).status).toBe(200);
+    expect((await get(base, "/community", "docs.papercliped.co")).headers.get("location")).toBe("https://papercliped.co/community");
+  });
+  it("api and forum hosts", async () => {
+    const a = await get(base, "/", "mcp.papercliped.co");
+    expect([a.status, a.headers.get("location")]).toEqual([302, "https://papercliped.co/"]);
+    expect((await get(base, "/mcp", "mcp.papercliped.co")).status).toBe(418); // protocol endpoints are the bridge's
+    const f = await get(base, "/anything", "forum.papercliped.co");
+    expect([f.status, f.headers.get("location")]).toEqual([302, "https://github.com/OpenSourcx/papercliped/discussions"]);
+  });
+  it("never touches protocol, API or bridge paths, on any host", async () => {
+    for (const p of ["/mcp", "/authorize", "/authorize/status", "/token", "/register", "/revoke", "/.well-known/oauth-authorization-server", "/openapi.json", "/actions/paperclip_list_agents", "/api/public/v1/status", "/api/manage/me", "/manage", "/healthz", "/readyz"])
+      for (const host of ["papercliped.co", "docs.papercliped.co", "papercliped.onrender.com"]) expect((await get(base, p, host)).status, `${host}${p}`).toBe(418);
+    expect((await get(base, "/community", "papercliped.co", "POST")).status).toBe(418);
+  });
+  it("static files: hashed assets cached forever, others an hour; missing files fall through", async () => {
+    const js = await get(base, "/assets/index-abc.js", "papercliped.co");
+    expect([js.status, js.headers.get("content-type"), js.headers.get("cache-control")]).toEqual([200, "text/javascript; charset=utf-8", "public, max-age=31536000, immutable"]);
+    expect((await get(base, "/fonts/inter.woff2", "papercliped.co")).headers.get("content-type")).toBe("font/woff2");
+    const x = await get(base, "/changelog.xml", "papercliped.co");
+    expect([x.status, x.headers.get("cache-control")]).toEqual([200, "public, max-age=3600"]);
+    expect((await get(base, "/assets/missing.js", "papercliped.co")).status).toBe(418);
+    const internal = await get(base, "/routes.json", "papercliped.co");
+    expect(internal.status).toBe(418); // never served; the bridge answers 404
+    expect(await internal.text()).not.toContain("/community");
+  });
+  it("unknown pages get the app's not-found page with a real 404", async () => {
+    const r = await get(base, "/nope", "papercliped.co");
+    expect(r.status).toBe(404);
+    expect(await r.text()).toContain('<div id="root">');
+  });
+  it("refuses path traversal", async () => {
+    for (const p of ["/../secret.txt", "/%2e%2e/secret.txt", "/assets/..%2f..%2fsecret.txt", "/%2e%2e%2fsecret.txt"]) {
+      const r = await get(base, p, "papercliped.co");
+      expect(await r.text(), p).not.toContain("nope");
+    }
+  });
+  it("without PUBLIC_HOSTS the whole site is on one host, with /docs paths", async () => {
+    expect((await get(singleBase, "/docs/faq")).status).toBe(200);
+    expect((await get(singleBase, "/topics/faq")).headers.get("location")).toBe("/docs/faq");
+    expect(await (await get(singleBase, "/")).text()).toContain('content="{}"');
+  });
+  it("HEAD works without a body", async () => {
+    const r = await get(base, "/community", "papercliped.co", "HEAD");
+    expect(r.status).toBe(200);
+    expect(await r.text()).toBe("");
+  });
+});

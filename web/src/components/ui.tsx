@@ -1,5 +1,5 @@
 import { forwardRef, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
-import { Link as RouterLink, type LinkProps } from "react-router-dom";
+import { AppLink } from "./AppLink";
 import { cx } from "./cx";
 
 type Variant = "primary" | "secondary" | "ghost";
@@ -21,13 +21,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
 /** A link that looks like a button. External links open normally (no target juggling) and are marked rel=noopener. */
 export function ButtonLink({ to, variant = "primary", size = "md", className, children }: { to: string; variant?: Variant; size?: keyof typeof SIZE; className?: string; children: ReactNode }) {
-  const cls = cx(BTN, VARIANT[variant], SIZE[size], className);
-  return /^https?:/.test(to) ? <a href={to} rel="noopener noreferrer" className={cls}>{children}</a> : <RouterLink to={to} className={cls}>{children}</RouterLink>;
+  return <AppLink to={to} className={cx(BTN, VARIANT[variant], SIZE[size], className)}>{children}</AppLink>;
 }
 
-export function TextLink({ to, children, className, ...rest }: { to: string; children: ReactNode; className?: string } & Omit<LinkProps, "to">) {
-  const cls = cx("text-link underline decoration-1 underline-offset-2 hover:decoration-2", className);
-  return /^(https?:|mailto:)/.test(to) ? <a href={to} rel="noopener noreferrer" className={cls}>{children}</a> : <RouterLink to={to} className={cls} {...rest}>{children}</RouterLink>;
+export function TextLink({ to, children, className }: { to: string; children: ReactNode; className?: string }) {
+  return <AppLink to={to} className={cx("text-link underline decoration-1 underline-offset-2 hover:decoration-2", className)}>{children}</AppLink>;
 }
 
 /** A surface. `interactive` adds a small lift-and-tilt on hover (off with reduced motion). */

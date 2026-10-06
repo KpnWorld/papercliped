@@ -12,6 +12,11 @@
 - **New website, phase 3 (docs):** a docs site at `/docs` with a three-column layout (collapsible sections with counts, the article with breadcrumb, last-updated date, copy link and edit-on-GitHub, and an "On this page" outline that follows your scroll), previous/next links, copy buttons on code, and **Ctrl/Cmd-K search** built at compile time (no outside service). The **GitHub star count** shows in the header: the bridge fetches it from GitHub and caches it for an hour (`GET /api/public/v1/repo`), so browsers never call GitHub directly.
 - **Much more documentation:** new pages What is Papercliped? (with a glossary), Run it yourself, Tool reference (generated from the code), Manage API, Environment variables, Command line, Limits and errors, and FAQ. Docs now have 20 pages in five sections; the bridge serves the same pages until the new site goes live.
 
+- **The bridge serves the new website** (from `web/dist`, built into the Docker image) with **host routing** (`PUBLIC_HOSTS`): `papercliped.co` for the site, `docs.papercliped.co/topics` for the docs, `mcp.`/`api.papercliped.co` for MCP, OAuth and the APIs, `forum.` redirects to the forum, `www` redirects to the apex. Old `/docs/...` links redirect to the docs host. Every host still answers the protocol and API paths. Unknown pages return a real 404. Without the built site (e.g. the npm package), the bridge serves its Markdown pages as before. Setup and the issuer decision: `docs/DOMAINS.md`.
+- **Sign-in, consent and manage pages restyled** with the website's fonts (Bricolage Grotesque, Inter, JetBrains Mono) and colours, including dark mode. Still plain server-rendered HTML.
+- **New tool `papercliped_service_status`** (read only): the AI can check whether the hosted service is working, from the public status API. The catalogue is now 30 tools.
+- **Paperclip plugin:** a "Papercliped service" card shows the bridge's public status (no link needed).
+
 ## v2.0.0 — stable open-source build
 
 Papercliped v2 is the free, open-source foundation: the bridge, the connector for Claude and any MCP app, and the Paperclip plugin. Paid features (managed subdomains, pricing, legal) are planned for v3 (`docs/V3-SUBDOMAINS.md`).

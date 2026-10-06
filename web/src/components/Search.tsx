@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { search } from "../lib/docs";
+import { isExternal, resolveHref } from "../lib/hosts";
 import { cx } from "./cx";
 
 const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -25,7 +26,9 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
     const h = hits[i];
     if (!h) return;
     onClose();
-    nav(`/docs/${h.doc.slug}${h.heading ? `#${h.heading.id}` : ""}`);
+    const to = resolveHref(`/docs/${h.doc.slug}${h.heading ? `#${h.heading.id}` : ""}`);
+    if (isExternal(to)) window.location.assign(to);
+    else nav(to);
   };
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-[12vh]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>

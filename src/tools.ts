@@ -416,6 +416,43 @@ export const tools: ToolDef[] = [
   }),
 
   // ───────────────────────────── escape hatch ─────────────────────────────
+  // ───────────────────────────── Papercliped itself ─────────────────────────────
+  tool({
+    name: "papercliped_service_status",
+    title: "Papercliped service status",
+    description:
+      "Is the hosted Papercliped service working? Returns its status (ok, degraded, down), version and aggregate 24-hour numbers (requests, success rate, latency, sign-ins). Public data only; does not touch Paperclip.",
+    access: "read",
+    schema: z.object({ window: z.enum(["1h", "24h", "7d"]).optional().describe("Time window for the numbers (default 24h)") }),
+    run: async (_c, i) => {
+      const base = paperclipedUrl();
+      const get = async (path: string) => {
+        let r: Response;
+        try {
+          r = await fetch(`${base}${path}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+        } catch {
+          throw new Error(`Cannot reach Papercliped's status API at ${base}`);
+        }
+        if (!r.ok) throw new Error(`Cannot reach Papercliped's status API at ${base} (HTTP ${r.status})`);
+        return (await r.json()) as Record<string, any>;
+      };
+      const w = i.window ?? "24h";
+      const [status, stats] = await Promise.all([get("/api/public/v1/status"), get(`/api/public/v1/stats?window=${w}`)]);
+      return {
+        service: base,
+        status: status.status,
+        version: status.version,
+        uptimeSeconds: status.uptimeSeconds,
+        window: w,
+        users: stats.users,
+        liveConnections: stats.connections?.live,
+        requests: { count: stats.requests?.count, successRate: stats.requests?.successRate, latencyMs: stats.requests?.latencyMs },
+        signIns: { started: stats.auth?.flowsStarted, completed: stats.auth?.flowsCompleted, successRate: stats.auth?.successRate },
+        statusPage: `${base}/status`,
+      };
+    },
+  }),
+
   tool({
     name: "paperclip_api_request",
     title: "Raw API request",
@@ -439,3 +476,12 @@ export const tools: ToolDef[] = [
 ];
 
 export const toolsByName = new Map(tools.map((t) => [t.name, t]));
+
+/** Where papercliped_service_status looks (PAPERCLIPED_URL; https, or http on localhost for development). */
+function paperclipedUrl(): string {
+  const raw = (process.env.PAPERCLIPED_URL ?? "").trim() || "https://papercliped.co";
+  const u = new URL(raw);
+  const loop = ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
+  if (u.protocol !== "https:" && !(u.protocol === "http:" && loop)) throw new ToolInputError("PAPERCLIPED_URL must be an https address");
+  return u.origin;
+}

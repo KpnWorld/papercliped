@@ -2,6 +2,11 @@
 
 Every setting the bridge reads, with its default. Only set what you need. Never put secrets in issues or commits.
 
+## Papercliped status tool
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PAPERCLIPED_URL` | `https://papercliped.co` | Where the `papercliped_service_status` tool reads the public status API (https only) |
+
 ## Paperclip (all modes)
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -23,6 +28,9 @@ Every setting the bridge reads, with its default. Only set what you need. Never 
 | `BRIDGE_AUDIT_RETENTION_DAYS` | `30` | Audit rows older than this are deleted hourly |
 | `BRIDGE_AUDIT_STDERR` | on | Also print each audit event as a JSON line |
 | `BRIDGE_KEEPALIVE` | on | Free tiers: self-ping and database heartbeat every 10 minutes |
+| `PUBLIC_HOSTS` | none | Host roles for one service on several hosts, e.g. `marketing=papercliped.co,www.papercliped.co;docs=docs.papercliped.co;api=mcp.papercliped.co;forum=forum.papercliped.co` (see `docs/DOMAINS.md`) |
+| `FORUM_URL` | the marketing host's `/community` | Where the forum host redirects |
+| `WEB_DIST` | `web/dist` next to the package | The built website; without it the bridge serves its own Markdown pages |
 | `SITE_CONTACT` | the GitHub issues page | Contact shown on the privacy and terms pages |
 | `SITE_EFFECTIVE_DATE` | `2026-10-06` | Date shown on the privacy and terms pages |
 

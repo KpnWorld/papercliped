@@ -104,7 +104,7 @@ export class ManageRoutes {
     if (m === "GET" && path === "/manage") {
       const nonce = randomToken(12);
       return this.send(res, 200, managePage(nonce), "text/html; charset=utf-8", {
-        "Content-Security-Policy": `default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`,
+        "Content-Security-Policy": `default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src 'self'; script-src 'nonce-${nonce}'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`,
       });
     }
     if (!path.startsWith("/api/manage")) return false;

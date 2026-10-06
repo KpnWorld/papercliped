@@ -20,6 +20,16 @@ export interface Connection {
   createdAt: number;
   lastUsedAt: number | null;
 }
+export interface ServiceStatus {
+  status: "ok" | "degraded" | "down";
+  version: string;
+  users: number | null;
+  liveConnections: number | null;
+  requestSuccessRate: number | null;
+  signInSuccessRate: number | null;
+  p95Ms: number | null;
+  statusPage: string;
+}
 export interface Me {
   name: string;
   anonymous: boolean;
@@ -95,6 +105,31 @@ export class BridgeClient {
   }
   setPrivacy(token: string, anonymous: boolean) {
     return this.req<{ anonymous: boolean; alias: string | null; name: string }>("POST", "/privacy", { token, body: { anonymous } });
+  }
+  /** Public, aggregate-only service numbers (no token): GET /api/public/v1/status and /stats. */
+  async serviceStatus(): Promise<ServiceStatus> {
+    const get = async (path: string) => {
+      let r: Response;
+      try {
+        r = await this.doFetch(`${this.base}${path}`, { headers: { accept: "application/json" }, redirect: "error", signal: AbortSignal.timeout(this.timeoutMs) });
+      } catch {
+        throw new BridgeError("Could not reach the Papercliped bridge.", 0);
+      }
+      if (!r.ok) throw new BridgeError(`The bridge answered ${r.status}.`, r.status);
+      return (await r.json()) as Record<string, any>;
+    };
+    const [status, stats] = await Promise.all([get("/api/public/v1/status"), get("/api/public/v1/stats?window=24h")]);
+    const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+    return {
+      status: status.status === "ok" || status.status === "degraded" || status.status === "down" ? status.status : "down",
+      version: typeof status.version === "string" ? status.version.slice(0, 40) : "",
+      users: n(stats.users?.total),
+      liveConnections: n(stats.connections?.live),
+      requestSuccessRate: n(stats.requests?.successRate),
+      signInSuccessRate: n(stats.auth?.successRate),
+      p95Ms: n(stats.requests?.latencyMs?.p95),
+      statusPage: `${this.base}/status`,
+    };
   }
   async unlink(token: string): Promise<void> {
     await this.req("DELETE", "/plugin-links/self", { token });

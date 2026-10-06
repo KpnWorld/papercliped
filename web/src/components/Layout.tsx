@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
+import { AppLink } from "./AppLink";
 import { community, liveSocials, REPO_URL } from "../config/community";
 import { cx } from "./cx";
 import { Mascot } from "./Mascot";
@@ -10,10 +11,10 @@ import { Badge } from "./ui";
 
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <Link to="/" className={cx("flex items-center gap-2 rounded-lg", className)} aria-label="papercliped home">
+    <AppLink to="/" className={cx("flex items-center gap-2 rounded-lg", className)} aria-label="papercliped home">
       <Mascot size={30} interactive={false} title="" />
       <span className="font-display text-xl font-bold lowercase tracking-tight">papercliped</span>
-    </Link>
+    </AppLink>
   );
 }
 
@@ -83,8 +84,7 @@ function NavItem({ item }: { item: MenuItem }) {
       <span className="block text-sm text-muted">{item.desc}</span>
     </>
   );
-  const cls = "block rounded-lg px-3 py-2 hover:bg-surface";
-  return /^https?:/.test(item.to) ? <a href={item.to} className={cls} rel="noopener noreferrer">{inner}</a> : <Link to={item.to} className={cls}>{inner}</Link>;
+  return <AppLink to={item.to} className="block rounded-lg px-3 py-2 hover:bg-surface">{inner}</AppLink>;
 }
 
 /** GitHub link with the live star count (served by the bridge; no request to GitHub from the browser). */
@@ -112,7 +112,7 @@ export function GitHubIcon({ size = 16 }: { size?: number }) {
 export function Header() {
   const [mobile, setMobile] = useState(false);
   const loc = useLocation();
-  const inDocs = loc.pathname.startsWith("/docs");
+  const inDocs = /^\/(docs|topics)(\/|$)/.test(loc.pathname);
   useEffect(() => setMobile(false), [loc.pathname]);
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-bg/90 backdrop-blur">
@@ -121,7 +121,7 @@ export function Header() {
         <Wordmark />
         <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
           {MENUS.map((m) => <Menu key={m.label} {...m} />)}
-          <NavLink to="/community" className="rounded-lg px-3 py-2 text-sm font-medium hover:bg-surface">Community</NavLink>
+          <AppLink to="/community" className="rounded-lg px-3 py-2 text-sm font-medium hover:bg-surface">Community</AppLink>
         </nav>
         <div className="ml-auto hidden items-center gap-3 md:flex">
           {!inDocs && <SearchButton className="hidden w-52 lg:flex" />}
@@ -175,7 +175,7 @@ export function Footer() {
             <ul className="mt-3 space-y-2 text-sm">
               {col.links.map((l) => (
                 <li key={l.label}>
-                  {/^(https?:|mailto:)/.test(l.to) ? <a href={l.to} rel="noopener noreferrer" className="text-muted hover:text-ink">{l.label}</a> : <Link to={l.to} className="text-muted hover:text-ink">{l.label}</Link>}
+                  <AppLink to={l.to} className="text-muted hover:text-ink">{l.label}</AppLink>
                 </li>
               ))}
             </ul>

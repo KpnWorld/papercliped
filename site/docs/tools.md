@@ -1,10 +1,10 @@
 # Tool reference
 
-Every tool Papercliped gives your AI app, generated from the code (`src/tools.ts`). 29 tools in total. Each needs a level: a connection can use the tools of its level and every level below.
+Every tool Papercliped gives your AI app, generated from the code (`src/tools.ts`). 30 tools in total. Each needs a level: a connection can use the tools of its level and every level below.
 
 Raw API calls (`paperclip_api_request`) need Read only for GET and Admin for anything else.
 
-## Read only (16)
+## Read only (17)
 
 | Tool | What it does | Changes anything? |
 | --- | --- | --- |
@@ -24,6 +24,7 @@ Raw API calls (`paperclip_api_request`) need Read only for GET and Admin for any
 | **Cost report** `paperclip_report_costs` | Spend vs budget with per-agent and per-project breakdown. Defaults to the current month. | No |
 | **Agent performance report** `paperclip_report_agent_performance` | Per-agent throughput (done / in progress / blocked), spend and cost per completed task. | No |
 | **Activity digest** `paperclip_report_activity` | Digest of audit-log activity, optionally since an ISO timestamp (e.g. start of day). | No |
+| **Papercliped service status** `papercliped_service_status` | Is the hosted Papercliped service working? Returns its status (ok, degraded, down), version and aggregate 24-hour numbers (requests, success rate, latency, sign-ins). Public data only; does not touch Paperclip. | No |
 
 ## Full control (beta) (9)
 
