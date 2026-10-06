@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -101,12 +101,14 @@ describe("components", () => {
 });
 
 describe("community links", () => {
-  it("renders only the links that are configured (no invented handles)", () => {
+  it("the footer shows X, GitHub and Discord icons; unset networks point to the community page (no invented handles)", () => {
     expect(liveSocials({ github: "https://github.com/OpenSourcx/papercliped", discord: "", x: "", discussions: "", forum: "" }).map((s) => s.key)).toEqual(["github"]);
     inRouter(<Footer />);
-    expect(screen.queryByRole("link", { name: "Discord" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "X" })).toBeNull();
-    expect(screen.getByRole("link", { name: "GitHub" })).toHaveAttribute("href", "https://github.com/OpenSourcx/papercliped");
+    const social = within(screen.getByRole("list", { name: "Social" }));
+    expect(social.getAllByRole("link")).toHaveLength(3);
+    expect(social.getByRole("link", { name: "Papercliped on GitHub" })).toHaveAttribute("href", "https://github.com/OpenSourcx/papercliped");
+    expect(social.getByRole("link", { name: "Papercliped on X (coming soon)" })).toHaveAttribute("href", "/community");
+    expect(social.getByRole("link", { name: "Papercliped on Discord (coming soon)" })).toHaveAttribute("href", "/community");
   });
 });
 

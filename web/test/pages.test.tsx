@@ -77,3 +77,16 @@ describe("brand and legal", () => {
     expect(screen.getByRole("main").textContent).not.toContain("{{");
   });
 });
+
+describe("hero demo", () => {
+  it("shows an AI app steering a Paperclip, with tabs for each example", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    at("/");
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((t) => t.textContent)).toEqual(["Pause an agent", "Weekly report", "Approve a request"]);
+    await userEvent.click(tabs[2]);
+    expect(tabs[2]).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("Approved. The CEO can now hire a Support Agent.", {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.getAllByText("paperclip_decide_approval").length).toBeGreaterThan(1); // the demo chip and the playground
+  });
+});

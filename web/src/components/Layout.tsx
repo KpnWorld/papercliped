@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { AppLink } from "./AppLink";
-import { community, liveSocials, REPO_URL } from "../config/community";
+import { community, REPO_URL } from "../config/community";
 import { cx } from "./cx";
 import { Mascot } from "./Mascot";
 import { Icon } from "./Icons";
@@ -196,19 +196,41 @@ const FOOTER: { title: string; links: { to: string; label: string }[] }[] = [
   { title: "Legal", links: [{ to: "/privacy", label: "Privacy" }, { to: "/terms", label: "Terms" }, { to: "/docs/security", label: "Security" }] },
 ];
 
+/** Brand marks for the footer (filled, 24px grid). */
+const BRAND: Record<"x" | "github" | "discord", string> = {
+  x: "M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z",
+  github: "M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.07 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3",
+  discord: "M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.865-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.74 19.74 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.11 13.11 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .078-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z",
+};
+/** X, GitHub and Discord. A network without a real address yet points to the community page (no invented handles). */
+function SocialIcons() {
+  const items = [
+    { key: "x" as const, label: "Papercliped on X", href: community.x },
+    { key: "github" as const, label: "Papercliped on GitHub", href: community.github },
+    { key: "discord" as const, label: "Papercliped on Discord", href: community.discord },
+  ];
+  return (
+    <ul aria-label="Social" className="mt-5 flex gap-2">
+      {items.map((s) => (
+        <li key={s.key}>
+          <AppLink to={s.href || "/community"} aria-label={s.href ? s.label : `${s.label} (coming soon)`} title={s.href ? undefined : "Coming soon"}
+            className="grid h-9 w-9 place-items-center rounded-full border border-line text-muted transition-[color,border-color,transform] duration-150 hover:-translate-y-0.5 hover:border-field hover:text-ink">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width={16} height={16} fill="currentColor"><path d={BRAND[s.key]} /></svg>
+          </AppLink>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function Footer() {
-  const socials = liveSocials();
   return (
     <footer className="mt-24 border-t border-line">
       <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 sm:grid-cols-2 lg:grid-cols-6">
         <div className="lg:col-span-1">
           <Wordmark />
           <p className="mt-3 text-sm text-muted">Papercliped, not Paperclipped. Free and open source.</p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {socials.map((s) => (
-              <a key={s.key} href={s.href} rel="noopener noreferrer" className="inline-flex h-9 items-center rounded-lg border border-field px-3 text-sm hover:bg-surface">{s.label}</a>
-            ))}
-          </div>
+          <SocialIcons />
         </div>
         {FOOTER.map((col) => (
           <div key={col.title}>

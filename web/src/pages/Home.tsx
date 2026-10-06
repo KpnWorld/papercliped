@@ -4,7 +4,7 @@ import { CodeBlock } from "../components/CodeBlock";
 import { CountUp } from "../components/CountUp";
 import { GitHubIcon } from "../components/Layout";
 import { Icon } from "../components/Icons";
-import { PillArt } from "../components/PillArt";
+import { HeroDemo } from "../components/HeroDemo";
 import { Playground } from "../components/Playground";
 import { Stepper } from "../components/Stepper";
 import { ButtonLink, Card, TextLink } from "../components/ui";
@@ -68,8 +68,8 @@ export function Home() {
             <ButtonLink to={community.github} variant="secondary" size="lg"><GitHubIcon /> Star on GitHub</ButtonLink>
           </div>
         </div>
-        <PillArt className="mx-auto mt-12 max-w-5xl px-4 sm:mt-14" />
-        <div className="relative border-y border-line bg-bg">
+        <div className="mx-auto mt-12 max-w-5xl px-4 sm:mt-16"><HeroDemo /></div>
+        <div className="relative mt-16 border-y border-line bg-bg">
           <dl className="mx-auto grid max-w-4xl grid-cols-3 divide-x divide-line text-center">
             <div className="px-2 py-6"><dt className="text-xs text-muted sm:text-sm">People connected</dt><dd className="font-display text-3xl font-bold tracking-tight sm:text-4xl"><CountUp value={stats?.users ?? null} /></dd></div>
             <div className="px-2 py-6"><dt className="text-xs text-muted sm:text-sm">Live connections</dt><dd className="font-display text-3xl font-bold tracking-tight sm:text-4xl"><CountUp value={stats?.connections ?? null} /></dd></div>
@@ -120,7 +120,6 @@ export function Home() {
 
       <section aria-labelledby="cta-h" className="mx-auto max-w-6xl px-4 py-12">
         <div className="relative overflow-hidden rounded-[2rem] border border-line bg-surface px-6 py-14 text-center sm:px-12 sm:py-20">
-          <div aria-hidden="true" className="cta-pills" />
           <h2 id="cta-h" className="relative text-4xl font-bold tracking-tighter sm:text-5xl">Build it with us</h2>
           <p className="relative mx-auto mt-3 max-w-xl text-lg text-muted">Papercliped is a community project. Suggest a feature, report a bug, or send a pull request.</p>
           <div className="relative mt-8 flex flex-wrap justify-center gap-3">
