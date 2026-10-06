@@ -26,4 +26,4 @@ npm install
 npm run typecheck && npm test
 npm run build     # worker, manifest and UI bundles in dist/
 ```
-Layout: `src/bridge.ts` (bridge client), `src/keys.ts` (per-user state keys), `src/handlers.ts` (action logic), `src/worker.ts`, `src/manifest.ts`, `src/ui/index.tsx`.
+Layout: `src/bridge.ts` (bridge client), `src/keys.ts` (per-user state keys), `src/handlers.ts` (action logic), `src/worker.ts`, `src/manifest.ts`, `src/ui/` (the page: `index.tsx`, `Dashboard.tsx` with the Connected apps / Privacy / Linked Paperclips / Account tabs, `LinkForm.tsx`, `Confirm.tsx`, `Service.tsx`). The page uses Paperclip's own components from `@paperclipai/plugin-sdk/ui` (`StatusBadge`, `MetricCard`, `DataTable`, `KeyValueList`, `Spinner`, `ErrorBoundary`, toasts), so it matches the host. `test/ui.test.tsx` drives the page against the real handlers and a fake bridge.

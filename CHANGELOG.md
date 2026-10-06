@@ -30,6 +30,8 @@
 
 - **A cleaner homepage hero:** instead of decorative art, a live demo of the product. An AI app on the left steers a Paperclip on the right (pause an agent, weekly report, approve a request), using the real tool names, with tabs to replay each one. The footer gets X, GitHub and Discord icons (X and Discord point to the community page until their addresses are set).
 
+- **The Papercliped page in Paperclip, rebuilt** with Paperclip's own components (status badges, metric cards, tables, toasts) so it looks native: a service panel, an account summary, and tabs for Connected apps (level dropdown, two-step disconnect), Privacy, Linked Paperclips and Account (new secret key shown once with copy, disconnect Paperclip, delete account). Covered by UI tests against the real plugin actions.
+
 ## v2.0.0 — stable open-source build
 
 Papercliped v2 is the free, open-source foundation: the bridge, the connector for Claude and any MCP app, and the Paperclip plugin. Paid features (managed subdomains, pricing, legal) are planned for v3 (`docs/V3-SUBDOMAINS.md`).
