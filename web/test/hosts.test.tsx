@@ -21,29 +21,39 @@ describe("host-aware links", () => {
     expect(resolveHref("/community")).toBe("/community");
     expect(resolveHref("https://github.com/x")).toBe("https://github.com/x");
   });
-  it("on the marketing host, docs go to the docs host at /topics", () => {
+  it("on the marketing host, docs go to the docs host at /<page>", () => {
     setHosts(H);
     onHost("papercliped.co");
-    expect(resolveHref("/docs/permissions#levels")).toBe("https://docs.papercliped.co/topics/permissions#levels");
-    expect(resolveHref("/docs")).toBe("https://docs.papercliped.co/topics");
+    expect(resolveHref("/docs/permissions#levels")).toBe("https://docs.papercliped.co/permissions#levels");
+    expect(resolveHref("/docs")).toBe("https://docs.papercliped.co/");
     expect(resolveHref("/community")).toBe("/community");
     expect(resolveHref("/manage")).toBe("/manage");
   });
-  it("on the docs host, docs are local /topics and marketing pages go to the marketing host", () => {
+  it("on the docs host, docs are local /<page> and marketing pages go to the marketing host", () => {
     setHosts(H);
     onHost("docs.papercliped.co");
-    expect(resolveHref("/docs/faq")).toBe("/topics/faq");
-    expect(resolveHref("/topics")).toBe("/topics");
+    expect(resolveHref("/docs/faq")).toBe("/faq");
+    expect(resolveHref("/docs")).toBe("/");
+    expect(resolveHref("/topics/faq")).toBe("/faq");
     expect(resolveHref("/community")).toBe("https://papercliped.co/community");
     expect(resolveHref("/")).toBe("https://papercliped.co/");
   });
-  it("renders /topics pages on the docs host with /topics links in the sidebar", () => {
+  it("renders docs.papercliped.co/<page> with /<page> links in the sidebar", () => {
     setHosts(H);
     onHost("docs.papercliped.co");
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
-    render(<MemoryRouter initialEntries={["/topics/permissions"]}><App /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={["/permissions"]}><App /></MemoryRouter>);
     expect(screen.getByRole("heading", { level: 1, name: "Permissions" })).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "FAQ" })[0]).toHaveAttribute("href", "/topics/faq");
+    expect(screen.getAllByRole("link", { name: "FAQ" })[0]).toHaveAttribute("href", "/faq");
+    expect(screen.getByRole("link", { name: "papercliped docs home" })).toHaveAttribute("href", "/");
     expect(screen.getAllByRole("link", { name: "Join the community" })[0]).toHaveAttribute("href", "https://papercliped.co/community");
+  });
+  it("the docs host root is the docs landing", () => {
+    setHosts(H);
+    onHost("docs.papercliped.co");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    render(<MemoryRouter initialEntries={["/"]}><App /></MemoryRouter>);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/docs/i);
+    expect(screen.getAllByRole("link", { name: /Getting started/ })[0]).toHaveAttribute("href", "/getting-started");
   });
 });

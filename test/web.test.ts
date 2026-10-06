@@ -35,7 +35,7 @@ beforeAll(async () => {
   mkdirSync(join(dir, "assets"));
   mkdirSync(join(dir, "fonts"));
   writeFileSync(join(dir, "index.html"), '<!doctype html><html><head><meta name="pcl-hosts" content="{}" /></head><body><div id="root"></div></body></html>');
-  writeFileSync(join(dir, "routes.json"), JSON.stringify(["/", "/community", "/changelog", "/status", "/docs", "/docs/faq", "/topics", "/topics/faq"]));
+  writeFileSync(join(dir, "routes.json"), JSON.stringify(["/", "/community", "/changelog", "/status", "/docs", "/docs/faq"]));
   writeFileSync(join(dir, "assets", "index-abc.js"), "console.log(1)");
   writeFileSync(join(dir, "fonts", "inter.woff2"), "x");
   writeFileSync(join(dir, "changelog.xml"), "<feed/>");
@@ -71,17 +71,26 @@ describe("website routing", () => {
     expect(r.headers.get("content-security-policy")).toBe(SITE_CSP);
     expect(await r.text()).toContain('content="{&quot;marketing&quot;:&quot;papercliped.co&quot;,&quot;docs&quot;:&quot;docs.papercliped.co&quot;}"');
     const d = await get(base, "/docs/faq?x=1", "papercliped.co");
-    expect([d.status, d.headers.get("location")]).toEqual([301, "https://docs.papercliped.co/topics/faq?x=1"]);
-    expect((await get(base, "/docs", "papercliped.co")).headers.get("location")).toBe("https://docs.papercliped.co/topics");
+    expect([d.status, d.headers.get("location")]).toEqual([301, "https://docs.papercliped.co/faq?x=1"]);
+    expect((await get(base, "/docs", "papercliped.co")).headers.get("location")).toBe("https://docs.papercliped.co/");
+    expect((await get(base, "/topics/faq", "papercliped.co")).headers.get("location")).toBe("https://docs.papercliped.co/faq");
   });
   it("www redirects to the apex, keeping the path and query", async () => {
     const r = await get(base, "/changelog?a=b", "www.papercliped.co");
     expect([r.status, r.headers.get("location")]).toEqual([301, "https://papercliped.co/changelog?a=b"]);
   });
-  it("docs host: / and /docs/* go to /topics; /topics/* render; other pages go to the marketing host", async () => {
-    expect((await get(base, "/", "docs.papercliped.co")).headers.get("location")).toBe("/topics");
-    expect((await get(base, "/docs/faq", "docs.papercliped.co")).headers.get("location")).toBe("/topics/faq");
-    expect((await get(base, "/topics/faq", "docs.papercliped.co")).status).toBe(200);
+  it("docs host: the landing at /, each page at /<page>; old /docs and /topics links redirect; other pages go to the marketing host", async () => {
+    const home = await get(base, "/", "docs.papercliped.co");
+    expect(home.status).toBe(200);
+    expect(home.headers.get("content-security-policy")).toBe(SITE_CSP);
+    expect((await get(base, "/faq", "docs.papercliped.co")).status).toBe(200);
+    expect((await get(base, "/faq/", "docs.papercliped.co")).status).toBe(200);
+    expect((await get(base, "/docs/faq?x=1", "docs.papercliped.co")).headers.get("location")).toBe("/faq?x=1");
+    expect((await get(base, "/topics/faq", "docs.papercliped.co")).headers.get("location")).toBe("/faq");
+    expect((await get(base, "/topics", "docs.papercliped.co")).headers.get("location")).toBe("/");
+    expect((await get(base, "/docs", "docs.papercliped.co")).headers.get("location")).toBe("/");
+    expect((await get(base, "/not-a-page", "docs.papercliped.co")).status).toBe(404);
+    expect((await get(base, "/assets/index-abc.js", "docs.papercliped.co")).status).toBe(200);
     expect((await get(base, "/community", "docs.papercliped.co")).headers.get("location")).toBe("https://papercliped.co/community");
   });
   it("api and forum hosts", async () => {

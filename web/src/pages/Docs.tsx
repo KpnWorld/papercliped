@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { APP_PATH, AppLink } from "../components/AppLink";
+import { AppLink, isAppPath } from "../components/AppLink";
 import { isExternal, resolveHref } from "../lib/hosts";
 import { cx } from "../components/cx";
+import { CodeBlock } from "../components/CodeBlock";
 import { Icon } from "../components/Icons";
+import { SearchButton } from "../components/Search";
 import { useDismiss } from "../components/useDismiss";
 import { DOCS_GROUPS, editUrl, sectionOf, sourceUrl } from "../content/docs-nav";
 import { allDocs, getDoc, neighbours, sections, type Doc } from "../lib/docs";
 import { NotFound } from "./Placeholder";
 import { usePageTitle } from "./usePageTitle";
+
+const MCP_URL = "https://mcp.papercliped.co/mcp";
 
 
 function Sidebar({ current, onNavigate }: { current?: string; onNavigate?: () => void }) {
@@ -178,25 +182,62 @@ export function DocsShell({ current, children, aside }: { current?: string; chil
   );
 }
 
+const START: { slug: string; icon: "rocket" | "plug" | "book" | "code"; blurb: string }[] = [
+  { slug: "getting-started", icon: "rocket", blurb: "Connect Claude to your Paperclip in about a minute." },
+  { slug: "other-ai-apps", icon: "plug", blurb: "ChatGPT, Claude Code and any app that speaks MCP." },
+  { slug: "paperclip-plugin", icon: "book", blurb: "Manage apps, levels and your account inside Paperclip." },
+  { slug: "tools", icon: "code", blurb: "Every tool the AI gets, and the level it needs." },
+];
+
+/** The docs landing: search, the four places most people start, then every topic. */
 export function DocsIndex() {
   usePageTitle("Docs");
   return (
     <DocsShell>
-      <DocHeader crumbs={[{ label: "Docs" }]} title="Docs" tag={`${allDocs().length} topics`}>
-        <p className="mt-4 max-w-2xl text-lg text-muted">Connect your AI app to Paperclip, choose what it may do, and run Papercliped yourself. Press <kbd className="rounded-md border border-line bg-surface px-1.5 text-sm">Ctrl K</kbd> to search.</p>
-      </DocHeader>
+      <section aria-labelledby="docs-h" className="border-b border-line pb-10">
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted">Documentation</p>
+        <h1 id="docs-h" className="mt-3 text-4xl font-bold tracking-tighter sm:text-5xl">Papercliped docs</h1>
+        <p className="mt-4 max-w-2xl text-lg text-muted">Connect your AI app to your Paperclip, choose what it may do, and manage everything from inside Paperclip. {allDocs().length} topics, all searchable.</p>
+        <SearchButton label="Search the docs" className="mt-6 h-12 w-full max-w-xl px-5 text-base" />
+        <CodeBlock label="Connector address for Claude, ChatGPT and MCP apps" code={MCP_URL} className="mt-6 max-w-xl" />
+      </section>
+
+      <section aria-labelledby="start-h" className="mt-10">
+        <h2 id="start-h" className="text-2xl font-bold">Start here</h2>
+        <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+          {START.map(({ slug, icon, blurb }) => {
+            const d = getDoc(slug);
+            if (!d) return null;
+            return (
+              <li key={slug}>
+                <AppLink to={`/docs/${slug}`} className="group flex h-full gap-4 rounded-2xl border border-line p-5 transition-[transform,border-color,background-color] duration-150 hover:-translate-y-0.5 hover:border-field hover:bg-surface">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line bg-surface text-ink"><Icon name={icon} size={18} /></span>
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-1.5 font-semibold">{d.title}<Icon name="chevron" size={15} className="text-muted transition-transform group-hover:translate-x-0.5" /></span>
+                    <span className="mt-1 block text-sm text-muted">{blurb}</span>
+                  </span>
+                </AppLink>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
       {DOCS_GROUPS.flatMap((g) => g.sections).map(({ title, icon }) => {
         const s = sections().find((x) => x.title === title);
         if (!s) return null;
         return (
           <section key={s.title} aria-labelledby={`sec-${s.title}`} className="mt-10">
-            <h2 id={`sec-${s.title}`} className="flex items-center gap-2 text-2xl font-bold"><Icon name={icon} size={20} className="text-muted" />{s.title} <span className="text-base font-medium text-muted">({s.docs.length})</span></h2>
-            <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+            <h2 id={`sec-${s.title}`} className="flex items-center gap-2 text-xl font-bold"><Icon name={icon} size={18} className="text-muted" />{s.title} <span className="text-base font-medium text-muted">({s.docs.length})</span></h2>
+            <ul className="mt-3 divide-y divide-line rounded-2xl border border-line">
               {s.docs.map((d) => (
                 <li key={d.slug}>
-                  <AppLink to={`/docs/${d.slug}`} className="group flex h-full flex-col rounded-2xl border border-line p-4 transition-[transform,border-color,background-color] duration-150 hover:-translate-y-0.5 hover:border-field hover:bg-surface">
-                    <span className="flex items-center justify-between gap-2 font-semibold">{d.title}<Icon name="chevron" size={15} className="text-muted transition-transform group-hover:translate-x-0.5" /></span>
-                    <span className="mt-1 line-clamp-2 block text-sm text-muted">{d.description}</span>
+                  <AppLink to={`/docs/${d.slug}`} className="group flex items-center gap-4 px-4 py-3 transition-colors first:rounded-t-2xl last:rounded-b-2xl hover:bg-surface">
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium">{d.title}</span>
+                      <span className="line-clamp-1 block text-sm text-muted">{d.description}</span>
+                    </span>
+                    <Icon name="chevron" size={15} className="shrink-0 text-muted transition-transform group-hover:translate-x-0.5" />
                   </AppLink>
                 </li>
               ))}
@@ -204,6 +245,15 @@ export function DocsIndex() {
           </section>
         );
       })}
+
+      <section aria-label="Help" className="mt-12 grid gap-3 sm:grid-cols-3">
+        {[{ to: "/docs/troubleshooting", t: "Troubleshooting", d: "Fixes for the common problems." }, { to: "/docs/faq", t: "FAQ", d: "Short answers to common questions." }, { to: "/community", t: "Ask the community", d: "Suggest features, report bugs." }].map((x) => (
+          <AppLink key={x.t} to={x.to} className="rounded-2xl bg-surface p-4 transition-transform duration-150 hover:-translate-y-0.5">
+            <span className="block font-semibold">{x.t}</span>
+            <span className="block text-sm text-muted">{x.d}</span>
+          </AppLink>
+        ))}
+      </section>
     </DocsShell>
   );
 }
@@ -264,7 +314,7 @@ export function DocPage() {
       }
       return;
     }
-    if (APP_PATH.test(target.split("#")[0])) {
+    if (isAppPath(target.split("#")[0])) {
       e.preventDefault();
       nav(target);
     }

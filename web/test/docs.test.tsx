@@ -44,9 +44,12 @@ describe("docs content", () => {
 });
 
 describe("docs pages", () => {
-  it("index lists sections with counts", () => {
+  it("the docs landing has search, the start-here cards and every section with counts", () => {
     at("/docs");
-    expect(screen.getByRole("heading", { level: 1, name: "Docs" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Papercliped docs" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Search the docs/ })).toBeInTheDocument();
+    const start = screen.getByRole("heading", { name: "Start here" }).parentElement!;
+    expect(within(start).getAllByRole("link")).toHaveLength(4);
     expect(screen.getByRole("heading", { name: /Reference \(7\)/ })).toBeInTheDocument();
   });
   it("a topic page has breadcrumb, title, contents, edit link and prev/next", () => {

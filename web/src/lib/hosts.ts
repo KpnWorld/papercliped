@@ -3,7 +3,8 @@
  * {"marketing":"papercliped.co","docs":"docs.papercliped.co"}); without it, every page is on the current host.
  *
  * Code always uses the canonical paths ("/docs/permissions", "/community"); resolveHref turns them into the right URL:
- * relative on the same host, absolute when the page lives on another one. On the docs host, docs live at /topics/…
+ * relative on the same host, absolute when the page lives on another one. On the docs host, the docs landing is / and each
+ * page is /<page> (docs.papercliped.co/permissions).
  */
 export interface Hosts {
   marketing?: string;
@@ -44,7 +45,7 @@ export function resolveHref(href: string): string {
   if (isDocsPath(path)) {
     const rest = docsRest(path);
     if (h.docs) {
-      const local = `/topics${rest ? `/${rest}` : ""}${frag}`;
+      const local = `/${rest}${frag}`;
       return here() === h.docs ? local : `https://${h.docs}${local}`;
     }
     return `/docs${rest ? `/${rest}` : ""}${frag}`;
@@ -55,3 +56,10 @@ export function resolveHref(href: string): string {
 }
 
 export const isExternal = (href: string) => /^(https?:|mailto:)/.test(href);
+
+/** On the docs host, which doc a path shows: "" for the landing, the slug for /<slug>, null for anything else. */
+export function docsHostSlug(path: string): string | null {
+  if (!onDocsHost()) return null;
+  const m = /^\/([a-z0-9-]*)$/.exec(path.replace(/\/+$/, "") || "/");
+  return m ? m[1] : null;
+}

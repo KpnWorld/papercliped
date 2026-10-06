@@ -3,7 +3,7 @@
 Current as of v2.0.0 (read from the route code). Items marked **(planned v3)** do not exist yet. `{{URL}}` is the bridge's public address (today `https://papercliped.co`).
 
 ## 0. Hosts
-One service, routed by host (`PUBLIC_HOSTS`, `src/web/`): `papercliped.co` the website, `docs.papercliped.co` the docs at `/topics/<page>`, `mcp.`/`api.papercliped.co` the protocol and APIs, `forum.` a redirect, `www.` a redirect to the apex. See `docs/DOMAINS.md`. Below, docs paths are shown as `/docs/<page>`; on the docs host they are `/topics/<page>`.
+One service, routed by host (`PUBLIC_HOSTS`, `src/web/`): `papercliped.co` the website, `docs.papercliped.co` the docs (landing at `/`, pages at `/<page>`), `mcp.`/`api.papercliped.co` the protocol and APIs, `forum.` a redirect, `www.` a redirect to the apex. See `docs/DOMAINS.md`. Below, docs paths are shown as `/docs/<page>`; on the docs host they are `/<page>`.
 
 ## 1. Public website (React, `web/`; the bridge's Markdown pages in `src/site/` are the fallback)
 | Path | Page |

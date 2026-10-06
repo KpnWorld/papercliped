@@ -6,7 +6,7 @@ One bridge service answers every host; it routes by the `Host` header. Nothing h
 | --- | --- |
 | `papercliped.co` | The website (landing, status, changelog, community, brand, privacy, terms) and every API |
 | `www.papercliped.co` | Redirects to `papercliped.co` (same path) |
-| `docs.papercliped.co` | The docs at `/topics` and `/topics/<page>`; `/` and old `/docs/...` paths redirect there |
+| `docs.papercliped.co` | The docs: the landing at `/` and each page at `/<page>` (e.g. `/permissions`); old `/docs/...` and `/topics/...` links redirect there |
 | `mcp.papercliped.co` | **Where AI apps connect** (`/mcp`, the OAuth issuer), ChatGPT Actions and `/openapi.json`; web pages redirect to `papercliped.co` |
 | `api.papercliped.co` | `/api/public/v1/*` and `/openapi.json`; web pages redirect to `papercliped.co` |
 | `forum.papercliped.co` | Redirects to the forum (`FORUM_URL`; GitHub Discussions to start, see `docs/COMMUNITY.md`) |
@@ -52,8 +52,8 @@ Connector URL: **`https://mcp.papercliped.co/mcp`** (ChatGPT Actions: `https://m
 ## 5. Check
 ```
 curl -sI https://www.papercliped.co/status         # 301 → https://papercliped.co/status
-curl -sI https://docs.papercliped.co/              # 301 → /topics
-curl -sI https://papercliped.co/docs/permissions   # 301 → https://docs.papercliped.co/topics/permissions
+curl -sI https://docs.papercliped.co/              # 200 (the docs landing)
+curl -sI https://papercliped.co/docs/permissions   # 301 → https://docs.papercliped.co/permissions
 curl -s  https://api.papercliped.co/api/public/v1/status
 curl -s  https://mcp.papercliped.co/.well-known/oauth-authorization-server | head -c 200   # issuer: https://mcp.papercliped.co
 curl -sI https://forum.papercliped.co/             # 302 → the forum

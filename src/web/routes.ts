@@ -24,7 +24,8 @@ const HEADERS = { "X-Content-Type-Options": "nosniff", "Referrer-Policy": "stric
 /**
  * Serves the React website and does the host routing:
  *   marketing host  → the site; /docs/* moves to the docs host when there is one
- *   docs host       → /topics/* (docs); / and /docs/* redirect there; other pages go to the marketing host
+ *   docs host       → the docs landing at / and each page at /<page>; old /docs/* and /topics/* links redirect there;
+ *                     other pages go to the marketing host
  *   api host        → protocol endpoints only (handled elsewhere); pages redirect to the marketing host
  *   forum host      → redirects to the forum
  * Hosts not in PUBLIC_HOSTS (and a bridge with no PUBLIC_HOSTS) get the whole site, as before.
@@ -32,10 +33,13 @@ const HEADERS = { "X-Content-Type-Options": "nosniff", "Referrer-Policy": "stric
 export class WebAppRoutes {
   private index: string;
   private routes: Set<string>;
+  /** Doc page slugs ("permissions", "faq"…), from the /docs/<slug> entries in routes.json. */
+  private docSlugs: Set<string>;
 
   constructor(private o: WebAppOptions) {
     this.index = readFileSync(join(o.dir, "index.html"), "utf8");
     this.routes = new Set(JSON.parse(readFileSync(join(o.dir, "routes.json"), "utf8")) as string[]);
+    this.docSlugs = new Set([...this.routes].filter((r) => r.startsWith("/docs/")).map((r) => r.slice("/docs/".length)));
   }
 
   /** Finds web/dist next to the package, or WEB_DIST. Null when the website isn't built (then the bridge's own pages are used). */
@@ -111,11 +115,12 @@ export class WebAppRoutes {
     if (role === "marketing" && mk && host !== mk) return this.redirect(res, `https://${mk}${raw}${q}`); // www → apex
 
     if (role === "docs") {
-      if (path === "/" || /^\/docs(\/|$)/.test(path)) return this.redirect(res, `/topics${docsRest ? `/${docsRest}` : ""}${q}`);
-      if (!isDocs && this.routes.has(path) && mk) return this.redirect(res, `https://${mk}${path}${q}`);
+      if (isDocs) return this.redirect(res, `/${docsRest}${q}`); // old /docs/x and /topics/x links
+      if (path === "/" || this.docSlugs.has(path.slice(1))) return this.shell(res, 200, head);
+      if (this.routes.has(path) && mk) return this.redirect(res, `https://${mk}${path}${q}`);
     } else if (isDocs) {
-      // Marketing (or unlisted) host: docs move to the docs host when there is one; /topics is the docs host's spelling.
-      if (docs) return this.redirect(res, `https://${docs}/topics${docsRest ? `/${docsRest}` : ""}${q}`);
+      // Marketing (or unlisted) host: docs move to the docs host when there is one. /topics is an old spelling.
+      if (docs) return this.redirect(res, `https://${docs}/${docsRest}${q}`);
       if (/^\/topics(\/|$)/.test(path)) return this.redirect(res, `/docs${docsRest ? `/${docsRest}` : ""}${q}`);
     }
 

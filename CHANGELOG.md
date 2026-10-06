@@ -26,6 +26,8 @@
 
 - **Managing your account moved into Paperclip.** The Papercliped plugin is now the connection manager: link it with your username and secret key (checked once, not stored), then change levels, disconnect apps, switch anonymity, see and remove linked Paperclips, make a new secret key (this Paperclip stays linked), disconnect your Paperclip or delete your account. The `/manage` web page, its cookie sign-in, one-time link codes and the beta opt-in are gone (`/manage` now points to the plugin docs); the manage API accepts plugin tokens only.
 
+- **Docs live at `docs.papercliped.co/<page>`** (for example `docs.papercliped.co/permissions`), with a real docs landing at `docs.papercliped.co/`: search, the connector address, four start-here cards and every topic. Old `/topics/...` and `papercliped.co/docs/...` links redirect.
+
 ## v2.0.0 — stable open-source build
 
 Papercliped v2 is the free, open-source foundation: the bridge, the connector for Claude and any MCP app, and the Paperclip plugin. Paid features (managed subdomains, pricing, legal) are planned for v3 (`docs/V3-SUBDOMAINS.md`).

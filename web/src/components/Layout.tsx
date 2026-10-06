@@ -7,6 +7,7 @@ import { Mascot } from "./Mascot";
 import { Icon } from "./Icons";
 import { useDismiss } from "./useDismiss";
 import { SearchButton, SearchHost, SearchIconButton } from "./Search";
+import { onDocsHost } from "../lib/hosts";
 import { compact, useRepoStars } from "../lib/useRepo";
 import { Badge } from "./ui";
 
@@ -180,11 +181,11 @@ function DocsHeader() {
   );
 }
 
-export const isDocsPath = (p: string) => /^\/(docs|topics|changelog)(\/|$)/.test(p);
+export const isDocsPath = (p: string) => /^\/(docs|changelog)(\/|$)/.test(p);
 
 export function Header() {
   const loc = useLocation();
-  return isDocsPath(loc.pathname) ? <DocsHeader /> : <SiteHeader />;
+  return onDocsHost() || isDocsPath(loc.pathname) ? <DocsHeader /> : <SiteHeader />;
 }
 
 const FOOTER: { title: string; links: { to: string; label: string }[] }[] = [
