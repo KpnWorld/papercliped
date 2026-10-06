@@ -10,5 +10,6 @@ export default defineConfig({
     modulePreload: { polyfill: false }, // no injected inline helper
     sourcemap: false,
   },
+  server: { fs: { allow: [".."] } }, // CHANGELOG.md, site/*.md and the shared Markdown renderer live in the repo root
   preview: { headers: { "Content-Security-Policy": SITE_CSP, "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin" } },
 });

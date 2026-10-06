@@ -16,12 +16,13 @@ function useReducedMotion() {
  * The smiling paperclip. Its eyes follow the pointer and it blinks now and then; with reduced motion it stays still.
  * Colours come from the theme tokens, so it matches every palette.
  */
-export function Mascot({ size = 64, title = "Papercliped mascot", interactive = true, className }: { size?: number; title?: string; interactive?: boolean; className?: string }) {
+export function Mascot({ size = 64, title = "Papercliped mascot", interactive = true, className, hopOnClick = false }: { size?: number; title?: string; interactive?: boolean; className?: string; hopOnClick?: boolean }) {
   const ref = useRef<SVGSVGElement>(null);
   const reduced = useReducedMotion();
   const live = interactive && !reduced;
   const [look, setLook] = useState({ x: 0, y: 0 });
   const [blink, setBlink] = useState(false);
+  const [hop, setHop] = useState(0);
 
   useEffect(() => {
     if (!live) return setLook({ x: 0, y: 0 });
@@ -59,7 +60,8 @@ export function Mascot({ size = 64, title = "Papercliped mascot", interactive = 
     </g>
   );
   return (
-    <svg ref={ref} {...(title ? { role: "img", "aria-label": title } : { "aria-hidden": true })} viewBox="0 0 64 64" width={size} height={size} className={className} data-blink={blink || undefined}>
+    <svg ref={ref} key={hop} {...(title ? { role: "img", "aria-label": title } : { "aria-hidden": true })} viewBox="0 0 64 64" width={size} height={size} className={[className, hop && live ? "animate-hop" : ""].filter(Boolean).join(" ") || undefined} data-blink={blink || undefined}
+      onClick={hopOnClick ? () => setHop((h) => h + 1) : undefined}>
       <rect width="64" height="64" rx="16" fill="var(--surface)" stroke="var(--line)" />
       <path d="M22 38V19a10 10 0 0 1 20 0v24a14 14 0 0 1-28 0V24" fill="none" stroke="var(--accent)" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
       {eye(26.5)}

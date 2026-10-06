@@ -31,6 +31,10 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 const problems = [];
 try {
   const ctx = await browser.newContext();
+  // The bridge serves the stats API; the static preview doesn't, so answer it here with a fixture.
+  await ctx.route("**/api/public/**", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ users: 42, connections: 7 }) }));
+  const phone = await browser.newContext({ viewport: { width: 375, height: 800 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  await phone.route("**/api/public/**", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ users: 42, connections: 7 }) }));
   for (const route of ROUTES) {
     const page = await ctx.newPage();
     const errs = [];
@@ -44,6 +48,17 @@ try {
     if (h1 !== 1) errs.push(`expected one <h1>, found ${h1}`);
     const theme = await page.evaluate(() => document.documentElement.dataset.theme);
     if (!THEMES.includes(theme)) errs.push(`no theme applied before render (data-theme=${theme})`);
+    // Mobile: nothing may scroll sideways on a 375px-wide phone.
+    const mp = await phone.newPage();
+    mp.on("pageerror", (e) => errs.push(`mobile pageerror: ${e.message}`));
+    await mp.goto(base + route, { waitUntil: "networkidle" });
+    const overflow = await mp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    if (overflow > 0) {
+      const wide = await mp.evaluate(() => [...document.querySelectorAll("body *")].filter((el) => el.getBoundingClientRect().right > window.innerWidth + 1).slice(0, 3).map((el) => `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 60)}`));
+      errs.push(`mobile: page is ${overflow}px wider than a 375px screen (${wide.join(", ")})`);
+    }
+    if (shotsDir) { mkdirSync(shotsDir, { recursive: true }); await mp.screenshot({ path: join(shotsDir, `mobile${route === "/" ? "-home" : route.replace(/\//g, "-")}.png`), fullPage: true }); }
+    await mp.close();
     if (errs.length) problems.push(`${route}\n  - ${errs.join("\n  - ")}`);
     else console.log(`ok ${route} (theme ${theme})`);
     await page.close();
@@ -55,6 +70,7 @@ try {
       const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: mode });
       await c.addInitScript(([t, m]) => { localStorage.setItem("pcl.theme", t); localStorage.setItem("pcl.mode", m); }, [theme, mode]);
       const p = await c.newPage();
+      await c.route("**/api/public/**", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ users: 42, connections: 7 }) }));
       await p.goto(`${base}/kit`, { waitUntil: "networkidle" });
       await p.screenshot({ path: join(shotsDir, `kit-${theme}-${mode}.png`) });
       await p.goto(`${base}/`, { waitUntil: "networkidle" });

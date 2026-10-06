@@ -1,4 +1,5 @@
-import { esc } from "../oauth/pages.js";
+// No imports, so the website (web/) can reuse this renderer as is.
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 /**
  * A deliberately small Markdown renderer for the project's own pages (docs, privacy, terms). Everything is HTML-escaped first;

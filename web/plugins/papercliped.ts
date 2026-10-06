@@ -1,6 +1,9 @@
 import { build } from "esbuild";
 import type { Plugin } from "vite";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+
+export const SITE_URL = "https://papercliped.co";
 
 const VIRTUAL = "virtual:themes.css";
 const RESOLVED = "\0virtual:themes.css";
@@ -28,11 +31,13 @@ async function bootScript(root: string): Promise<string> {
   return r.outputFiles[0].text;
 }
 
-/** Compile src/theme/css.ts on the fly (the config runs in plain Node) and return the theme stylesheet. */
+/** Compile one of the site's TS modules on the fly (the config runs in plain Node) and import it. */
+async function compile(root: string, file: string) {
+  const r = await build({ entryPoints: [resolve(root, file)], bundle: true, write: false, format: "esm", platform: "node", loader: { ".json": "json" } });
+  return import(`data:text/javascript;base64,${Buffer.from(r.outputFiles[0].text).toString("base64")}`);
+}
 async function themeStylesheet(root: string): Promise<string> {
-  const r = await build({ entryPoints: [resolve(root, "src/theme/css.ts")], bundle: true, write: false, format: "esm", platform: "node" });
-  const mod = await import(`data:text/javascript;base64,${Buffer.from(r.outputFiles[0].text).toString("base64")}`);
-  return mod.themeCss();
+  return (await compile(root, "src/theme/css.ts")).themeCss();
 }
 
 export function papercliped(): Plugin {
@@ -59,6 +64,14 @@ export function papercliped(): Plugin {
     },
     async generateBundle() {
       this.emitFile({ type: "asset", fileName: BOOT, source: await bootScript(root) });
+      // Changelog feed, sitemap and robots.txt, all generated from the repo at build time.
+      const lib = await compile(root, "src/lib/changelog.ts");
+      const md = readFileSync(resolve(root, "../CHANGELOG.md"), "utf8");
+      const dates = JSON.parse(readFileSync(resolve(root, "src/content/release-dates.json"), "utf8"));
+      this.emitFile({ type: "asset", fileName: "changelog.xml", source: lib.atomFeed(lib.parseChangelog(md, dates), SITE_URL) });
+      const routes: string[] = JSON.parse(/ROUTES = (\[[^\]]*\])/.exec(readFileSync(resolve(root, "src/App.tsx"), "utf8"))![1]).filter((r: string) => !r.startsWith("/kit"));
+      this.emitFile({ type: "asset", fileName: "sitemap.xml", source: `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${routes.map((r) => `  <url><loc>${SITE_URL}${r}</loc></url>`).join("\n")}\n</urlset>\n` });
+      this.emitFile({ type: "asset", fileName: "robots.txt", source: `User-agent: *\nAllow: /\nDisallow: /kit\nDisallow: /__render\nSitemap: ${SITE_URL}/sitemap.xml\n` });
     },
     transformIndexHtml: {
       order: "post",

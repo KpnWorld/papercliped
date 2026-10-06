@@ -1,0 +1,29 @@
+name: Bug report
+description: Something doesn't work as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Thanks for the report. **Never paste secret keys (`pcs_…`), tokens (`pcb_…`) or Paperclip keys.** Security problems go privately to support@papercliped.co."
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did it happen?
+      options: [Hosted service (papercliped.co), Self-hosted bridge, Local (npx / stdio), Paperclip plugin, Website or docs]
+    validations: { required: true }
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      placeholder: Steps to reproduce, then expected vs actual.
+    validations: { required: true }
+  - type: input
+    id: app
+    attributes:
+      label: AI app and version
+      placeholder: e.g. Claude desktop, ChatGPT, Claude Code 2.x
+  - type: input
+    id: version
+    attributes:
+      label: Papercliped version
+      placeholder: shown in the site footer, or `npm ls papercliped`

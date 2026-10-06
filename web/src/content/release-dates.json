@@ -1,0 +1,8 @@
+{
+  "_source": "Dates of the commits that introduced each version, from `git log` (UTC). Add a line when you release.",
+  "v1.0.0-beta.1": "2026-10-05",
+  "v1.1.0-beta.1": "2026-10-06",
+  "v1.1.0-beta.2": "2026-10-06",
+  "v1.2.0-beta.1": "2026-10-06",
+  "v2.0.0": "2026-10-06"
+}
