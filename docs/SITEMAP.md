@@ -1,6 +1,6 @@
 # Site map: every page and endpoint
 
-Current as of v1.2.0-beta.1 (read from the route code). Items marked **(planned v2)** do not exist yet. `{{URL}}` is the bridge's public address (today `https://papercliped.kpnsolute.com`).
+Current as of v2.0.0 (read from the route code). Items marked **(planned v3)** do not exist yet. `{{URL}}` is the bridge's public address (today `https://papercliped.co`).
 
 ## 1. Public website (bridge, no sign-in) — `src/site/`
 | Path | Page |
@@ -15,14 +15,15 @@ Current as of v1.2.0-beta.1 (read from the route code). Items marked **(planned 
 | `/docs/permissions` | Permissions |
 | `/docs/anonymous-mode` | Anonymous mode |
 | `/docs/security` | Security |
+| `/docs/other-ai-apps` | Any AI app (MCP) |
 | `/docs/chatgpt` | ChatGPT setup |
 | `/docs/troubleshooting` | Troubleshooting |
 | `/privacy` | Privacy policy |
 | `/terms` | Terms of service |
 | `/favicon.svg`, `/favicon.ico` | Favicon |
 | `/api/public/stats` | JSON: user and connection counts only |
-| `/domain` **(planned v2)** | Get a public address: guide, own domain, or the paid managed subdomain |
-| `/docs/subdomain-terms` **(planned v2)** | Subdomain Terms (drafted separately) |
+| `/domain` **(planned v3)** | Get a public address: guide, own domain, or the paid managed subdomain |
+| `/docs/subdomain-terms` **(planned v3)** | Subdomain Terms (drafted separately) |
 
 ## 2. Sign-in and consent (OAuth screens, shown inside Claude/ChatGPT flows) — `src/oauth/`
 | Path | Purpose |
@@ -30,14 +31,14 @@ Current as of v1.2.0-beta.1 (read from the route code). Items marked **(planned 
 | `GET /authorize` | Start: sign in with username and secret key, or connect your Paperclip |
 | `GET /authorize/status` | Polling while the user approves in Paperclip |
 | `POST /authorize/login`, `/connect`, `/instance`, `/approved`, `/username`, `/welcome`, `/continue`, `/decision` | The steps of the screens above (login, enter address, approve, pick username, secret key shown once, consent: Read only / Full control, Appear anonymously, Join the beta) |
-| `/authorize` link "No public address?" **(planned v2)** | Links to `/domain` |
+| `/authorize` link "No public address?" **(planned v3)** | Links to `/domain` |
 
 ## 3. Account area (cookie session) — `src/manage/`
 | Path | Purpose |
 | --- | --- |
 | `GET /manage` | Connection manager (beta, later also pro): sign in, connected apps, level, disconnect, privacy, Paperclip plugin links, security actions |
 | `/api/manage/*` | JSON API behind it: `login`, `logout`, `me`, `beta`, `connections`, `connections/:id`, `privacy`, `plugin-link`, `plugin-link/exchange`, `plugin-links`, `plugin-links/:id`, `secret/rotate`, `paperclip/disconnect`, `account/delete`. A plugin token (`Authorization: Bearer pcb_pl_…`) may use only the non-sensitive subset |
-| Domain section of `/manage` **(planned v2)** | Pro members: address, tunnel status, token, port, release |
+| Domain section of `/manage` **(planned v3)** | Pro members: address, tunnel status, token, port, release |
 
 ## 4. AI client endpoints
 | Path | Purpose |
@@ -65,5 +66,5 @@ Current as of v1.2.0-beta.1 (read from the route code). Items marked **(planned 
 
 ## 7. Not web pages
 - **Paperclip plugin** (`plugin/`, runs inside Paperclip): sidebar entry "Papercliped" and page at `/<company>/papercliped`.
-- **Home-server provisioner** **(planned v2)**: no pages; polls the bridge's job queue.
-- **Repo docs** (`docs/`, not served): ARCHITECTURE, SECURITY, LAUNCH, DEPLOY-RENDER, RELEASING, SITEMAP, V2-SUBDOMAINS, oauth, chatgpt, legal templates, SQL files.
+- **Home-server provisioner** **(planned v3)**: no pages; polls the bridge's job queue.
+- **Repo docs** (`docs/`, not served): ARCHITECTURE, SECURITY, LAUNCH, DEPLOY-RENDER, RELEASING, SITEMAP, V3-SUBDOMAINS, oauth, chatgpt, legal templates, SQL files.

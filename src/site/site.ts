@@ -8,7 +8,7 @@ import { LANDING_CSS, LANDING_SCRIPT, landingBody } from "./landing.js";
 import { renderMarkdown } from "./markdown.js";
 
 export interface SiteOptions {
-  /** Public origin, e.g. https://papercliped.kpnsolute.com */
+  /** Public origin, e.g. https://papercliped.co */
   url: string;
   /** Where people reach the operator (privacy requests, vulnerability reports). */
   contact: string;
@@ -29,6 +29,7 @@ const NAV: { slug: string; title: string }[] = [
   { slug: "permissions", title: "Permissions" },
   { slug: "anonymous-mode", title: "Anonymous mode" },
   { slug: "security", title: "Security" },
+  { slug: "other-ai-apps", title: "Any AI app (MCP)" },
   { slug: "chatgpt", title: "ChatGPT setup" },
   { slug: "troubleshooting", title: "Troubleshooting" },
 ];
@@ -82,7 +83,7 @@ export class SiteRoutes {
 
   private layout(title: string, body: string, current: string, script?: { nonce: string; code: string; css: string }): string {
     const nav = `<nav aria-label="Main"><a href="/docs/getting-started"${current.startsWith("/docs") ? " aria-current=page" : ""}>Docs</a><a href="/privacy"${current === "/privacy" ? " aria-current=page" : ""}>Privacy</a><a href="/terms"${current === "/terms" ? " aria-current=page" : ""}>Terms</a><a href="https://github.com/OpenSourcx/papercliped" rel="noopener noreferrer">GitHub</a></nav>`;
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(title)} · Papercliped</title>${FAVICON_LINK}<meta name="description" content="Connect Claude and ChatGPT to your Paperclip: control agents, sync and get reports, with permissions you choose."><style>${CSS}${script?.css ?? ""}</style></head><body><header><a class="brand" href="/">${CLIP}<span>Papercliped</span></a>${nav}</header>${body}<footer>Papercliped ${esc(VERSION)} (beta) · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/docs/security">Security</a></footer>${script ? `<script nonce="${script.nonce}">${script.code}</script>` : ""}</body></html>`;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(title)} · Papercliped</title>${FAVICON_LINK}<meta name="description" content="Connect Claude and ChatGPT to your Paperclip: control agents, sync and get reports, with permissions you choose."><style>${CSS}${script?.css ?? ""}</style></head><body><header><a class="brand" href="/">${CLIP}<span>Papercliped</span></a>${nav}</header>${body}<footer>Papercliped ${esc(VERSION)} · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/docs/security">Security</a></footer>${script ? `<script nonce="${script.nonce}">${script.code}</script>` : ""}</body></html>`;
   }
 
   private doc(path: string): string {

@@ -1,6 +1,6 @@
 /** Pure client for the Papercliped bridge's manage API. No Paperclip SDK imports, so it is easy to test against a fake bridge. */
 
-export const DEFAULT_BRIDGE_URL = "https://papercliped.kpnsolute.com";
+export const DEFAULT_BRIDGE_URL = "https://papercliped.co";
 
 export class BridgeError extends Error {
   constructor(message: string, readonly status: number) {

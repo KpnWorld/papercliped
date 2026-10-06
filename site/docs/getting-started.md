@@ -22,9 +22,15 @@ Or install the plugin: `/plugin marketplace add OpenSourcx/papercliped`, then `/
 
 ## Run it yourself (npm)
 ```
-npx papercliped@beta
+npx papercliped@latest
 ```
 This starts a local server for one Paperclip, using `PAPERCLIP_API_URL` and `PAPERCLIP_API_KEY`.
+
+## Other AI apps
+Any app that supports MCP can use Papercliped. See [Any AI app (MCP)](/docs/other-ai-apps).
+
+## Inside your Paperclip (beta)
+The Papercliped plugin for Paperclip adds a page where you link your account and manage connected apps. See [Paperclip plugin](/docs/paperclip-plugin).
 
 ## ChatGPT
 Papercliped publishes an OpenAPI description at `{{URL}}/openapi.json` for GPT Actions. See [ChatGPT setup](/docs/chatgpt).

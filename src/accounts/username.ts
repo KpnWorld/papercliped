@@ -18,7 +18,7 @@ const STARTS_OK = /^[A-Za-z0-9]/;
 const HAS_NUMBER_OR_SYMBOL = /[0-9._#]/;
 
 /** Compared against the letters-only form of a name, so "admin.1" and "root_9" are caught too. */
-const RESERVED = new Set(["admin", "administrator", "root", "system", "support", "staff", "official", "moderator", "papercliped", "paperclip", "cliped", "kpnworld", "kpnsolute", "anthropic", "claude", "openai", "chatgpt"]);
+const RESERVED = new Set(["admin", "administrator", "root", "system", "support", "staff", "official", "moderator", "papercliped", "paperclip", "cliped", "kpnworld", "anthropic", "claude", "openai", "chatgpt"]);
 
 export type UsernameCheck = { ok: true; username: string; key: string } | { ok: false; reason: string };
 

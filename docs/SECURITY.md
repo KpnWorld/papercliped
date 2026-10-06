@@ -73,4 +73,4 @@ Email **[SECURITY CONTACT — set before launch]** with details; please don't op
 - The plugin has not been run in a live Paperclip; see `plugin/README.md`.
 
 ## Planned (v2): managed subdomains
-See `docs/V2-SUBDOMAINS.md` §7a for the hardening list and the threats to add here when it is built.
+See `docs/V3-SUBDOMAINS.md` §7a for the hardening list and the threats to add here when it is built.

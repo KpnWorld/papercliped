@@ -1,4 +1,4 @@
-# Launch guide — Papercliped v1.0.0-beta.1
+# Launch guide — Papercliped v2
 
 Everything here costs **$0/month** (Render free, Supabase free, Cloudflare free). Do the steps in order. Nothing in this repo has been run against a live Render, Supabase, claude.ai or ChatGPT yet — treat the first pass as a staging run and finish with the smoke test (§8).
 
@@ -23,7 +23,7 @@ Blueprints are not needed (and the paid features are not used). The repo ships a
 |---|---|
 | `BRIDGE_OAUTH` | `1` |
 | `BRIDGE_MODE` | `multi` |
-| `BRIDGE_PUBLIC_URL` | `https://papercliped.kpnsolute.com` |
+| `BRIDGE_PUBLIC_URL` | `https://papercliped.co` |
 | `BRIDGE_SECRET` | output of `openssl rand -hex 32` — **back it up now**; losing it disconnects every user |
 | `DATABASE_URL` | transaction pooler as `bridge_app` (§1) |
 | `DATABASE_MIGRATE_URL` | session pooler, admin role |
@@ -39,16 +39,42 @@ Blueprints are not needed (and the paid features are not used). The repo ships a
 
 You can test the image anywhere with Docker: `docker build -t papercliped . && docker run --rm -p 10000:10000 -e PORT=10000 -e BRIDGE_TOKEN=$(openssl rand -hex 32) papercliped`.
 
-## 3. Domain: papercliped.kpnsolute.com (Cloudflare)
-1. Render → your service → **Settings → Custom Domains → Add** `papercliped.kpnsolute.com`. Render shows the CNAME target.
-2. Cloudflare → `kpnsolute.com` → **DNS → Add record**: Type `CNAME`, Name `papercliped`, Target `<service>.onrender.com`, **Proxy status: DNS only (grey cloud)** at first.
-3. Back in Render click **Verify**; it issues the TLS certificate (a few minutes). When `https://papercliped.kpnsolute.com/healthz` answers, you may turn the orange cloud on (SSL/TLS mode **Full (strict)**). If you do, set `BRIDGE_PROXY_HOPS=2` (Cloudflare + Render) and re-test sign-in rate limiting.
-4. `BRIDGE_PUBLIC_URL` is the OAuth issuer and is baked into every token. **Set it to the final domain before connecting any client**; changing it later disconnects everyone.
+## 3. Domain: papercliped.co (Cloudflare, free plan)
+The bridge answers at the root of the domain: `https://papercliped.co`.
+
+**A. Put the domain on Cloudflare**
+1. Cloudflare dashboard → **Add a domain** → `papercliped.co` → choose the **Free** plan. Let it import any existing DNS records, then delete ones you don't recognise.
+2. Cloudflare shows two nameservers. At the company you bought the domain from, replace the domain's nameservers with those two. Turn off DNSSEC at the registrar first if it is on (re-enable it from Cloudflare later).
+3. Wait until Cloudflare says the domain is **Active** (minutes to a few hours).
+
+**B. Connect it to Render**
+1. Render → your service → **Settings → Custom Domains → Add** `papercliped.co` (and `www.papercliped.co` if you want it). Render shows the target, `<service>.onrender.com`.
+2. Cloudflare → `papercliped.co` → **DNS → Records → Add record**:
+   - Type `CNAME`, Name `@`, Target `<service>.onrender.com`, **Proxy status: DNS only (grey cloud)**. (Cloudflare allows a CNAME at the root; it flattens it automatically.)
+   - Optional: Type `CNAME`, Name `www`, Target `<service>.onrender.com`, DNS only.
+3. Back in Render click **Verify**. Render issues the TLS certificate (a few minutes). Wait until Render shows the certificate as issued and `https://papercliped.co/healthz` answers.
+4. Cloudflare → **SSL/TLS → Overview**: set encryption mode to **Full (strict)**.
+5. Optional, after the certificate is issued: switch the records to **Proxied (orange cloud)**. If you do, set `BRIDGE_PROXY_HOPS=2` on Render (Cloudflare + Render) and re-test sign-in rate limiting. Grey cloud (DNS only) is fine and simpler.
+
+**C. Don't let Cloudflare block AI apps**
+Claude's and ChatGPT's servers call the bridge directly, so a challenge page breaks them. If the records are proxied:
+- Leave **Bot Fight Mode** off, and don't use "I'm Under Attack" mode.
+- If you add WAF or challenge rules, skip them for `/mcp`, `/actions/*`, `/openapi.json`, `/register`, `/token`, `/revoke`, `/authorize*`, `/.well-known/*`, `/api/manage/*` and `/healthz`, `/readyz`.
+- Don't put Cloudflare Access in front of the bridge.
+
+**D. Contact address (optional, free)**
+Cloudflare → `papercliped.co` → **Email → Email Routing**: create `support@papercliped.co` forwarding to your inbox (Cloudflare adds the needed DNS records). Then set `SITE_CONTACT=support@papercliped.co` on Render.
+
+**E. Point the bridge at the new domain**
+1. Render → Environment: `BRIDGE_PUBLIC_URL=https://papercliped.co`, then redeploy.
+2. `BRIDGE_PUBLIC_URL` is the OAuth issuer and is baked into every token. Changing it disconnects every app that connected under the old address; those users connect again with `https://papercliped.co/mcp`. Set it to the final domain before inviting more users.
+3. Keep-alive worker (§5): `deploy/wrangler.toml` already targets `https://papercliped.co/readyz`; redeploy it with `npx wrangler deploy`.
+4. Paperclip plugin: its default bridge URL is `https://papercliped.co` (instances that changed the setting keep their own value).
 
 ## 4. Check it works
 ```bash
-curl https://papercliped.kpnsolute.com/readyz                      # {"ok":true,...}
-curl https://papercliped.kpnsolute.com/.well-known/oauth-authorization-server | head
+curl https://papercliped.co/readyz                      # {"ok":true,...}
+curl https://papercliped.co/.well-known/oauth-authorization-server | head
 ```
 
 ## 5. Keep it awake (Cloudflare Worker, free)
@@ -59,10 +85,10 @@ cd deploy && npx wrangler login && npx wrangler deploy      # edit TARGET_URL in
 It runs every 5 minutes (cron `*/5 * * * *`) against `/readyz`. Open the worker's URL once to see the last result. Alternative: a free UptimeRobot HTTP monitor on `/readyz` at a 5-minute interval. Free hosting can still have occasional cold starts — the first request after a platform restart may take about a minute.
 
 ## 6. Install paths for users
-- **Claude (claude.ai / Desktop / mobile):** Settings → Connectors → *Add custom connector* → `https://papercliped.kpnsolute.com/mcp`. Claude opens the Papercliped sign-in page.
-- **Claude Code:** `claude mcp add --transport http papercliped https://papercliped.kpnsolute.com/mcp`, or install the plugin: `/plugin marketplace add OpenSourcx/papercliped` then `/plugin install papercliped@papercliped`.
+- **Claude (claude.ai / Desktop / mobile):** Settings → Connectors → *Add custom connector* → `https://papercliped.co/mcp`. Claude opens the Papercliped sign-in page.
+- **Claude Code:** `claude mcp add --transport http papercliped https://papercliped.co/mcp`, or install the plugin: `/plugin marketplace add OpenSourcx/papercliped` then `/plugin install papercliped@papercliped`.
 - **npm / local stdio:** `npx papercliped` with `PAPERCLIP_API_URL` and `PAPERCLIP_API_KEY` set.
-- **ChatGPT:** custom MCP app with the same `/mcp` URL (where your plan offers it), or import `https://papercliped.kpnsolute.com/openapi.json` as a GPT Action (see [chatgpt.md](chatgpt.md)).
+- **ChatGPT:** custom MCP app with the same `/mcp` URL (where your plan offers it), or import `https://papercliped.co/openapi.json` as a GPT Action (see [chatgpt.md](chatgpt.md)).
 
 First sign-in: pick a username (6–32 characters, at least one number or `.` `#` `_`), connect your Paperclip (public https URL; approve in Paperclip), and **save the secret key shown once**. Later: sign in with username + key, or reconnect through Paperclip approval and keep the same account. Tick *Appear anonymously* to be shown as an alias like `Ann02`.
 
@@ -91,7 +117,7 @@ Anonymous users appear as their alias. Operator commands: `npx papercliped-admin
 ## 9. Marketplaces — submit only after the smoke test passes
 Requirements change; confirm each against the current official page before submitting.
 
-**Claude directory (connectors / plugins)** — have ready: public GitHub repo (done), plugin manifest [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json), the remote MCP URL `https://papercliped.kpnsolute.com/mcp`, OAuth callbacks (`https://claude.ai/api/mcp/auth_callback`, Claude Code's localhost loopback), privacy policy and terms (served by the bridge at `https://papercliped.kpnsolute.com/privacy` and `/terms`; set `SITE_CONTACT` to a real contact address), a support contact, tool descriptions with read/write annotations, and a **test account** with a demo Paperclip for reviewers. Submit through Anthropic's connector/plugin submission form linked from the Claude docs. Until listed, users install through the custom-connector or `/plugin marketplace add` paths above.
+**Claude directory (connectors / plugins)** — have ready: public GitHub repo (done), plugin manifest [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json), the remote MCP URL `https://papercliped.co/mcp`, OAuth callbacks (`https://claude.ai/api/mcp/auth_callback`, Claude Code's localhost loopback), privacy policy and terms (served by the bridge at `https://papercliped.co/privacy` and `/terms`; set `SITE_CONTACT` to a real contact address), a support contact, tool descriptions with read/write annotations, and a **test account** with a demo Paperclip for reviewers. Submit through Anthropic's connector/plugin submission form linked from the Claude docs. Until listed, users install through the custom-connector or `/plugin marketplace add` paths above.
 
 **ChatGPT (apps / GPT Store)** — an MCP app needs a public https MCP endpoint with OAuth (you have it), a privacy policy URL, and domain verification in the OpenAI developer dashboard; a GPT with Actions needs the OpenAPI URL and OAuth settings (see [chatgpt.md](chatgpt.md)). Submission details for the apps directory are still moving — follow OpenAI's current "apps SDK / submit your app" guide.
 

@@ -12,7 +12,7 @@ export default {
 };
 
 async function ping(env) {
-  const target = env.TARGET_URL; // e.g. https://papercliped.kpnsolute.com/readyz
+  const target = env.TARGET_URL; // e.g. https://papercliped.co/readyz
   const started = Date.now();
   try {
     const res = await fetch(target, { signal: AbortSignal.timeout(60_000), headers: { "user-agent": "papercliped-keepalive/1" } });

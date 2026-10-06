@@ -7,4 +7,4 @@ crons = ["*/5 * * * *"]
 
 [vars]
 # /readyz checks the database too, so each ping also counts as Supabase activity.
-TARGET_URL = "https://papercliped.kpnsolute.com/readyz"
+TARGET_URL = "https://papercliped.co/readyz"

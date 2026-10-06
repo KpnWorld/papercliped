@@ -7,7 +7,7 @@ Papercliped inside Paperclip: a sidebar entry and page to link your Papercliped 
 ## Install
 From **Settings → Plugins** in Paperclip, install the npm package `papercliped-paperclip-plugin` (instance admin only). Capabilities requested: `plugin.state.read`, `plugin.state.write`, `http.outbound`, `ui.sidebar.register`, `ui.page.register`.
 
-Config: **Papercliped bridge URL** (default `https://papercliped.kpnsolute.com`, must be https).
+Config: **Papercliped bridge URL** (default `https://papercliped.co`, must be https).
 
 ## Use
 1. At your bridge's `/manage` page (beta account) click **Link Paperclip plugin** and copy the one-time code.

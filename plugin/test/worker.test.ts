@@ -10,7 +10,7 @@ describe("manifest", () => {
     expect(manifest).toMatchObject({ apiVersion: 1, categories: ["connector", "ui"], entrypoints: { worker: "dist/worker.js", ui: "dist/ui" } });
     expect([...manifest.capabilities].sort()).toEqual(["http.outbound", "plugin.state.read", "plugin.state.write", "ui.page.register", "ui.sidebar.register"]);
     expect(manifest.ui!.slots!.map((s) => s.type).sort()).toEqual(["page", "sidebar"]);
-    expect((manifest.instanceConfigSchema as any).properties.bridgeUrl.default).toBe("https://papercliped.kpnsolute.com");
+    expect((manifest.instanceConfigSchema as any).properties.bridgeUrl.default).toBe("https://papercliped.co");
   });
 });
 

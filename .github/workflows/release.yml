@@ -40,6 +40,8 @@ jobs:
       - run: npm --prefix plugin run typecheck
       - run: npm --prefix plugin test
       - run: npm --prefix plugin run build
+      - name: Both packages pack and install cleanly
+        run: node scripts/check-packages.mjs
 
       - name: Publish papercliped (pre-releases go to the `beta` tag)
         run: |

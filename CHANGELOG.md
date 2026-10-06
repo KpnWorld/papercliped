@@ -1,8 +1,16 @@
 # Changelog
 
-## Unreleased
+## v2.0.0 — stable open-source build
 
-- Foundation: CodeQL workflow, Dependabot, dependency audit and least-privilege permissions in CI; `CONTRIBUTING.md`; `docs/SITEMAP.md` (every page and endpoint); `docs/V2-SUBDOMAINS.md` (the v2 plan for paid managed subdomains); security doc covers plugin links.
+Papercliped v2 is the free, open-source foundation: the bridge, the connector for Claude and any MCP app, and the Paperclip plugin. Paid features (managed subdomains, pricing, legal) are planned for v3 (`docs/V3-SUBDOMAINS.md`).
+
+- **New home: `https://papercliped.co`.** Every reference to the old domain is gone. The Paperclip plugin's default bridge URL is now `https://papercliped.co`. Operators: set `BRIDGE_PUBLIC_URL=https://papercliped.co`; apps connected under the old address must connect again (the OAuth issuer changed). Cloudflare + Render setup: `docs/LAUNCH.md` §3.
+- **Two plugins, documented side by side:** Papercliped for AI apps (Claude, ChatGPT, any MCP client) and the Papercliped plugin for Paperclip. New docs page: **Any AI app (MCP)**.
+- **Automated npm publishing** through GitHub Actions with npm trusted publishing (OIDC, no token): one tag publishes `papercliped` and `papercliped-paperclip-plugin` and creates the GitHub release (`docs/RELEASING.md`). CI now also packs both packages and installs them as a user would, and a test keeps every version string in step.
+- **Foundation:** CodeQL, Dependabot, dependency audit and read-only permissions in CI; `CONTRIBUTING.md`; `docs/SITEMAP.md` (every page and endpoint); new docs page **Set up your Paperclip** (public address with or without a domain); the security doc covers plugin links.
+- Fixed: the Claude Code install command in the README (`/plugin install papercliped@papercliped`).
+
+Not tested live: the Paperclip plugin has never run inside a real Paperclip, and the release workflow has not run yet (it can only run on GitHub).
 
 ## v1.2.0-beta.1 — Paperclip plugin
 

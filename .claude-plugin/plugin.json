@@ -1,8 +1,15 @@
 {
   "name": "papercliped",
-  "version": "1.0.0-beta.1",
+  "version": "2.0.0",
   "description": "Control Paperclip agents, sync with them, and pull reports from Claude.",
-  "author": { "name": "KpnWorld" },
+  "author": {
+    "name": "KpnWorld"
+  },
   "license": "MIT",
-  "keywords": ["paperclip", "agents", "orchestration", "mcp"]
+  "keywords": [
+    "paperclip",
+    "agents",
+    "orchestration",
+    "mcp"
+  ]
 }

@@ -20,7 +20,7 @@ afterAll(() => fake.server.close());
 
 describe("bridge url", () => {
   it("defaults to the hosted bridge and insists on https", () => {
-    expect(normalizeBridgeUrl(undefined)).toBe("https://papercliped.kpnsolute.com");
+    expect(normalizeBridgeUrl(undefined)).toBe("https://papercliped.co");
     expect(normalizeBridgeUrl("https://bridge.example.com/")).toBe("https://bridge.example.com");
     for (const bad of ["http://bridge.example.com", "http://127.0.0.1:3000", "ftp://x.test", "https://u:p@x.test", "https://x.test/?a=1", "nonsense"]) expect(() => normalizeBridgeUrl(bad), bad).toThrow();
     expect(normalizeBridgeUrl("http://127.0.0.1:3000", { allowInsecureLoopback: true })).toBe("http://127.0.0.1:3000");

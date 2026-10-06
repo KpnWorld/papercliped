@@ -19,6 +19,16 @@ ChatGPT Custom GPT ──/actions/* + /openapi.json─▶ ┘
 
 > Paperclip already ships `@paperclipai/mcp-server` for issues/goals/approvals *from inside an agent run*. This bridge is the **operator-side** complement: agent lifecycle control, dashboard/cost/activity reports, sync, and an HTTP transport. They can be installed side by side.
 
+## Two plugins, one service
+
+| | **Papercliped for AI apps** (the main one) | **Papercliped plugin for Paperclip** (beta) |
+| --- | --- | --- |
+| What | Lets Claude, ChatGPT or any MCP client control and report on your Paperclip | A page inside your Paperclip to link your Papercliped account and manage connected AI apps |
+| Where it runs | Hosted at `https://papercliped.co` (connector URL `https://papercliped.co/mcp`), or self-hosted / local (this repo, npm `papercliped`) | Inside Paperclip, installed by the instance admin (npm `papercliped-paperclip-plugin`, source in `plugin/`) |
+| Docs | [Getting started](site/docs/getting-started.md), [any AI app](site/docs/other-ai-apps.md), [ChatGPT](docs/chatgpt.md) | [Paperclip plugin](site/docs/paperclip-plugin.md), [plugin/README.md](plugin/README.md) |
+
+Papercliped is free and open source (MIT). The hosted service at `https://papercliped.co` runs this code.
+
 ## Install
 
 ```sh
@@ -43,7 +53,7 @@ export PAPERCLIP_READ_ONLY=1                # optional: reports + sync only, no 
 
 ```
 /plugin marketplace add OpenSourcx/papercliped
-/plugin install paperclip@papercliped
+/plugin install papercliped@papercliped
 ```
 
 You get the MCP tools, a `paperclip` skill (sync-first workflow + confirm-before-destructive rules) and `/paperclip-status`, `/paperclip-sync`, `/paperclip-report`.
@@ -97,7 +107,7 @@ Set `BRIDGE_OAUTH=1`, `BRIDGE_PUBLIC_URL`, `BRIDGE_SECRET`, `BRIDGE_DATA_FILE` (
 ## Known limits — please read
 
 - **Tested against a mock of Paperclip's documented API, not a live instance.** Endpoint paths and fields were taken from Paperclip's docs and server source (`docs/api/*`, `server/src/routes/*`); report/sync code reads response fields defensively. Run it against your instance with `PAPERCLIP_READ_ONLY=1` first.
-- **claude.ai web / Desktop / mobile connectors and ChatGPT MCP apps** need OAuth: set `BRIDGE_OAUTH=1` (see [docs/oauth.md](docs/oauth.md)). OAuth scopes limit *what* a connection may do, not *which company* it may touch (Paperclip board keys are user-wide; verified in its source). Not yet implemented: CIMD, a grant-admin web UI (use `npm run admin`).
+- **claude.ai web / Desktop / mobile connectors and ChatGPT MCP apps** need OAuth: set `BRIDGE_OAUTH=1` (see [docs/oauth.md](docs/oauth.md)). OAuth scopes limit *what* a connection may do, not *which company* it may touch (Paperclip board keys are user-wide; verified in its source). Not yet implemented: CIMD. Users manage their own connections at `/manage` (beta); operators use `npm run admin`.
 - **A public bridge holds other people's Paperclip keys.** A bridge compromise exposes all of them until revoked. Read [docs/SECURITY.md](docs/SECURITY.md) before opening it up. The code is unaudited and the Render/Supabase/claude.ai/ChatGPT specifics are untested against the live services.
 - **Hosted mode only reaches Paperclips on the public internet over https.** `localhost`/private-network instances use the local stdio plugin.
 - `paperclip_sync_changes` polls the activity log (no push). Activity has no server-side `since` filter, so it fetches up to `limit` recent entries and filters locally; raise `limit` if you poll infrequently on a busy company.
@@ -125,7 +135,7 @@ test/             end-to-end tests against a mock Paperclip
 
 ## Docs map
 
-[Site map of every page](docs/SITEMAP.md) · [Releasing](docs/RELEASING.md) · [Security model](docs/SECURITY.md) · [v2 plan: managed subdomains](docs/V2-SUBDOMAINS.md) · [Contributing](CONTRIBUTING.md)
+[Site map of every page](docs/SITEMAP.md) · [Releasing](docs/RELEASING.md) · [Security model](docs/SECURITY.md) · [v2 plan: managed subdomains](docs/V3-SUBDOMAINS.md) · [Contributing](CONTRIBUTING.md)
 
 ## Privacy
 

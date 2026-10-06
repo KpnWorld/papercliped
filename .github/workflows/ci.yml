@@ -27,10 +27,26 @@ jobs:
           TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/bridge_test
       - name: schema file is up to date
         run: npm run build && npm run schema:sql && git diff --exit-code docs/supabase-schema.sql
-      - name: plugin
-        run: |
-          npm --prefix plugin ci
-          npm --prefix plugin run typecheck
-          npm --prefix plugin test
-          npm --prefix plugin audit --omit=dev --audit-level=high
-          npm --prefix plugin run build
+
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with: { node-version: 24, cache: npm, cache-dependency-path: "plugin/package-lock.json" }
+      - run: npm --prefix plugin ci
+      - run: npm --prefix plugin run typecheck
+      - run: npm --prefix plugin audit --omit=dev --audit-level=high
+      - run: npm --prefix plugin test
+      - run: npm --prefix plugin run build
+
+  # Packs both npm packages and installs them like a user would: catches publishing problems before a release tag.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with: { node-version: 24, cache: npm, cache-dependency-path: "package-lock.json" }
+      - run: npm ci && npm run build
+      - run: npm --prefix plugin ci && npm --prefix plugin run build
+      - run: node scripts/check-packages.mjs

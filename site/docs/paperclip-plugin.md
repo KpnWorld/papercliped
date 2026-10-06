@@ -7,7 +7,7 @@ It manages your connections only. It never reads or controls your Paperclip, and
 ## Install (Paperclip admin)
 Install the npm package `papercliped-paperclip-plugin` from **Settings → Plugins** in Paperclip. Installing is done by the person who runs the Paperclip instance, never remotely. The plugin asks for these capabilities: store its own data, make outbound web requests (to Papercliped), and add a sidebar entry and a page.
 
-The bridge address defaults to `https://papercliped.kpnsolute.com`. If you host your own bridge, change **Papercliped bridge URL** in the plugin's settings. It must be `https`.
+The bridge address defaults to `https://papercliped.co`. If you host your own bridge, change **Papercliped bridge URL** in the plugin's settings. It must be `https`.
 
 ## Link your account
 1. Sign in at [`/manage`]({{URL}}/manage) and join the beta if you haven't.

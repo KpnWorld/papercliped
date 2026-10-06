@@ -5,7 +5,7 @@
 npm ci                      # root (also builds)
 npm --prefix plugin ci      # the Paperclip plugin is a separate package
 ```
-Node 22 (the release workflow uses 24). Some tests need Postgres and skip without it: set `TEST_DATABASE_URL=postgresql://postgres:<password>@127.0.0.1:5432/<db>` (the roles `bridge_app` and `panel_ro` need the same password; see `test/store.test.ts`).
+Node 22 for the root; the plugin needs Node 24.11+ (its SDK requires it). The release workflow uses Node 24. Some tests need Postgres and skip without it: set `TEST_DATABASE_URL=postgresql://postgres:<password>@127.0.0.1:5432/<db>` (the roles `bridge_app` and `panel_ro` need the same password; see `test/store.test.ts`).
 
 ## Before you open a pull request
 ```sh
