@@ -1,5 +1,5 @@
 import { USERNAME_MAX, USERNAME_MIN } from "../accounts/username.js";
-import { scopesUpTo, type Scope } from "./scopes.js";
+import { grantableScopes, scopesUpTo, type Scope } from "./scopes.js";
 
 export const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -172,13 +172,13 @@ export function welcomePage(v: Ctx & { username: string }): string {
 
 const LEVELS: { scope: Scope; label: string; blurb: string }[] = [
   { scope: "paperclip:read", label: "Read only", blurb: "View agents, tasks, goals, costs and reports. Cannot change anything." },
-  { scope: "paperclip:control", label: "Control", blurb: "Also pause, resume or wake agents, create and update issues and goals, and comment." },
-  { scope: "paperclip:admin", label: "Admin", blurb: "Also decide approvals, change budgets, terminate agents and send arbitrary API writes." },
+  { scope: "paperclip:control", label: "Full control (beta)", blurb: "Everything above, plus pause, resume or wake agents, create and update issues and goals, and comment." },
+  { scope: "paperclip:admin", label: "Admin (advanced)", blurb: "Everything above, plus decide approvals, change budgets, terminate agents and send arbitrary API writes." },
 ];
 
 /** Final step of the account flow: pick how much the app may do. */
 export function scopePage(v: Ctx & { requestedMax: Scope; loopbackOnly: boolean; instanceHost: string; username: string; anonymous?: boolean; alias?: string | null }): string {
-  const allowed = new Set(scopesUpTo(v.requestedMax));
+  const allowed = new Set(grantableScopes(v.requestedMax));
   const def: Scope = v.requestedMax === "paperclip:admin" ? "paperclip:control" : v.requestedMax;
   const opts = LEVELS.filter((l) => allowed.has(l.scope))
     .map((l) => `<label class="opt"><input type="radio" name="level" value="${l.scope}"${l.scope === def ? " checked" : ""}> <strong>${l.label}</strong><small>${esc(l.blurb)}</small></label>`)

@@ -10,7 +10,7 @@ import { Keyring, isValidCodeChallenge, randomToken, safeEqual, sha256Hex, verif
 import { approvePage, choosePage, consentPage, errorPage, instancePage, scopePage, secretPage, usernamePage, welcomePage } from "./pages.js";
 import { LoginError, PaperclipLogin, type Challenge } from "./paperclip-login.js";
 import { MemoryStore, type Grant, type PendingRecord, type Store } from "./store.js";
-import { SCOPES, isScope, maxRank, scopeAllows, scopesUpTo, type Scope } from "./scopes.js";
+import { SCOPES, grantableScopes, isScope, maxRank, scopeAllows, scopesUpTo, type Scope } from "./scopes.js";
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const PENDING_TTL_MS = 10 * 60_000;
@@ -979,7 +979,7 @@ export class OAuthProvider {
     const s = await this.loadStep(req, res, ["consent"]);
     if (!s) return true;
     const { f, p, rid } = s;
-    const allowed = scopesUpTo(p.requestedMax as Scope);
+    const allowed = grantableScopes(p.requestedMax as Scope);
     const level = (f.get("level") ?? "") as Scope;
     if (!allowed.includes(level)) return this.renderStage(res, rid, p, "Choose an access level.");
     const link = p.accountId ? await this.store.getLink(p.accountId) : undefined;

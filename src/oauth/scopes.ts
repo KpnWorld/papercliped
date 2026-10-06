@@ -25,3 +25,9 @@ export const scopeAllows = (granted: readonly string[], needed: Scope) => maxRan
 
 /** Highest-level scope name for a rank, e.g. 2 → paperclip:control. */
 export const scopesUpTo = (level: Scope): Scope[] => SCOPES.filter((s) => RANK[s] <= RANK[level]);
+
+/**
+ * Levels the person may choose in the account flow. Control ("Full control (beta)") is always on offer, because the person
+ * is the one granting it; Admin is only offered when the app itself asked for it.
+ */
+export const grantableScopes = (requestedMax: Scope): Scope[] => scopesUpTo(RANK[requestedMax] >= RANK["paperclip:control"] ? requestedMax : "paperclip:control");
