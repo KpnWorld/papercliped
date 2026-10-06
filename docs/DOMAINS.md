@@ -59,5 +59,16 @@ curl -s  https://mcp.papercliped.co/.well-known/oauth-authorization-server | hea
 curl -sI https://forum.papercliped.co/             # 302 → the forum
 ```
 
+On **Windows PowerShell**, `curl` is a different command: use `curl.exe` (built into Windows 10 and 11), and drop `| head -c 200`:
+```powershell
+curl.exe -sI https://www.papercliped.co/status
+curl.exe -sI https://docs.papercliped.co/
+curl.exe -sI https://papercliped.co/docs/permissions
+curl.exe -s  https://api.papercliped.co/api/public/v1/status
+curl.exe -s  https://mcp.papercliped.co/.well-known/oauth-authorization-server
+curl.exe -sI https://forum.papercliped.co/
+```
+"Could not resolve host" means the DNS record is missing or still spreading; a certificate error means Render hasn't verified that domain yet; a `200` where a `301` is expected means `PUBLIC_HOSTS` isn't set (or the service hasn't redeployed).
+
 ## Rollback
 Remove `PUBLIC_HOSTS` and redeploy: every host serves the whole site again, with docs at `/docs`. To go back to the old Markdown pages entirely, set `WEB_DIST` to a folder that doesn't exist. DNS records and Render custom domains can stay.
