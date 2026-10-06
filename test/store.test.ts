@@ -10,6 +10,13 @@ import { SECRET, seed as seedPublic } from "./public-api.fixture.js";
 import { MemoryStore, type CodeRecord, type Grant, type PendingRecord, type Store } from "../src/oauth/store.js";
 
 const DB = process.env.TEST_DATABASE_URL;
+
+/** A login role for the least-privilege tests, with the same password as the admin URL (so the test can sign in as it). */
+async function ensureRole(admin: pg.Client, role: "bridge_app" | "panel_ro") {
+  const pw = decodeURIComponent(new URL(DB!).password).replace(/'/g, "''");
+  await admin.query(`do $$ begin if not exists (select 1 from pg_roles where rolname='${role}') then create role ${role} login; end if; end $$`);
+  await admin.query(`alter role ${role} login password '${pw}'`);
+}
 const clock = { t: 1_800_000_000_000 };
 const now = () => clock.t;
 
@@ -524,7 +531,7 @@ describe.skipIf(!DB)("Postgres", () => {
     await migrate(opts);
     const admin = new pg.Client({ connectionString: DB });
     await admin.connect();
-    await admin.query("do $$ begin if not exists (select 1 from pg_roles where rolname='bridge_app') then create role bridge_app login; end if; end $$");
+    await ensureRole(admin, "bridge_app");
     await admin.query(readFileSync(new URL("../docs/least-privilege.sql", import.meta.url), "utf8"));
     await admin.end();
     const appUrl = new URL(DB!);
@@ -549,7 +556,7 @@ describe.skipIf(!DB)("Postgres", () => {
     await migrate(opts);
     const admin = new pg.Client({ connectionString: DB });
     await admin.connect();
-    await admin.query("do $$ begin if not exists (select 1 from pg_roles where rolname='bridge_app') then create role bridge_app login; end if; end $$");
+    await ensureRole(admin, "bridge_app");
     await admin.query(readFileSync(new URL("../docs/least-privilege.sql", import.meta.url), "utf8"));
     await admin.end();
     const appUrl = new URL(DB!);
@@ -562,7 +569,7 @@ describe.skipIf(!DB)("Postgres", () => {
     await migrate(opts);
     const admin = new pg.Client({ connectionString: DB });
     await admin.connect();
-    await admin.query("do $$ begin if not exists (select 1 from pg_roles where rolname='bridge_app') then create role bridge_app login; end if; end $$");
+    await ensureRole(admin, "bridge_app");
     await admin.query(readFileSync(new URL("../docs/least-privilege.sql", import.meta.url), "utf8"));
     await admin.end();
     const appUrl = new URL(DB!);
@@ -626,7 +633,7 @@ describe.skipIf(!DB)("Postgres", () => {
       await migrate(opts);
       admin = new pg.Client({ connectionString: DB });
       await admin.connect();
-      await admin.query("do $$ begin if not exists (select 1 from pg_roles where rolname='panel_ro') then create role panel_ro login; end if; end $$");
+      await ensureRole(admin, "panel_ro");
       await admin.query(readFileSync(new URL("./fixtures/dashboard-role.sql", import.meta.url), "utf8"));
       // an anonymous account with a stored credential, events and audit rows
       const store = new PgStore(opts, now);
