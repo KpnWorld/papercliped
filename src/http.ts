@@ -3,6 +3,7 @@ import { readConfig, readHttpConfig } from "./config.js";
 import { migrate } from "./migrate.js";
 import { OAuthProvider } from "./oauth/provider.js";
 import { createHttpServer } from "./server.js";
+import { SiteRoutes } from "./site/site.js";
 import { createStore } from "./store-factory.js";
 import { AuditRecorder, NodeReporter, SystemSampler } from "./telemetry/recorder.js";
 import { MemoryStore } from "./oauth/store.js";
@@ -51,7 +52,16 @@ async function main() {
   const reporter = new NodeReporter(store, sampler, recorder.node);
   reporter.start();
 
-  const server = createHttpServer(config, http, { oauth: provider, recorder });
+  // Public pages (landing, docs, privacy, terms) need the public https origin.
+  const siteUrl = http.oauth?.issuer ?? http.publicUrl;
+  const site = siteUrl
+    ? new SiteRoutes({
+        url: siteUrl,
+        contact: process.env.SITE_CONTACT?.trim() || "https://github.com/KpnWorld/papercliped/issues",
+        effective: process.env.SITE_EFFECTIVE_DATE?.trim() || "2026-10-06",
+      })
+    : undefined;
+  const server = createHttpServer(config, http, { oauth: provider, recorder, site });
   server.listen(http.port, http.host, () => {
     const o = http.oauth;
     console.error(

@@ -1,0 +1,112 @@
+import { readFileSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { esc, THEME } from "../oauth/pages.js";
+import { VERSION } from "../version.js";
+import { renderMarkdown } from "./markdown.js";
+
+export interface SiteOptions {
+  /** Public origin, e.g. https://papercliped.kpnsolute.com */
+  url: string;
+  /** Where people reach the operator (privacy requests, vulnerability reports). */
+  contact: string;
+  /** Effective date shown on the legal pages (YYYY-MM-DD). */
+  effective: string;
+  /** Directory holding privacy.md, terms.md and docs/*.md. */
+  dir?: URL;
+}
+
+const NAV: { slug: string; title: string }[] = [
+  { slug: "getting-started", title: "Getting started" },
+  { slug: "permissions", title: "Permissions" },
+  { slug: "anonymous-mode", title: "Anonymous mode" },
+  { slug: "security", title: "Security" },
+  { slug: "chatgpt", title: "ChatGPT setup" },
+  { slug: "troubleshooting", title: "Troubleshooting" },
+];
+
+const CLIP = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`;
+
+const CSS = `
+:root{--bg:${THEME.bg};--ink:${THEME.ink};--ink2:${THEME.ink2};--muted:${THEME.muted};--line:${THEME.line}}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--ink)}a:focus-visible{outline:2px solid var(--ink2);outline-offset:2px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px;padding:18px max(20px,5vw);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:17px;text-decoration:none}.brand svg{width:20px;height:20px}
+header nav{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:14px}header nav a{color:var(--ink2);text-decoration:none}header nav a:hover,header nav a[aria-current]{color:var(--ink);text-decoration:underline}
+.wrap{display:flex;gap:48px;padding:36px max(20px,5vw) 60px;max-width:1100px;margin:0 auto}
+aside{flex:0 0 190px;font-size:14px}aside a{display:block;padding:5px 0;color:var(--ink2);text-decoration:none}aside a[aria-current]{color:var(--ink);font-weight:600}
+@media (max-width:760px){.wrap{display:block}aside{margin-bottom:20px}aside a{display:inline-block;margin-right:14px}}
+article{min-width:0;max-width:720px;flex:1}
+h1{font-size:30px;line-height:1.2;margin:0 0 14px}h2{font-size:20px;margin:34px 0 8px}h3{font-size:16px;margin:24px 0 6px}
+p,ul,ol{margin:0 0 14px}li{margin:3px 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;background:rgba(71,70,60,.09);padding:1px 5px;border-radius:4px}
+pre{background:rgba(71,70,60,.09);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;margin:0 0 16px}pre code{background:none;padding:0}
+.tw{overflow-x:auto;margin:0 0 16px}table{border-collapse:collapse;width:100%;font-size:14.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:rgba(71,70,60,.07)}
+.hero{padding:70px max(20px,5vw) 40px;max-width:1100px;margin:0 auto}.hero h1{font-size:40px;max-width:640px}.hero p{max-width:600px;color:var(--ink2);font-size:18px}
+.cta{display:inline-block;margin:10px 12px 0 0;padding:11px 20px;border:1px solid var(--ink2);border-radius:8px;background:var(--ink2);color:var(--bg);text-decoration:none;font-weight:600}.cta.ghost{background:transparent;color:var(--ink)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;padding:10px max(20px,5vw) 50px;max-width:1100px;margin:0 auto}
+.card{border:1px solid var(--line);border-radius:10px;padding:16px 18px}.card h2{margin:0 0 6px;font-size:17px}.card p{margin:0;color:var(--ink2);font-size:14.5px}
+footer{border-top:1px solid var(--line);padding:22px max(20px,5vw);font-size:13.5px;color:var(--muted)}footer a{color:var(--muted)}
+`;
+
+const SECURITY_HEADERS = {
+  "Content-Type": "text/html; charset=utf-8",
+  "Cache-Control": "public, max-age=300",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+  "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+};
+
+export class SiteRoutes {
+  private pages = new Map<string, { title: string; html: string }>();
+
+  constructor(private o: SiteOptions) {
+    const dir = o.dir ?? new URL("../../site/", import.meta.url);
+    const fill = (md: string) => md.replaceAll("{{URL}}", o.url).replaceAll("{{CONTACT}}", o.contact).replaceAll("{{DATE}}", o.effective);
+    const load = (rel: string) => renderMarkdown(fill(readFileSync(new URL(rel, dir), "utf8")));
+    this.pages.set("/privacy", { title: "Privacy", html: load("privacy.md") });
+    this.pages.set("/terms", { title: "Terms", html: load("terms.md") });
+    for (const n of NAV) this.pages.set(`/docs/${n.slug}`, { title: n.title, html: load(`docs/${n.slug}.md`) });
+  }
+
+  private layout(title: string, body: string, current: string): string {
+    const nav = `<nav aria-label="Main"><a href="/docs/getting-started"${current.startsWith("/docs") ? " aria-current=page" : ""}>Docs</a><a href="/privacy"${current === "/privacy" ? " aria-current=page" : ""}>Privacy</a><a href="/terms"${current === "/terms" ? " aria-current=page" : ""}>Terms</a><a href="https://github.com/KpnWorld/papercliped" rel="noopener noreferrer">GitHub</a></nav>`;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(title)} · Papercliped</title><meta name="description" content="Connect Claude and ChatGPT to your Paperclip: control agents, sync and get reports, with permissions you choose."><style>${CSS}</style></head><body><header><a class="brand" href="/">${CLIP}<span>Papercliped</span></a>${nav}</header>${body}<footer>Papercliped ${esc(VERSION)} (beta) · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/docs/security">Security</a></footer></body></html>`;
+  }
+
+  private doc(path: string): string {
+    const p = this.pages.get(path)!;
+    const side = path.startsWith("/docs/")
+      ? `<aside aria-label="Docs">${NAV.map((n) => `<a href="/docs/${n.slug}"${path === `/docs/${n.slug}` ? " aria-current=page" : ""}>${esc(n.title)}</a>`).join("")}</aside>`
+      : "";
+    return this.layout(p.title, `<div class="wrap">${side}<article>${p.html}</article></div>`, path);
+  }
+
+  private home(): string {
+    return this.layout(
+      "Control your Paperclip from Claude",
+      `<section class="hero"><h1>Control your Paperclip from Claude and ChatGPT.</h1><p>See your agents, sync their work and get reports, and, if you choose, let your AI assistant pause, wake and assign them. You decide how much it may do, and you can cut access any time.</p><a class="cta" href="/docs/getting-started">Get started</a><a class="cta ghost" href="/docs/permissions">How permissions work</a></section>
+       <section class="cards"><div class="card"><h2>You choose the access</h2><p>Read only by default. Full control (beta) is opt-in, every time you connect.</p></div><div class="card"><h2>Your keys stay sealed</h2><p>Your Paperclip key is stored encrypted and is never shown to the AI app.</p></div><div class="card"><h2>Optionally anonymous</h2><p>Show up as an alias like Ann02 in the operator's logs instead of your username.</p></div><div class="card"><h2>Works with your Paperclip</h2><p>Just a public https address and an approval in Paperclip. Nothing to install on your side.</p></div></section>`,
+      "/",
+    );
+  }
+
+  /** True when the request was served. */
+  handle(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
+    if (req.method !== "GET" && req.method !== "HEAD") return false;
+    let path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname;
+    if (path === "/docs") path = "/docs/getting-started";
+    let html: string;
+    if (path === "/") html = this.home();
+    else if (this.pages.has(path)) html = this.doc(path);
+    else return false;
+    res.writeHead(200, SECURITY_HEADERS);
+    res.end(req.method === "HEAD" ? undefined : html);
+    return true;
+  }
+
+  paths(): string[] {
+    return ["/", ...this.pages.keys()];
+  }
+}

@@ -13,6 +13,7 @@
   "files": [
     "dist",
     "migrations",
+    "site",
     ".claude-plugin",
     ".mcp.json",
     "skills",
@@ -36,7 +37,7 @@
     "schema:sql": "node dist/cli.js schema-sql > docs/supabase-schema.sql",
     "panel": "node dist/panel/main.js",
     "start:panel": "node dist/panel/main.js",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

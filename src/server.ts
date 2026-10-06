@@ -6,6 +6,7 @@ import { executeTool, type AuditEvent, type ExecOptions } from "./execute.js";
 import { createMcpServer } from "./mcp.js";
 import { safeEqual } from "./oauth/crypto.js";
 import { OAuthProvider } from "./oauth/provider.js";
+import { SiteRoutes } from "./site/site.js";
 import { buildOpenApi } from "./openapi.js";
 import type { AuditRecorder } from "./telemetry/recorder.js";
 
@@ -19,6 +20,8 @@ export interface ServerOptions {
   audit?: (e: AuditEvent) => void;
   /** Persists tool-call and HTTP events for the dashboard. */
   recorder?: AuditRecorder;
+  /** Public pages: landing, docs, privacy, terms. */
+  site?: SiteRoutes;
 }
 
 /** Route groups worth measuring. Health checks, discovery documents and the dashboard itself are excluded. */
@@ -126,6 +129,8 @@ export function createHttpServer(config: BridgeConfig, http: HttpConfig, opts: S
         const host = req.headers.host ?? `${http.host}:${http.port}`;
         return json(res, 200, buildOpenApi(http.oauth?.issuer ?? http.publicUrl ?? `http://${host}`));
       }
+
+      if (opts.site?.handle(req, res, url)) return;
 
       if (oauth && (await oauth.handle(req, res, url))) return;
 

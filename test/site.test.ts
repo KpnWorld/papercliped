@@ -1,0 +1,76 @@
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { renderMarkdown } from "../src/site/markdown.js";
+import { SiteRoutes } from "../src/site/site.js";
+
+describe("markdown renderer", () => {
+  it("escapes raw HTML and scripts", () => {
+    const html = renderMarkdown('# <script>alert(1)</script>\n\nhello <img src=x onerror=alert(1)> **bold** `<b>`');
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;img");
+    expect(html).toContain("<strong>bold</strong>");
+    expect(html).toContain("<code>&lt;b&gt;</code>");
+  });
+  it("only links to http(s), mailto and same-site paths", () => {
+    const html = renderMarkdown("[a](javascript:alert(1)) [b](https://x.example/p) [c](/docs/security) [d](//evil.example) [e](data:text/html,x)");
+    expect(html).not.toMatch(/href="javascript:/i);
+    expect(html).not.toMatch(/href="data:/i);
+    expect(html).not.toMatch(/href="\/\/evil/);
+    expect(html).toContain('href="https://x.example/p"');
+    expect(html).toContain('href="/docs/security"');
+  });
+  it("renders lists, tables and code fences", () => {
+    const html = renderMarkdown("- one\n- two\n\n1. a\n2. b\n\n| h1 | h2 |\n| --- | --- |\n| x | y |\n\n```\n<raw>\n```");
+    expect(html).toContain("<ul><li>one</li><li>two</li></ul>");
+    expect(html).toContain("<ol><li>a</li><li>b</li></ol>");
+    expect(html).toContain("<th>h1</th>");
+    expect(html).toContain("<pre><code>&lt;raw&gt;</code></pre>");
+  });
+});
+
+describe("public site", () => {
+  let srv: Server, base: string, site: SiteRoutes;
+  beforeAll(async () => {
+    site = new SiteRoutes({ url: "https://papercliped.example.com", contact: "support@example.com", effective: "2026-10-06" });
+    srv = createServer((req, res) => {
+      if (!site.handle(req, res, new URL(req.url!, "http://x"))) res.writeHead(404).end("nope");
+    });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+  });
+  afterAll(() => srv.close());
+
+  it("serves the landing page, docs, privacy and terms with a strict CSP and no external loads", async () => {
+    for (const p of site.paths()) {
+      const res = await fetch(`${base}${p}`);
+      expect(res.status, p).toBe(200);
+      const html = await res.text();
+      expect(res.headers.get("content-security-policy")).toMatch(/default-src 'none'/);
+      expect(res.headers.get("content-security-policy")).toMatch(/frame-ancestors 'none'/);
+      expect(html, p).not.toMatch(/<script/i);
+      expect(html, p).not.toMatch(/(src|href)=["']https?:\/\/(?!github\.com|papercliped\.example\.com)/); // nothing third-party is loaded
+      expect(html, p).not.toContain("{{"); // every placeholder was filled
+    }
+  });
+  it("/docs goes to the first guide and the privacy page shows the contact and date", async () => {
+    expect(await (await fetch(`${base}/docs`)).text()).toContain("Getting started");
+    const priv = await (await fetch(`${base}/privacy`)).text();
+    expect(priv).toContain("support@example.com");
+    expect(priv).toContain("2026-10-06");
+    expect(priv).toContain("https://papercliped.example.com");
+  });
+  it("every internal link on every page points at a page that exists", async () => {
+    const known = new Set(site.paths());
+    for (const p of site.paths()) {
+      const html = await (await fetch(`${base}${p}`)).text();
+      for (const m of html.matchAll(/href="(\/[^"#]*)"/g)) expect(known.has(m[1]) || m[1] === "/docs", `${p} → ${m[1]}`).toBe(true);
+    }
+  });
+  it("only answers GET/HEAD for its own paths", async () => {
+    expect((await fetch(`${base}/privacy`, { method: "POST" })).status).toBe(404);
+    expect((await fetch(`${base}/docs/nope`)).status).toBe(404);
+    expect((await fetch(`${base}/mcp`)).status).toBe(404);
+  });
+});

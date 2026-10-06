@@ -52,7 +52,16 @@ describe("connection-level guard", () => {
   });
 });
 
-describe("fetch behaviour over TLS (lookup relaxed to reach a local test server)", () => {
+const hasOpenssl = (() => {
+  try {
+    execFileSync("openssl", ["version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false; // e.g. a default Windows install; CI on Linux runs these
+  }
+})();
+
+describe.skipIf(!hasOpenssl)("fetch behaviour over TLS (lookup relaxed to reach a local test server)", () => {
   let srv: Server, base: string, ca: string;
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "tls-"));

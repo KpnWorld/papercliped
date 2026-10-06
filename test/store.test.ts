@@ -239,7 +239,7 @@ function auditContract(name: string, make: () => Promise<Store>) {
 
 describe("docs/supabase-schema.sql", () => {
   it("is exactly what the migrations generate (run `npm run schema:sql` after changing migrations/)", () => {
-    expect(readFileSync(new URL("../docs/supabase-schema.sql", import.meta.url), "utf8")).toBe(consolidatedSql());
+    expect(readFileSync(new URL("../docs/supabase-schema.sql", import.meta.url), "utf8").replace(/\r\n/g, "\n")).toBe(consolidatedSql());
   });
 });
 
