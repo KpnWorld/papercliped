@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.0-beta.1 — Paperclip plugin
+
+- **Paperclip plugin** (`plugin/`, npm `papercliped-paperclip-plugin`, a separate package built on `@paperclipai/plugin-sdk`): a **Papercliped** sidebar entry and page inside Paperclip to link your account, list connected apps, switch them between Read only and Full control (beta), disconnect them, toggle anonymity, and unlink. The bridge URL is configurable (https only).
+- **Plugin link API**: `POST /api/manage/plugin-link` (beta, browser session) makes a one-time `pcl_…` code (10 minutes, single use); `POST /api/manage/plugin-link/exchange` trades it for a long-lived `pcb_pl_…` token (rate-limited by address; wrong, used and expired codes answer identically); `GET /api/manage/plugin-links`; `DELETE /api/manage/plugin-links/:id`. The `/manage` page gains a **Link Paperclip plugin** section.
+- **Plugin tokens** are accepted as `Authorization: Bearer` on the manage API (no CSRF header needed). They hold no scopes, so they cannot call any Paperclip tool or the MCP endpoint, and they cannot mint codes, change the beta, sign out, or reach any action that needs the secret key (rotate key, disconnect Paperclip, delete account); those return 403 and need the browser. A token can remove only itself.
+- **Making a new secret key now also revokes every plugin link.**
+- New docs page: Paperclip plugin.
+
+Not tested: the plugin has never run inside a live Paperclip. It is covered by unit tests against a fake bridge and the SDK's test harness only.
+
 ## v1.1.0-beta.2 — connection manager, public site
 
 - **Beta connection manager** at `/manage` and a management API (`/api/manage/*`): sign in with username + secret key, see every connected app, switch it between Read only and Full control (beta) with immediate effect, disconnect it, toggle anonymity, make a new secret key, disconnect your Paperclip, delete your account. Sensitive actions re-ask for the secret key; Admin is never grantable from here. Opt in with **Join the beta** on the permission screen (migration `005_beta.sql`, applied automatically).
@@ -8,7 +18,6 @@
 - Windows-friendly test suite; `npm publish` only builds.
 - Set `SITE_CONTACT` (an email or support URL) so the privacy and terms pages show a real contact.
 
-Not in this release: a native Paperclip plugin that embeds the manager inside Paperclip (it needs the Paperclip plugin SDK).
 
 ## v1.0.0-beta.1 — first public beta
 

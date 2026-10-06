@@ -181,6 +181,125 @@ describe("connection manager (beta)", () => {
     expect((await login("danger.test1", a.secret)).r.status).toBe(401);
   });
 
+  describe("Paperclip plugin link", () => {
+    const bearer = (t: string) => ({ "content-type": "application/json", authorization: `Bearer ${t}` }); // note: no x-papercliped header
+    const exchange = (code: string, extra: Record<string, unknown> = {}) => call("POST", "/api/manage/plugin-link/exchange", { code, ...extra });
+    let cookie: string, acct: { id: string; secret: string };
+
+    async function linked(extra: Record<string, unknown> = {}) {
+      const mint: any = await (await call("POST", "/api/manage/plugin-link", {}, cookie)).json();
+      const r = await exchange(mint.code, { instanceHost: "Paperclip.Example.com", paperclipUserId: "u_1", ...extra });
+      return { code: mint.code as string, r, token: ((await r.clone().json()) as any).token as string | undefined };
+    }
+
+    it("only a beta browser session can make a code; codes look right and expire in 10 minutes", async () => {
+      acct = await account("plink.test1");
+      ({ cookie } = await login("plink.test1", acct.secret));
+      expect((await call("POST", "/api/manage/plugin-link", {}, cookie)).status).toBe(403); // not in the beta yet
+      expect((await call("POST", "/api/manage/plugin-link", {})).status).toBe(401); // no session
+      await call("POST", "/api/manage/beta", { beta: true }, cookie);
+      const r: any = await (await call("POST", "/api/manage/plugin-link", {}, cookie)).json();
+      expect(r.code).toMatch(/^pcl_[A-Z0-9]{5}-[A-Z0-9]{5}$/);
+      expect(r.expiresInSec).toBe(600);
+    });
+
+    it("a code works exactly once, and wrong, malformed and used codes all fail the same way", async () => {
+      const { code, r, token } = await linked();
+      expect(r.status).toBe(200);
+      expect(token).toMatch(/^pcb_pl_/);
+      const again = await exchange(code);
+      const wrong = await exchange("pcl_AAAAA-BBBBB");
+      const junk = await exchange("not a code");
+      expect([again.status, wrong.status, junk.status]).toEqual([400, 400, 400]);
+      expect(await again.text()).toBe(await wrong.text());
+      expect((await call("POST", "/api/manage/plugin-link/exchange", { code: 5 })).status).toBe(400);
+      expect((await call("POST", "/api/manage/plugin-link/exchange", { code, instanceHost: "bad host/x" })).status).toBe(400);
+      expect(token && (await store.getAccess(sha256Hex(token)))).toBeTruthy();
+      expect(JSON.stringify(await store.listAccountGrants(acct.id))).not.toContain(token!); // only the hash is stored
+    });
+
+    it("an expired code is refused", async () => {
+      const mint: any = await (await call("POST", "/api/manage/plugin-link", {}, cookie)).json();
+      const taken: any = await store.takeCode(sha256Hex(mint.code));
+      await store.putCode(sha256Hex(mint.code), { ...taken.record, expiresAt: Date.now() - 1000 });
+      expect((await exchange(mint.code)).status).toBe(400);
+    });
+
+    it("the token manages connections without the CSRF header, but cannot call Paperclip tools", async () => {
+      const g = await grant(acct.id, ["paperclip:read"], "Claude");
+      const { token } = await linked();
+      const me: any = await (await call("GET", "/api/manage/me", undefined, undefined, bearer(token!))).json();
+      expect(me).toMatchObject({ name: "plink.test1", beta: true });
+      const list: any = await (await call("GET", "/api/manage/connections", undefined, undefined, bearer(token!))).json();
+      expect(list.connections.map((c: any) => c.id)).toContain(g.id);
+      expect(list.connections.some((c: any) => c.app === "Paperclip plugin")).toBe(false); // plugin links are not "apps"
+      expect((await call("POST", `/api/manage/connections/${g.id}`, { level: "control" }, undefined, bearer(token!))).status).toBe(200);
+      expect((await provider.authenticate(`pcb_at_${g.id}`))!.scopes).toContain("paperclip:control");
+      expect((await call("POST", "/api/manage/privacy", { anonymous: false }, undefined, bearer(token!))).status).toBe(200);
+      expect((await call("DELETE", `/api/manage/connections/${g.id}`, undefined, undefined, bearer(token!))).status).toBe(200);
+
+      // it is a manage credential only: no MCP, no Paperclip tools, no scopes
+      expect(await provider.authenticate(token!)).toBeNull();
+      const mcp = await fetch(`${base}/mcp`, { method: "POST", headers: { ...bearer(token!), accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
+      expect(mcp.status).toBe(401);
+      const grants = (await store.listAccountGrants(acct.id)).filter((x) => x.clientId === "paperclip-plugin");
+      expect(grants.every((x) => x.scopes.length === 0)).toBe(true);
+    });
+
+    it("the token cannot mint codes, change the beta, sign out, or do anything that needs the secret key", async () => {
+      const { token } = await linked();
+      for (const [path, body] of [["/plugin-link", {}], ["/beta", { beta: false }], ["/logout", {}], ["/secret/rotate", { secret: acct.secret }], ["/paperclip/disconnect", { secret: acct.secret }], ["/account/delete", { secret: acct.secret, confirm: "plink.test1" }]] as const) {
+        const r = await call("POST", `/api/manage${path}`, body, undefined, bearer(token!));
+        expect(r.status, path).toBe(403);
+      }
+      expect(await store.getAccount(acct.id)).toBeTruthy();
+      expect((await store.getLink(acct.id))!.sealedCredential).toBe("sealed");
+      // and the cookie path still demands the secret key for those
+      expect((await call("POST", "/api/manage/secret/rotate", {}, cookie)).status).toBe(403);
+    });
+
+    it("rejects unknown, malformed and wrong-kind bearer tokens, even next to a valid cookie", async () => {
+      for (const t of ["pcb_pl_" + "x".repeat(43), "pcb_at_whatever", "garbage"]) expect((await call("GET", "/api/manage/me", undefined, cookie, bearer(t))).status, t).toBe(401);
+      expect((await call("GET", "/api/manage/me", undefined, cookie, { authorization: "Basic abc" })).status).toBe(401);
+      const g = await grant(acct.id, ["paperclip:read"]); // an ordinary MCP access token is not a manage credential
+      expect((await call("GET", "/api/manage/me", undefined, undefined, bearer(`pcb_at_${g.id}`))).status).toBe(401);
+    });
+
+    it("links can be listed and revoked; a plugin token can only remove itself", async () => {
+      const one = await linked();
+      const two = await linked();
+      const list: any = await (await call("GET", "/api/manage/plugin-links", undefined, cookie)).json();
+      expect(list.links.length).toBeGreaterThanOrEqual(2);
+      expect(JSON.stringify(list)).not.toMatch(/pcb_pl_|sealed/);
+      expect(list.links[0]).toMatchObject({ host: "paperclip.example.com" });
+
+      const mine = ((await (await call("GET", "/api/manage/plugin-links", undefined, undefined, bearer(one.token!))).json()) as any).links.find((l: any) => l.current);
+      const other = ((await (await call("GET", "/api/manage/plugin-links", undefined, undefined, bearer(two.token!))).json()) as any).links.find((l: any) => l.current);
+      expect((await call("DELETE", `/api/manage/plugin-links/${other.id}`, undefined, undefined, bearer(one.token!))).status).toBe(404);
+      expect((await call("GET", "/api/manage/me", undefined, undefined, bearer(two.token!))).status).toBe(200);
+      expect((await call("DELETE", "/api/manage/plugin-links/self", undefined, undefined, bearer(one.token!))).status).toBe(200);
+      expect((await call("GET", "/api/manage/me", undefined, undefined, bearer(one.token!))).status).toBe(401);
+      expect((await call("DELETE", `/api/manage/plugin-links/${mine.id}`, undefined, cookie)).status).toBe(404); // already gone
+
+      // another account can neither see nor revoke it
+      const o = await account("plink.other1");
+      const oc = (await login("plink.other1", o.secret)).cookie;
+      await call("POST", "/api/manage/beta", { beta: true }, oc);
+      expect((await call("DELETE", `/api/manage/plugin-links/${other.id}`, undefined, oc)).status).toBe(404);
+      expect((await call("DELETE", `/api/manage/plugin-links/${other.id}`, undefined, cookie)).status).toBe(200);
+      expect((await call("GET", "/api/manage/me", undefined, undefined, bearer(two.token!))).status).toBe(401);
+    });
+
+    it("making a new secret key unlinks every plugin; the old token stops working at once", async () => {
+      const { token } = await linked();
+      expect((await call("GET", "/api/manage/me", undefined, undefined, bearer(token!))).status).toBe(200);
+      const r = await call("POST", "/api/manage/secret/rotate", { secret: acct.secret }, cookie);
+      expect(r.status).toBe(200);
+      expect((await call("GET", "/api/manage/me", undefined, undefined, bearer(token!))).status).toBe(401);
+      expect(await provider.manageListPluginLinks(acct.id)).toEqual([]);
+    });
+  });
+
   it("logout clears the cookie", async () => {
     const a = await account("logout.test1");
     const { cookie } = await login("logout.test1", a.secret);

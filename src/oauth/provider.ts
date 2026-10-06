@@ -304,9 +304,9 @@ export class OAuthProvider {
     return { token };
   }
 
-  /** The account a plugin token belongs to (null if unknown, expired, revoked, or not a plugin token). */
-  async manageAccountForPluginToken(token: string): Promise<Account | null> {
-    if (!token.startsWith("pcb_pl_")) return null;
+  /** The account (and link id) a plugin token belongs to (null if unknown, expired, revoked, or not a plugin token). */
+  async managePluginPrincipal(token: string): Promise<{ account: Account; linkId: string } | null> {
+    if (!token.startsWith("pcb_pl_") || token.length > 200) return null;
     const rec = await this.store.getAccess(sha256Hex(token));
     if (!rec || rec.expiresAt < this.now()) return null;
     const g = await this.store.getGrant(rec.grantId);
@@ -314,7 +314,11 @@ export class OAuthProvider {
     const a = await this.store.getAccount(g.accountId);
     if (!a || a.disabled) return null;
     await this.store.touchGrant(g.id);
-    return a;
+    return { account: a, linkId: g.id };
+  }
+
+  async manageAccountForPluginToken(token: string): Promise<Account | null> {
+    return (await this.managePluginPrincipal(token))?.account ?? null;
   }
 
   async manageListPluginLinks(accountId: string) {
@@ -370,6 +374,8 @@ export class OAuthProvider {
   async manageRotateSecret(a: Account): Promise<string> {
     const secret = generateSecretKey();
     await this.store.setAccountSecret(a.id, await hashSecretKey(normalizeSecretKey(secret)!));
+    // A new secret key means "I may be compromised": plugin links go too and must be linked again with a fresh code.
+    for (const g of await this.store.listAccountGrants(a.id)) if (g.clientId === "paperclip-plugin" && !g.revoked) await this.store.revokeGrant(g.id);
     await this.event("updated", { accountId: a.id, username: displayName(a) }, "secret_rotated");
     return secret;
   }

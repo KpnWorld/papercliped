@@ -24,6 +24,7 @@ const NAV: { slug: string; title: string }[] = [
   { slug: "getting-started", title: "Getting started" },
   { slug: "signup", title: "Create your account" },
   { slug: "manage", title: "Manage connections (beta)" },
+  { slug: "paperclip-plugin", title: "Paperclip plugin (beta)" },
   { slug: "permissions", title: "Permissions" },
   { slug: "anonymous-mode", title: "Anonymous mode" },
   { slug: "security", title: "Security" },

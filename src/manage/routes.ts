@@ -10,6 +10,19 @@ import { managePage } from "./page.js";
 const COOKIE = "pcp_manage";
 const HEADERS = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
 
+/** A DNS name or IPv4 literal, optionally with a port; undefined when it is anything else. */
+function cleanHost(v: unknown): string | null | undefined {
+  if (typeof v !== "string") return undefined;
+  const h = v.trim().toLowerCase();
+  if (!h) return null;
+  if (h.length > 255 || !/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/.test(h)) return undefined;
+  try {
+    return new URL(`https://${h}`).host;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface ManageOptions {
   secureCookie: boolean;
   sessionHours?: number;
@@ -96,13 +109,18 @@ export class ManageRoutes {
     }
     if (!path.startsWith("/api/manage")) return false;
 
-    if (m !== "GET") {
+    const authz = String(req.headers.authorization ?? "");
+    const bearer = /^Bearer\s+(\S+)$/i.exec(authz)?.[1] ?? null;
+    if (authz && !bearer) return this.json(res, 401, { error: "Unsupported Authorization header" });
+
+    // A bearer token cannot be attached by a cross-site page without a CORS preflight, so it needs no CSRF header.
+    if (m !== "GET" && !bearer) {
       // CSRF guard (see class comment).
       if (req.headers["x-papercliped"] !== "1") return this.json(res, 400, { error: "Missing request header" });
     }
     const route = path.slice("/api/manage".length) || "/";
 
-    if (m === "POST" && route === "/login") {
+    if (m === "POST" && route === "/login" && !bearer) {
       const b = await this.body(req);
       if (!b) return this.json(res, 400, { error: "Send JSON" });
       const r = await this.p.manageLogin(req, String(b.username ?? ""), String(b.secret ?? ""));
@@ -110,9 +128,35 @@ export class ManageRoutes {
       return this.json(res, 200, { ok: true }, { "Set-Cookie": this.cookie(r.account) });
     }
 
-    const a = await this.session(req);
-    if (!a) return this.json(res, 401, { error: "Sign in first" });
+    // The plugin trades its one-time code for a token; there is no session yet. The provider rate-limits by address and answers
+    // wrong, used and expired codes identically.
+    if (m === "POST" && route === "/plugin-link/exchange" && !bearer) {
+      const b = await this.body(req);
+      if (!b || typeof b.code !== "string") return this.json(res, 400, { error: "Send JSON with a code" });
+      const host = b.instanceHost == null ? null : cleanHost(b.instanceHost);
+      const uid = b.paperclipUserId == null ? null : typeof b.paperclipUserId === "string" && b.paperclipUserId.length <= 100 ? b.paperclipUserId : undefined;
+      if (host === undefined || uid === undefined) return this.json(res, 400, { error: "Invalid instanceHost or paperclipUserId" });
+      const r = await this.p.manageExchangeLinkCode(req, b.code, { instanceHost: host, paperclipUserId: uid });
+      return r ? this.json(res, 200, { token: r.token }) : this.json(res, 400, { error: "That code is not valid. Codes work once and expire after 10 minutes." });
+    }
+
+    let a: Account | null;
+    let linkId: string | null = null;
+    if (bearer) {
+      const pr = await this.p.managePluginPrincipal(bearer);
+      a = pr?.account ?? null;
+      linkId = pr?.linkId ?? null;
+      if (!a) return this.json(res, 401, { error: "Link the plugin again" });
+    } else {
+      a = await this.session(req);
+      if (!a) return this.json(res, 401, { error: "Sign in first" });
+    }
     if (!(await this.p.store.hit(`manage:${a.id}`, 120, 60_000))) return this.json(res, 429, { error: "Slow down" });
+
+    // A plugin token may manage connections and privacy, and unlink itself. It may not sign out, change the beta, mint link codes
+    // or do anything that needs the secret key (those need the browser session).
+    const cookieOnly = new Set(["/logout", "/beta", "/plugin-link", "/secret/rotate", "/paperclip/disconnect", "/account/delete"]);
+    if (bearer && cookieOnly.has(route)) return this.json(res, 403, { error: "Do this in the browser at /manage", code: "browser_required" });
 
     if (m === "POST" && route === "/logout") return this.json(res, 200, { ok: true }, { "Set-Cookie": this.cookie(null) });
 
@@ -140,6 +184,16 @@ export class ManageRoutes {
       return (await this.p.manageSetLevel(a, c[1], level)) ? this.json(res, 200, { ok: true }) : this.json(res, 404, { error: "No such connection" });
     }
     if (c && m === "DELETE") return (await this.p.manageRevoke(a, c[1])) ? this.json(res, 200, { ok: true }) : this.json(res, 404, { error: "No such connection" });
+
+    // Paperclip plugin links. Only a browser session can mint a code; a plugin token can list links and unlink itself.
+    if (m === "POST" && route === "/plugin-link") return this.json(res, 200, await this.p.manageIssueLinkCode(a));
+    if (m === "GET" && route === "/plugin-links") return this.json(res, 200, { links: (await this.p.manageListPluginLinks(a.id)).map((l) => ({ ...l, current: l.id === linkId })) });
+    const pl = /^\/plugin-links\/([A-Za-z0-9_-]{1,80})$/.exec(route);
+    if (pl && m === "DELETE") {
+      const id = pl[1] === "self" && linkId ? linkId : pl[1];
+      if (bearer && id !== linkId) return this.json(res, 404, { error: "No such link" }); // a plugin token can only remove itself
+      return (await this.p.manageRevokePluginLink(a, id)) ? this.json(res, 200, { ok: true }) : this.json(res, 404, { error: "No such link" });
+    }
 
     if (m === "POST" && route === "/privacy") {
       const b = await this.body(req);

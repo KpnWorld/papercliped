@@ -1,0 +1,31 @@
+import { definePlugin, runWorker } from "@paperclipai/plugin-sdk";
+import { normalizeBridgeUrl } from "./bridge.js";
+import { createHandlers } from "./handlers.js";
+
+const plugin = definePlugin({
+  async setup(ctx) {
+    const h = createHandlers({
+      state: ctx.state,
+      fetch: (url, init) => ctx.http.fetch(url, init),
+      bridgeUrl: async () => (await ctx.config.get()).bridgeUrl,
+    });
+    // Actions, not data handlers: only actions receive the host-verified actor, and everything here is per user.
+    for (const key of Object.keys(h) as (keyof typeof h)[]) {
+      ctx.actions.register(key, (params, { actor }) => h[key](params, { type: actor.type, userId: actor.userId }));
+    }
+  },
+  async onValidateConfig(config) {
+    try {
+      normalizeBridgeUrl((config as { bridgeUrl?: unknown }).bridgeUrl);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, errors: [(e as Error).message] };
+    }
+  },
+  async onHealth() {
+    return { status: "ok" };
+  },
+});
+
+export default plugin;
+runWorker(plugin, import.meta.url);

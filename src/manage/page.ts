@@ -133,6 +133,28 @@ const JS = `
     });
     app.appendChild(h("label", { class: "card row", for: "anon" }, anon, h("span", { class: "grow" }, "Appear anonymously in the operator logs and panel (as a name like Ann02)."), pmsg));
 
+    app.appendChild(h("h2", {}, "Paperclip plugin"));
+    app.appendChild(h("p", { class: "muted" }, "Manage these same connections from inside Paperclip. Install the Papercliped plugin there, then make a one-time code here and paste it into the plugin."));
+    var codeBox = h("div"); var linkList = h("div");
+    app.appendChild(h("div", { class: "row" }, h("button", { class: "btn ghost", type: "button", onclick: function () {
+      api("POST", "/plugin-link", {}).then(function (r) {
+        if (r.status !== 200) return codeBox.replaceChildren(note("err", r.body.error || "Could not make a code"));
+        codeBox.replaceChildren(h("span", { class: "secret" }, r.body.code), h("p", { class: "muted" }, "Works once, for " + Math.round(r.body.expiresInSec / 60) + " minutes. Paste it into the Papercliped page in Paperclip."));
+      });
+    } }, "Link Paperclip plugin")));
+    app.appendChild(codeBox); app.appendChild(linkList);
+    function refreshLinks() {
+      api("GET", "/plugin-links").then(function (r) {
+        linkList.replaceChildren();
+        ((r.body && r.body.links) || []).forEach(function (l) {
+          linkList.appendChild(h("div", { class: "card row" },
+            h("div", { class: "grow" }, h("strong", {}, "Paperclip plugin" + (l.host ? " · " + l.host : "")), h("div", { class: "muted" }, "Last used " + when(l.lastUsedAt) + " · linked " + when(l.createdAt))),
+            h("button", { class: "btn ghost", type: "button", onclick: function () { api("DELETE", "/plugin-links/" + encodeURIComponent(l.id)).then(refreshLinks); } }, "Unlink")));
+        });
+      });
+    }
+    refreshLinks();
+
     app.appendChild(h("h2", {}, "Security"));
     var area = h("div");
     var rot = h("button", { class: "btn ghost", type: "button", onclick: function () {
