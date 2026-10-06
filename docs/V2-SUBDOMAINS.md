@@ -46,9 +46,12 @@ bridge (Render) ── job queue (Postgres) ◀── polls (outbound HTTPS only
 - The label itself cannot be changed (it is derived from the username).
 - Plugin tokens stay unable to do secret-key actions, so rotate/release remain browser-only.
 
+## 4b. Later: slots (about two months after launch)
+Pro members will be able to buy **3 slots for $10**. Each slot is an extra subdomain, so the first one stays "the username" and the extra ones are **user-chosen labels** under the same naming rules, uniqueness and quarantine. **Design now so this is not a rewrite:** do not make `subdomains.account_id` unique (allow many per account, with a `slot` number and a per-account limit), keep the Paperclip-verification and abuse checks per subdomain, and keep pricing in config. Pro members still cannot change the label of an existing name.
+
 ## 5. Data model (sketch)
 - `accounts.pro_since` (nullable timestamp; set when the paid order completes).
-- `subdomains`: `account_id` (unique), `label` (unique, lowercase), `tunnel_id`, `local_port`, `status` (`pending` | `active` | `suspended` | `released`), `terms_version`, `paid_at`, `order_id`, `created_at`, `released_at`.
+- `subdomains`: `account_id`, `slot` (1 for the username label; more later), `label` (unique, lowercase), `tunnel_id`, `local_port`, `status` (`pending` | `active` | `suspended` | `released`), `terms_version`, `paid_at`, `order_id`, `created_at`, `released_at`.
 - `subdomain_jobs`: `id`, `kind` (`provision` | `suspend` | `release` | `repoint`), `payload`, `state`, `attempts`, `claimed_by`, `claimed_until`, `result`, timestamps.
 - `base_domains`: `domain`, `active`, `primary` (supports several at once during a change).
 - `label_quarantine`: `label`, `released_at`, `until`.
@@ -64,11 +67,25 @@ bridge (Render) ── job queue (Postgres) ◀── polls (outbound HTTPS only
 
 ## 7. Abuse and operations
 - **One service per name:** ingress is set by us (one hostname, one local port); users cannot reconfigure it.
-- **"Is it Paperclip?" check:** periodically request `/api/health` and expect the Paperclip shape (`status`, `deploymentMode`, `deploymentExposure`). A name that stops looking like Paperclip gets a warning, then suspension.
+- **Verify the address and port really are a Paperclip (required, at three points):**
+  1. **Before activation:** the order's job only marks the name active after the tunnel is up and `GET https://<label>.<domain>/api/health` returns the Paperclip shape (`status`, `deploymentMode`, `deploymentExposure`). Until then the name is `pending`, and unverified names are cleaned up after a short timeout.
+  2. **When the user connects:** the existing "Connect your Paperclip" step (the user approving the request inside their own Paperclip) already proves the address is a Paperclip they can sign in to. Bind the subdomain to the Paperclip user and instance id from that step; if the instance later reports a different identity, suspend and review.
+  3. **Continuously:** a scheduled check (for example every few hours, with jitter) repeats the health probe. Failing or non-Paperclip responses get a warning, then suspension; the result is shown to the user in `/manage`.
+  - **Port and routing rules:** the ingress target is only `localhost`/`127.0.0.1` plus one port set by us; users cannot add rules. Consider limiting what the public hostname forwards (for example only the Paperclip API and its UI paths) once Paperclip's required paths are confirmed.
+  - **Probe safety:** the probes go through the same SSRF-hardened fetch as the rest of the bridge, with short timeouts and a response size cap.
 - **Suspension** is one switch (job `suspend`): remove ingress/DNS, keep the label reserved.
 - Rate-limit orders and provisioning; reconcile Cloudflare state against the database on a schedule (orphaned tunnels/records are deleted).
 - Refund automatically if provisioning fails.
 - Idle reclaim: **PROPOSED** only after about 12 months with the tunnel offline, with notices.
+
+## 7a. Security hardening to do with v2
+- Home-server worker: outbound-only polling with a signed per-worker credential; jobs are idempotent and carry no secrets other than what the provider needs; the Cloudflare token is least-privilege (one zone, tunnels), stored only on the home server, rotated on a schedule.
+- Webhooks: verify the Stripe signature, reject replays, process each order once.
+- Tunnel tokens: shown only to the owner, re-showing or rotating needs the secret key, never written to logs or the public events.
+- Label rules: reserved list, impersonation/brand blocklist, quarantine, DNS and tunnel deleted on release; reconcile Cloudflare against the database on a schedule.
+- Public events and live log never contain labels or hostnames (anonymous users included).
+- Rate limits on order, claim, probe and token endpoints; audit every provisioning action.
+- Extend `docs/SECURITY.md` and its threat table for: provisioner compromise, Cloudflare token theft, label squatting/takeover, abuse of the tunnel for non-Paperclip traffic, payment fraud and refunds.
 
 ## 8. Payments
 Stripe Checkout (no card data on our side); orders confirmed only by a verified webhook signature; idempotent on order id; the label is held for ~15 minutes during checkout so two people cannot pay for one name. Tax and refund handling to be decided with the legal drafting.

@@ -114,8 +114,18 @@ src/telemetry/    audit events, batching recorder, system sampler, timing   src/
 src/net/          SSRF-safe fetch + instance URL validation (multi-tenant egress guard)
 migrations/       Postgres schema (dedicated `bridge` schema, RLS)   Dockerfile   container image (Render free web service)   src/cli.ts  admin CLI
 .claude-plugin/ .mcp.json skills/ commands/    Claude Code plugin
+src/manage/       beta connection manager (/manage, /api/manage)   plugin/  Paperclip plugin (own package.json, tests and build)
+site/             public pages (markdown) served by the bridge   .github/workflows/  CI, CodeQL, release (npm trusted publishing)
 test/             end-to-end tests against a mock Paperclip
 ```
+
+## Paperclip plugin (beta)
+
+`plugin/` is a Paperclip plugin (`papercliped-paperclip-plugin`, built on `@paperclipai/plugin-sdk`) that adds a **Papercliped** page inside Paperclip to link your account and manage connected apps. Docs: [site/docs/paperclip-plugin.md](site/docs/paperclip-plugin.md), [plugin/README.md](plugin/README.md). It has not yet been run in a live Paperclip.
+
+## Docs map
+
+[Site map of every page](docs/SITEMAP.md) · [Releasing](docs/RELEASING.md) · [Security model](docs/SECURITY.md) · [v2 plan: managed subdomains](docs/V2-SUBDOMAINS.md) · [Contributing](CONTRIBUTING.md)
 
 ## Privacy
 

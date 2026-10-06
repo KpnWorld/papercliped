@@ -63,3 +63,14 @@ Email **[SECURITY CONTACT — set before launch]** with details; please don't op
 - A user's **secret key** is shown once, stored only as a salted scrypt hash, and works like a password for *their Paperclip connection*: anyone holding it can sign in as them. Users can replace it by reconnecting through Paperclip approval.
 - Usernames appear only in the operator's logs and panel. With **anonymous mode** on, logs, grants and audit rows show an alias (`Ann02`) and a masked instance label instead; toggling rewrites history. This is **pseudonymity, not anonymity from the operator**: someone with base-table database access (the bridge role, the Supabase admin) can still map alias → account. The panel role cannot.
 - Account actions are rate-limited per username and per address; failed sign-ins never reveal whether a username exists beyond what registration already shows.
+
+## Connection manager and Paperclip plugin links (v1.2.0-beta.1)
+
+- The manager (`/manage`) uses a signed, `HttpOnly`, `SameSite=Strict` session cookie; every state-changing call also needs a JSON content type and the `x-papercliped` header (CSRF). Sensitive actions (new secret key, disconnect Paperclip, delete account) re-ask for the secret key and share the sign-in throttle.
+- **Plugin links:** a one-time code (`pcl_…`, 10 minutes, single use, stored hashed) is made only from a signed-in beta browser session and exchanged (IP rate-limited; wrong, used and expired codes answer identically) for a long-lived token (`pcb_pl_…`, stored hashed on a grant with **no scopes**, 180-day expiry).
+- A plugin token opens only the manage API for its own account. It can **not** call the MCP or Actions endpoints, make link codes, change the beta, sign out, or do any secret-key action (those answer 403), and it can remove only itself. Making a new secret key revokes every plugin link. Tests: `test/manage.test.ts` ("Paperclip plugin link").
+- The plugin runs as trusted, same-origin code inside Paperclip and is installed only by the instance admin. Its worker keeps each person's token in plugin state keyed by a hash of the host-verified user id, never returns it to the page, and talks only to an `https` bridge URL. Residual risk: anyone able to read the plugin's state storage (the Paperclip server operator) can use a linked token for the manage API; unlink from `/manage` if the Paperclip host is not trusted.
+- The plugin has not been run in a live Paperclip; see `plugin/README.md`.
+
+## Planned (v2): managed subdomains
+See `docs/V2-SUBDOMAINS.md` §7a for the hardening list and the threats to add here when it is built.

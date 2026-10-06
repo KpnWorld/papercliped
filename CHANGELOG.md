@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Foundation: CodeQL workflow, Dependabot, dependency audit and least-privilege permissions in CI; `CONTRIBUTING.md`; `docs/SITEMAP.md` (every page and endpoint); `docs/V2-SUBDOMAINS.md` (the v2 plan for paid managed subdomains); security doc covers plugin links.
+
 ## v1.2.0-beta.1 — Paperclip plugin
 
 - **Paperclip plugin** (`plugin/`, npm `papercliped-paperclip-plugin`, a separate package built on `@paperclipai/plugin-sdk`): a **Papercliped** sidebar entry and page inside Paperclip to link your account, list connected apps, switch them between Read only and Full control (beta), disconnect them, toggle anonymity, and unlink. The bridge URL is configurable (https only).
