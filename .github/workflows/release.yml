@@ -1,25 +1,72 @@
 name: Release
+# npm trusted publishing (OIDC): no npm token is stored anywhere. Register this exact filename (release.yml) on npmjs.com for both
+# packages. See docs/RELEASING.md.
 on:
   push:
     tags: ["v*"]
 permissions:
-  contents: write
-  id-token: write   # npm provenance
+  contents: write   # GitHub release
+  id-token: write   # npm trusted publishing (OIDC)
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, registry-url: "https://registry.npmjs.org" }
-      - run: npm ci
-      - run: npm run build && npm test
-      - name: Publish to npm (pre-releases go to the `beta` tag)
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"   # trusted publishing needs npm >= 11.5.1 and Node >= 22.14
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      - name: Make sure npm supports trusted publishing
         run: |
-          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then npm publish --tag beta --provenance; else npm publish --provenance; fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm install -g npm@latest
+          npm --version
+
+      - name: Tag matches the root package.json version
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have="$(node -p "require('./package.json').version")"
+          if [ "$want" != "$have" ]; then echo "::error::tag $GITHUB_REF_NAME does not match package.json version $have"; exit 1; fi
+      - name: Tag matches the plugin package.json version
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have="$(node -p "require('./plugin/package.json').version")"
+          if [ "$want" != "$have" ]; then echo "::error::tag $GITHUB_REF_NAME does not match plugin/package.json version $have"; exit 1; fi
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm --prefix plugin ci
+      - run: npm --prefix plugin run typecheck
+      - run: npm --prefix plugin test
+      - run: npm --prefix plugin run build
+
+      - name: Publish papercliped (pre-releases go to the `beta` tag)
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then npm publish --tag beta; else npm publish; fi
+      - name: Publish papercliped-paperclip-plugin (skipped if this version is already on npm)
+        working-directory: plugin
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          ver="$(node -p "require('./package.json').version")"
+          if npm view "$name@$ver" version >/dev/null 2>&1; then
+            echo "$name@$ver is already on npm; skipping."
+            exit 0
+          fi
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then npm publish --tag beta; else npm publish; fi
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v tag="$GITHUB_REF_NAME" '
+            /^## / { if (found) exit; if (index($0, "## " tag) == 1) found = 1 }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then echo "No section for $GITHUB_REF_NAME; using the whole CHANGELOG."; cp CHANGELOG.md "$RUNNER_TEMP/notes.md"; fi
       - name: GitHub release
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file CHANGELOG.md --prerelease
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then echo "Release $GITHUB_REF_NAME already exists; skipping."; exit 0; fi
+          flags=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" "${flags[@]}" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
