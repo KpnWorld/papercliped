@@ -11,6 +11,7 @@ Users who cannot get a public `https://` address for their Paperclip can pay **$
 - **Base domain may change** (today `kpnsolute.com`). The registry stores the **label**, not the full address; the base domain is configuration. The label stays registered to the user across any domain change.
 - **Purpose is limited:** the subdomain is an access address for the user's own Paperclip, like a handle on a platform, not a place to run a business's public site.
 - **Anonymous mode does not affect the subdomain.** Anonymous only hides a user from the public live log and the operator panel (it shows an alias there). The username is still the username, so anonymous users get the same `<username>.<domain>` as everyone else.
+- **Cloudflare terms (checked by the owner, not re-verified by us):** the service is fine as long as users do not use the subdomains for actual business uses. The Subdomain Terms and the abuse checks in section 7 must enforce this. **For the legal drafting:** decide exactly where "business use" starts. Working line so far: reaching your own Paperclip through the name is allowed even if that Paperclip supports a business; using the name as a public site, API, storefront or brand, or serving anyone else's service, is not.
 - **Entry point:** a link on the connect screen ("No public address? We've got you covered.") to `/domain` on the bridge site. `/domain` offers: (1) buy a domain yourself and follow the guide, (2) use a domain you own and follow the guide, (3) let us do it ($5).
 - **Provisioner runs on the owner's home server**, using Cloudflare.
 - Legal documents are drafted later (not in this doc).
@@ -69,7 +70,7 @@ Cover: purpose limit (access address for your own Paperclip; internal use that s
 2. 12-month quarantine and idle-reclaim periods?
 3. Which domain (dedicated, one level)?
 4. Open to everyone or beta only at launch?
-5. Verify with Cloudflare's current docs: tunnels per account, DNS records per zone, free-plan terms for this use, certificate coverage for subdomains, per-OS service install steps.
+5. Still to verify with Cloudflare's current docs: tunnels per account, DNS records per zone, certificate coverage for subdomains, per-OS service install steps.
 
 ## 11. Phases
 1. **Provisioning core:** migration, provider interface + fake, job queue, home-server worker, claim/release/suspend, label rules.
