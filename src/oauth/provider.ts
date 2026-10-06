@@ -239,8 +239,8 @@ export class OAuthProvider {
     }
   }
 
-  // ───────────── account management (the beta connection manager) ─────────────
-  // Everything here acts on ONE account and is reached only through ManageRoutes after the owner proved the secret key.
+  // ───────────── account management (the Paperclip plugin's connection manager) ─────────────
+  // Everything here acts on ONE account and is reached only through ManageRoutes, with a plugin token or the secret key.
 
   /** Username + secret key, throttled exactly like the sign-in page (shared counters, so there is no cheaper way to guess). */
   async manageLogin(req: IncomingMessage, username: string, secret: string): Promise<{ ok: true; account: Account } | { ok: false; reason: "throttled" | "invalid" }> {
@@ -268,40 +268,18 @@ export class OAuthProvider {
     return verifySecretKey(secret, a.secretHash);
   }
 
-  /** Key for signing manager session cookies (derived from the service secret; never the secret itself). */
-  manageSigningKey(): Buffer {
-    return Buffer.from(hkdfSync("sha256", this.deps.oauth.secret, "papercliped", "manage-session-v1", 32));
-  }
-
-  // ── the Paperclip plugin link: a one-time code (typed into the plugin) is exchanged for a long-lived plugin token ──
+  // ── the Paperclip plugin link: the plugin signs in once with username + secret key and gets a long-lived plugin token ──
   // The token is stored as a hash on a synthetic grant (client "paperclip-plugin", NO scopes), so it appears in no tool list,
   // cannot call any Paperclip tool, and is revoked like any grant. It only opens the manage API for its own account.
 
-  /** A single-use code the user types into the Paperclip plugin. Valid 10 minutes. */
-  async manageIssueLinkCode(a: Account): Promise<{ code: string; expiresInSec: number }> {
-    const raw = randomToken(9).replace(/[^A-Za-z0-9]/g, "").toUpperCase().padEnd(10, "7").slice(0, 10);
-    const code = `pcl_${raw.slice(0, 5)}-${raw.slice(5)}`;
-    const ttl = 10 * 60_000;
-    await this.store.putCode(sha256Hex(code), { clientId: "plugin-link", redirectUri: "", codeChallenge: "", scopes: [], clientName: "Paperclip plugin", userId: null, instanceUrl: null, sealedCredential: null, accountId: a.id, username: displayName(a), path: "plugin", expiresAt: this.now() + ttl });
-    await this.event("updated", { accountId: a.id, username: displayName(a) }, "plugin_code");
-    return { code, expiresInSec: ttl / 1000 };
-  }
-
-  /** Trade a link code for a plugin token. Wrong, used and expired codes all look the same. */
-  async manageExchangeLinkCode(req: IncomingMessage, code: string, meta: { instanceHost: string | null; paperclipUserId: string | null }): Promise<{ token: string } | null> {
-    if (!(await this.limit(`plink:ip:${this.ip(req)}`, 20))) return null;
-    const norm = code.trim().toUpperCase();
-    if (!/^PCL_[A-Z0-9]{5}-[A-Z0-9]{5}$/.test(norm)) return null;
-    const taken = await this.store.takeCode(sha256Hex(`pcl_${norm.slice(4)}`));
-    if (taken.status !== "ok" || taken.record.clientId !== "plugin-link" || taken.record.expiresAt < this.now() || !taken.record.accountId) return null;
-    const a = await this.store.getAccount(taken.record.accountId);
-    if (!a || a.disabled) return null;
+  /** A plugin token for an account whose owner just proved the secret key. */
+  async manageLinkPlugin(a: Account, meta: { instanceHost: string | null; paperclipUserId: string | null }): Promise<{ token: string; linkId: string }> {
     const id = `pcb_pg_${randomToken(10)}`;
     const token = `pcb_pl_${randomToken(32)}`;
     await this.store.putGrant({ id, clientId: "paperclip-plugin", clientName: "Paperclip plugin", userId: meta.paperclipUserId, scopes: [], resource: "manage", instanceUrl: meta.instanceHost ? `https://${meta.instanceHost}` : null, sealedCredential: null, accountId: a.id, username: displayName(a), createdAt: this.now(), lastUsedAt: this.now(), revoked: false });
     await this.store.putAccess(sha256Hex(token), { grantId: id, expiresAt: this.now() + 180 * DAY_MS });
     await this.event("updated", { accountId: a.id, username: displayName(a) }, "plugin_linked");
-    return { token };
+    return { token, linkId: id };
   }
 
   /** The account (and link id) a plugin token belongs to (null if unknown, expired, revoked, or not a plugin token). */
@@ -317,12 +295,8 @@ export class OAuthProvider {
     return { account: a, linkId: g.id };
   }
 
-  async manageAccountForPluginToken(token: string): Promise<Account | null> {
-    return (await this.managePluginPrincipal(token))?.account ?? null;
-  }
-
   async manageListPluginLinks(accountId: string) {
-    return (await this.store.listAccountGrants(accountId)).filter((g) => g.clientId === "paperclip-plugin" && !g.revoked).map((g) => ({ id: g.id, host: g.instanceUrl ? new URL(g.instanceUrl).host : null, createdAt: g.createdAt, lastUsedAt: g.lastUsedAt }));
+    return (await this.store.listAccountGrants(accountId)).filter((g) => g.clientId === "paperclip-plugin" && !g.revoked).map((g) => ({ id: g.id, host: g.instanceUrl ? new URL(g.instanceUrl).host : null, paperclipUserId: g.userId, createdAt: g.createdAt, lastUsedAt: g.lastUsedAt }));
   }
 
   async manageRevokePluginLink(a: Account, id: string): Promise<boolean> {
@@ -335,12 +309,6 @@ export class OAuthProvider {
 
   manageAccount(accountId: string) {
     return this.store.getAccount(accountId);
-  }
-
-  async manageSetBeta(a: Account, beta: boolean): Promise<void> {
-    if (!!a.beta === beta) return;
-    await this.store.setAccountBeta(a.id, beta);
-    await this.event("updated", { accountId: a.id, username: displayName(a) }, beta ? "beta_on" : "beta_off");
   }
 
   async manageConnections(accountId: string) {
@@ -373,7 +341,7 @@ export class OAuthProvider {
   async manageRotateSecret(a: Account): Promise<string> {
     const secret = generateSecretKey();
     await this.store.setAccountSecret(a.id, await hashSecretKey(normalizeSecretKey(secret)!));
-    // A new secret key means "I may be compromised": plugin links go too and must be linked again with a fresh code.
+    // A new secret key means "I may be compromised": every plugin link goes too (the caller relinks the plugin it came from).
     for (const g of await this.store.listAccountGrants(a.id)) if (g.clientId === "paperclip-plugin" && !g.revoked) await this.store.revokeGrant(g.id);
     await this.event("updated", { accountId: a.id, username: displayName(a) }, "secret_rotated");
     return secret;
@@ -819,7 +787,7 @@ export class OAuthProvider {
         const link = p.accountId ? await this.store.getLink(p.accountId) : undefined;
         const u = new URL(p.redirectUri);
         const acct = p.accountId ? await this.store.getAccount(p.accountId) : undefined;
-        return this.page(res, status, scopePage({ ...c, requestedMax: normalizeScope(p.requestedMax) as Scope, loopbackOnly: u.protocol === "http:" && LOOPBACK.has(u.hostname), instanceHost: link ? new URL(link.instanceUrl).host : "your Paperclip", username: p.username ?? "", anonymous: !!acct?.anonymous, alias: acct?.alias ?? null, beta: !!acct?.beta }), p);
+        return this.page(res, status, scopePage({ ...c, requestedMax: normalizeScope(p.requestedMax) as Scope, loopbackOnly: u.protocol === "http:" && LOOPBACK.has(u.hostname), instanceHost: link ? new URL(link.instanceUrl).host : "your Paperclip", username: p.username ?? "", anonymous: !!acct?.anonymous, alias: acct?.alias ?? null}), p);
       }
       default:
         return this.page(res, status, choosePage(c), p);
@@ -1151,13 +1119,6 @@ export class OAuthProvider {
     if (f.get("privacy_present") === "1") {
       const want = f.get("anonymous") === "on";
       if (want !== !!acct.anonymous) acct = await this.setPrivacy(acct, want);
-    }
-    if (f.get("beta_present") === "1") {
-      const want = f.get("beta") === "on";
-      if (want !== !!acct.beta) {
-        await this.manageSetBeta(acct, want);
-        acct = { ...acct, beta: want };
-      }
     }
     const code = `pcb_ac_${randomToken(32)}`;
     await this.store.putCode(sha256Hex(code), {

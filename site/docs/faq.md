@@ -16,7 +16,7 @@ Your username, a hash of your secret key, your Paperclip's address, an encrypted
 Yes: run it locally with `npx papercliped@latest`. The hosted bridge needs a public https address; see [Set up your Paperclip](/docs/connect-your-paperclip).
 
 ## Why does pausing an agent fail with 403?
-Pause, resume, wake and approve need a Paperclip **board** token, and a connection at **Full control** or above. Check your level on the [manage page](/docs/manage).
+Pause, resume, wake and approve need a Paperclip **board** token, and a connection at **Full control**. Check your level in the [Paperclip plugin](/docs/paperclip-plugin).
 
 ## How do I stop it?
 Disconnect the app on the manage page, revoke the key in your Paperclip, or delete your account. It stops at once.

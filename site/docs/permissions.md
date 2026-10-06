@@ -12,7 +12,7 @@ You decide how much the AI may do each time you connect. There are two levels.
 - Your Paperclip key has the access your Paperclip account has. The levels limit what the **AI app** can do through Papercliped; they do not shrink the key itself. That is why the key is stored encrypted and why you can revoke it at any time.
 - The AI asks for confirmation before actions that can't be undone, such as terminating an agent.
 - Apps that still ask for the old "admin" level get Full control.
-- To change a level, beta users can use the [connection manager](/docs/manage); everyone else can disconnect the app and connect it again.
+- To change a level, use the [Paperclip plugin](/docs/paperclip-plugin), or disconnect the app and connect it again.
 
 ## Disconnecting
 - Remove the connector in Claude or ChatGPT.

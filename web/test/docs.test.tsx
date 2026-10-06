@@ -58,7 +58,7 @@ describe("docs pages", () => {
     expect(screen.getByRole("link", { name: "Edit this page on GitHub" })).toHaveAttribute("href", "https://github.com/OpenSourcx/papercliped/edit/main/site/docs/permissions.md");
     const pn = screen.getByRole("navigation", { name: "Previous and next" });
     expect(within(pn).getByText("ChatGPT setup")).toBeInTheDocument(); // previous in the nav order
-    expect(within(pn).getByText("Manage connections (beta)")).toBeInTheDocument(); // next
+    expect(within(pn).getByText("Manage connections")).toBeInTheDocument(); // next
     expect(screen.getByRole("button", { name: "Copy link" })).toBeInTheDocument();
   });
   it("the tool reference lists every tool", () => {

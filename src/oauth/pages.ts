@@ -191,7 +191,7 @@ const LEVELS: { scope: Scope; label: string; blurb: string }[] = [
 ];
 
 /** Final step of the account flow: pick how much the app may do. */
-export function scopePage(v: Ctx & { requestedMax: Scope; loopbackOnly: boolean; instanceHost: string; username: string; anonymous?: boolean; alias?: string | null; beta?: boolean }): string {
+export function scopePage(v: Ctx & { requestedMax: Scope; loopbackOnly: boolean; instanceHost: string; username: string; anonymous?: boolean; alias?: string | null }): string {
   const allowed = new Set(grantableScopes(v.requestedMax));
   const def: Scope = v.requestedMax;
   const opts = LEVELS.filter((l) => allowed.has(l.scope))
@@ -209,11 +209,9 @@ export function scopePage(v: Ctx & { requestedMax: Scope; loopbackOnly: boolean;
        ${opts}${where}
        <input type="hidden" name="privacy_present" value="1">
        <label class="chk"><input type="checkbox" name="anonymous"${v.anonymous ? " checked" : ""}><span>${esc(ANON_TEXT)}${v.alias ? ` <small class="hint">${v.anonymous ? "You appear as" : "You would appear as"} <strong>${esc(v.alias)}</strong>.</small>` : ""}</span></label>
-       <input type="hidden" name="beta_present" value="1">
-       <label class="chk"><input type="checkbox" name="beta"${v.beta ? " checked" : ""}><span>Join the beta: manage your connections (see them, change what each may do, disconnect) at <code>/manage</code>.</span></label>
        <div class="row"><button class="btn" name="action" value="allow">Allow</button>${cancel}</div>
      </form>
-     <p class="fine">Disconnect any time from the app. Access levels are enforced by Papercliped; your Paperclip key stays encrypted on our side and is never shown to the app.</p>`,
+     <p class="fine">Disconnect any time from the app, or manage every connection inside Paperclip with the Papercliped plugin. Access levels are enforced by Papercliped; your Paperclip key stays encrypted on our side and is never shown to the app.</p>`,
   );
 }
 

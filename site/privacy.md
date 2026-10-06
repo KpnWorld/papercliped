@@ -21,7 +21,6 @@ The service publishes **aggregate numbers only** at `/api/public/v1/*` and on th
 | OAuth tokens | to authenticate the AI app to the service | only irreversible hashes are stored; access tokens last 1 hour |
 | Activity log: time, tool name, whether it changed anything, success or failure, timing, app name, your Paperclip's host | security, abuse prevention and measuring reliability | kept 30 days |
 | Community log: when an account joins, signs in, updates or leaves, and whether sign-in flows succeed | to measure how the service is doing | kept with the activity log |
-| Whether you joined the beta | to show you the connection manager | stored with your account |
 | Service health samples | to detect outages | kept short-term, contain no personal data |
 
 **Pass-through:** content from your Paperclip (tasks, agent names, reports) is relayed to the AI app you connected so it can answer you. The service **does not store** that content and does not log request arguments or responses.

@@ -19,7 +19,7 @@ Creating a Papercliped account takes about a minute. You do it the first time yo
 
    Examples that work: `kpn.wrld`, `og_dev7`, `river#2026`.
 6. **Save your secret key.** Papercliped shows a key that starts with `pcs_` **once**. Copy it into a password manager. Only a one-way hash is stored, so nobody can read it back, including us.
-7. **Choose how much to allow.** **Read only** is the default. **Full control** lets the AI pause, wake and assign agents and create or update issues. You can also tick **Appear anonymously** and **Join the beta**.
+7. **Choose how much to allow.** **Read only** is the default. **Full control** lets the AI use every tool: pause, wake or terminate agents, update issues and goals, decide approvals and set budgets. You can also tick **Appear anonymously**.
 8. Click **Allow**. You return to Claude and can ask, for example, "List my Paperclip agents."
 
 ## Coming back later

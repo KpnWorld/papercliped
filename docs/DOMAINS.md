@@ -4,14 +4,14 @@ One bridge service answers every host; it routes by the `Host` header. Nothing h
 
 | Host | What it serves |
 | --- | --- |
-| `papercliped.co` | The website (landing, status, changelog, community, brand, privacy, terms), `/manage`, and every API |
+| `papercliped.co` | The website (landing, status, changelog, community, brand, privacy, terms) and every API |
 | `www.papercliped.co` | Redirects to `papercliped.co` (same path) |
 | `docs.papercliped.co` | The docs at `/topics` and `/topics/<page>`; `/` and old `/docs/...` paths redirect there |
 | `mcp.papercliped.co` | **Where AI apps connect** (`/mcp`, the OAuth issuer), ChatGPT Actions and `/openapi.json`; web pages redirect to `papercliped.co` |
 | `api.papercliped.co` | `/api/public/v1/*` and `/openapi.json`; web pages redirect to `papercliped.co` |
 | `forum.papercliped.co` | Redirects to the forum (`FORUM_URL`; GitHub Discussions to start, see `docs/COMMUNITY.md`) |
 
-Every host also answers the protocol and API paths (`/mcp`, `/authorize`, `/token`, `/register`, `/revoke`, `/.well-known/*`, `/actions/*`, `/openapi.json`, `/api/*`, `/manage`, `/healthz`, `/readyz`), so nothing breaks if an app or person uses another host for them.
+Every host also answers the protocol and API paths (`/mcp`, `/authorize`, `/token`, `/register`, `/revoke`, `/.well-known/*`, `/actions/*`, `/openapi.json`, `/api/*`, `/healthz`, `/readyz`), so nothing breaks if an app or person uses another host for them.
 
 ## 1. Cloudflare DNS
 In Cloudflare → `papercliped.co` → **DNS → Records**, add (Render shows the exact target, `<service>.onrender.com`):
@@ -42,7 +42,7 @@ The first `marketing` host is the canonical one. Hosts you don't list (like `<se
 ```
 BRIDGE_PUBLIC_URL=https://mcp.papercliped.co
 ```
-Connector URL: **`https://mcp.papercliped.co/mcp`** (ChatGPT Actions: `https://mcp.papercliped.co/openapi.json`). The website, docs and `/manage` stay on `papercliped.co`; the docs show the connector URL through the `{{MCP}}` placeholder.
+Connector URL: **`https://mcp.papercliped.co/mcp`** (ChatGPT Actions: `https://mcp.papercliped.co/openapi.json`). The website and docs stay on `papercliped.co`; the docs show the connector URL through the `{{MCP}}` placeholder.
 
 **Changing `BRIDGE_PUBLIC_URL` invalidates every existing token**, so everyone connected must connect again (at the time of the switch, only the owner). After switching:
 - Claude: Settings → Connectors → remove the old connector, add `https://mcp.papercliped.co/mcp`. Claude Code: `claude mcp remove papercliped` then `claude mcp add --transport http papercliped https://mcp.papercliped.co/mcp`.

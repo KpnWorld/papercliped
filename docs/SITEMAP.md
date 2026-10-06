@@ -26,8 +26,8 @@ One service, routed by host (`PUBLIC_HOSTS`, `src/web/`): `papercliped.co` the w
 | `/docs/faq` | FAQ |
 | `/docs/signup` | Create your account |
 | `/docs/connect-your-paperclip` | Set up your Paperclip (public address, tunnels, domains) |
-| `/docs/manage` | Manage connections (beta) |
-| `/docs/paperclip-plugin` | Paperclip plugin (beta) |
+| `/docs/manage` | Manage connections |
+| `/docs/paperclip-plugin` | Paperclip plugin |
 | `/docs/permissions` | Permissions |
 | `/docs/anonymous-mode` | Anonymous mode |
 | `/docs/public-api` | Public API and status |
@@ -47,15 +47,15 @@ One service, routed by host (`PUBLIC_HOSTS`, `src/web/`): `papercliped.co` the w
 | --- | --- |
 | `GET /authorize` | Start: sign in with username and secret key, or connect your Paperclip |
 | `GET /authorize/status` | Polling while the user approves in Paperclip |
-| `POST /authorize/login`, `/connect`, `/instance`, `/approved`, `/username`, `/welcome`, `/continue`, `/decision` | The steps of the screens above (login, enter address, approve, pick username, secret key shown once, consent: Read only / Full control, Appear anonymously, Join the beta) |
+| `POST /authorize/login`, `/connect`, `/instance`, `/approved`, `/username`, `/welcome`, `/continue`, `/decision` | The steps of the screens above (login, enter address, approve, pick username, secret key shown once, consent: Read only / Full control, Appear anonymously) |
 | `/authorize` link "No public address?" **(planned v3)** | Links to `/domain` |
 
-## 3. Account area (cookie session) — `src/manage/`
+## 3. Account management (inside Paperclip, via the plugin) — `src/manage/`
 | Path | Purpose |
 | --- | --- |
-| `GET /manage` | Connection manager (beta, later also pro): sign in, connected apps, level, disconnect, privacy, Paperclip plugin links, security actions |
-| `/api/manage/*` | JSON API behind it: `login`, `logout`, `me`, `beta`, `connections`, `connections/:id`, `privacy`, `plugin-link`, `plugin-link/exchange`, `plugin-links`, `plugin-links/:id`, `secret/rotate`, `paperclip/disconnect`, `account/delete`. A plugin token (`Authorization: Bearer pcb_pl_…`) may use only the non-sensitive subset |
-| Domain section of `/manage` **(planned v3)** | Pro members: address, tunnel status, token, port, release |
+| `GET /manage` | Old address: redirects to `/docs/paperclip-plugin` |
+| `/api/manage/*` | JSON API used by the Paperclip plugin (bearer token only, no cookies): `plugin-link/sign-in`, `me`, `connections`, `connections/:id`, `privacy`, `plugin-links`, `plugin-links/:id`, `secret/rotate`, `paperclip/disconnect`, `account/delete` (the last three need the secret key again) |
+| Domain section in the plugin **(planned v3)** | Pro members: address, tunnel status, token, port, release |
 
 ## 4. AI client endpoints
 | Path | Purpose |

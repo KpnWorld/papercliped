@@ -24,6 +24,8 @@
 
 - **Two access levels: Read only and Full control.** Full control is now every tool (pause, wake, terminate, issues, goals, comments, approvals, budgets and raw API writes), so you can run your Paperclip from anywhere. The separate "Admin" level is gone; existing admin grants and apps that still ask for it get Full control (migration `006_two_levels.sql` tidies stored grants). The sign-in page, the manage page, the Paperclip plugin, the docs and the website playground all show the two levels.
 
+- **Managing your account moved into Paperclip.** The Papercliped plugin is now the connection manager: link it with your username and secret key (checked once, not stored), then change levels, disconnect apps, switch anonymity, see and remove linked Paperclips, make a new secret key (this Paperclip stays linked), disconnect your Paperclip or delete your account. The `/manage` web page, its cookie sign-in, one-time link codes and the beta opt-in are gone (`/manage` now points to the plugin docs); the manage API accepts plugin tokens only.
+
 ## v2.0.0 — stable open-source build
 
 Papercliped v2 is the free, open-source foundation: the bridge, the connector for Claude and any MCP app, and the Paperclip plugin. Paid features (managed subdomains, pricing, legal) are planned for v3 (`docs/V3-SUBDOMAINS.md`).

@@ -105,7 +105,7 @@ It prints a random `https://something.trycloudflare.com` address. **The address 
 - **Expose only Paperclip.** Point the tunnel at Paperclip's port and nothing else on your computer.
 - **Keep Paperclip up to date.**
 - **Use a dedicated Paperclip user for the connection** if you can, so you can see and limit what it does.
-- **You can cut access any time:** revoke the Papercliped key in Paperclip, or disconnect from the [manage page]({{URL}}/manage).
+- **You can cut access any time:** revoke the Papercliped key in Paperclip, or disconnect apps in the [Paperclip plugin](/docs/paperclip-plugin).
 - **If the tunnel or your computer is off,** connected apps simply stop working until it's back. Nothing is lost.
 
 ## Troubleshooting

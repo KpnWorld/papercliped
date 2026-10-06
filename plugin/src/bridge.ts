@@ -20,6 +20,13 @@ export interface Connection {
   createdAt: number;
   lastUsedAt: number | null;
 }
+export interface PluginLink {
+  id: string;
+  host: string | null;
+  createdAt: number;
+  lastUsedAt: number | null;
+  current: boolean;
+}
 export interface ServiceStatus {
   status: "ok" | "degraded" | "down";
   version: string;
@@ -34,13 +41,12 @@ export interface Me {
   name: string;
   anonymous: boolean;
   alias: string | null;
-  beta: boolean;
   paperclip: string | null;
   connected: boolean;
 }
 
 /**
- * The bridge URL must be https (the token and the one-time code travel to it). `allowInsecureLoopback` exists for tests only and
+ * The bridge URL must be https (the token and, when linking, the secret key travel to it). `allowInsecureLoopback` exists for tests only and
  * the worker never sets it.
  */
 export function normalizeBridgeUrl(raw: unknown, opts: { allowInsecureLoopback?: boolean } = {}): string {
@@ -66,7 +72,7 @@ export class BridgeClient {
   constructor(private base: string, private doFetch: FetchLike, private timeoutMs = 10_000) {}
 
   private async req<T>(method: string, path: string, opts: { token?: string; body?: unknown } = {}): Promise<T> {
-    const headers: Record<string, string> = { accept: "application/json", "x-papercliped": "1" };
+    const headers: Record<string, string> = { accept: "application/json" };
     if (opts.token) headers.authorization = `Bearer ${opts.token}`;
     if (opts.body !== undefined) headers["content-type"] = "application/json";
     let res: Response;
@@ -86,10 +92,10 @@ export class BridgeClient {
     return json as T;
   }
 
-  async exchange(code: string, meta: { instanceHost?: string | null; paperclipUserId?: string | null }): Promise<string> {
-    const r = await this.req<{ token?: string }>("POST", "/plugin-link/exchange", { body: { code, instanceHost: meta.instanceHost ?? null, paperclipUserId: meta.paperclipUserId ?? null } });
-    if (typeof r.token !== "string" || !r.token.startsWith("pcb_pl_")) throw new BridgeError("The bridge sent an unexpected answer.", 502);
-    return r.token;
+  /** Sign in once with username + secret key; the bridge answers with a plugin token. The key is not kept anywhere. */
+  async signIn(username: string, secret: string, meta: { instanceHost?: string | null; paperclipUserId?: string | null }): Promise<string> {
+    const r = await this.req<{ token?: string }>("POST", "/plugin-link/sign-in", { body: { username, secret, instanceHost: meta.instanceHost ?? null, paperclipUserId: meta.paperclipUserId ?? null } });
+    return checkToken(r.token);
   }
   me(token: string) {
     return this.req<Me>("GET", "/me", { token });
@@ -134,4 +140,27 @@ export class BridgeClient {
   async unlink(token: string): Promise<void> {
     await this.req("DELETE", "/plugin-links/self", { token });
   }
+  async links(token: string): Promise<PluginLink[]> {
+    return (await this.req<{ links: PluginLink[] }>("GET", "/plugin-links", { token })).links ?? [];
+  }
+  async removeLink(token: string, id: string): Promise<void> {
+    await this.req("DELETE", `/plugin-links/${encodeURIComponent(id)}`, { token });
+  }
+  /** A new secret key (shown once). Every other plugin link ends; this one gets a fresh token. */
+  async rotateSecret(token: string, secret: string): Promise<{ secret: string; token: string }> {
+    const r = await this.req<{ secret?: string; token?: string }>("POST", "/secret/rotate", { token, body: { secret } });
+    if (typeof r.secret !== "string" || !r.secret.startsWith("pcs_")) throw new BridgeError("The bridge sent an unexpected answer.", 502);
+    return { secret: r.secret, token: checkToken(r.token) };
+  }
+  async disconnectPaperclip(token: string, secret: string): Promise<void> {
+    await this.req("POST", "/paperclip/disconnect", { token, body: { secret } });
+  }
+  async deleteAccount(token: string, secret: string, confirm: string): Promise<void> {
+    await this.req("POST", "/account/delete", { token, body: { secret, confirm } });
+  }
+}
+
+function checkToken(t: unknown): string {
+  if (typeof t !== "string" || !t.startsWith("pcb_pl_")) throw new BridgeError("The bridge sent an unexpected answer.", 502);
+  return t;
 }

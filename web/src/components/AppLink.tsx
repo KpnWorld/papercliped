@@ -2,7 +2,7 @@ import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { isExternal, resolveHref } from "../lib/hosts";
 
-/** Paths the React app renders itself; other same-site paths (like /manage) are bridge pages and need a full load. */
+/** Paths the React app renders itself; other same-site paths (like /status.json or /api) are bridge paths and need a full load. */
 export const APP_PATH = /^\/(docs(\/|$)|topics(\/|$)|changelog$|community$|brand$|status$|privacy$|terms$|kit$|$)/;
 
 /**

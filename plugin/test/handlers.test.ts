@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BridgeError, normalizeBridgeUrl } from "../src/bridge.js";
 import { createHandlers } from "../src/handlers.js";
 import { linkScope } from "../src/keys.js";
-import { newCode, startFakeBridge, type FakeBridge } from "./fake-bridge.js";
+import { annLogin, startFakeBridge, type FakeBridge } from "./fake-bridge.js";
 
 let fake: FakeBridge;
 const mem = new Map<string, unknown>();
@@ -31,25 +31,24 @@ describe("bridge url", () => {
 describe("plugin actions against a fake bridge", () => {
   it("only acts for a verified person", async () => {
     await expect(h.status({}, { type: "agent", userId: null })).rejects.toThrow(/as a person/);
-    await expect(h.link({ code: "x" }, { type: "user", userId: null })).rejects.toThrow(/as a person/);
+    await expect(h.link({ username: "x", secret: "y" }, { type: "user", userId: null })).rejects.toThrow(/as a person/);
   });
 
-  it("links with a one-time code, stores the token under the actor's own key, and never returns it", async () => {
+  it("links with username + secret key, stores only the token under the actor's own key, and never returns it", async () => {
     expect(await h.status({}, ann)).toEqual({ linked: false });
-    const code = newCode(fake);
-    const r = await h.link({ code, instanceHost: "paperclip.example.com" }, ann);
+    const r = await h.link(annLogin(fake, { instanceHost: "paperclip.example.com" }), ann);
     expect(r).toMatchObject({ linked: true, me: { name: "ann.test1" } });
     expect(JSON.stringify(r)).not.toContain("pcb_pl_");
     const stored: any = mem.get(k(linkScope("user-ann")));
     expect(stored.token).toMatch(/^pcb_pl_/);
     expect(mem.get(k(linkScope("user-bob")))).toBeUndefined();
-    const ex = fake.seen.find((s) => s.path.endsWith("/plugin-link/exchange"))!;
-    expect(ex.body).toEqual({ code, instanceHost: "paperclip.example.com", paperclipUserId: "user-ann" }); // the verified id, not a UI value
-    expect(ex.headers["x-papercliped"]).toBe("1");
+    expect(JSON.stringify(stored)).not.toContain(fake.secret); // the secret key is never kept
+    const ex = fake.seen.find((s) => s.path.endsWith("/plugin-link/sign-in"))!;
+    expect(ex.body).toEqual({ username: "ann.test1", secret: fake.secret, instanceHost: "paperclip.example.com", paperclipUserId: "user-ann" }); // the verified id, not a UI value
     expect(JSON.stringify(await h.status({}, ann))).not.toContain("pcb_pl_");
-    // a used code is refused with the bridge's message
-    await expect(h.link({ code }, bob)).rejects.toThrow(/not valid/);
-    await expect(h.link({ code: "  " }, bob)).rejects.toThrow(/Paste the code/);
+    // a wrong key is refused with the bridge's message
+    await expect(h.link({ username: "ann.test1", secret: "pcs_WRONG" }, bob)).rejects.toThrow(/don't match/);
+    await expect(h.link({ username: "ann.test1", secret: "  " }, bob)).rejects.toThrow(/username and secret key/);
   });
 
   it("users are isolated: another person is not linked and cannot use Ann's token", async () => {
@@ -76,26 +75,26 @@ describe("plugin actions against a fake bridge", () => {
 
   it("forgets the link when the bridge says the token is dead", async () => {
     const token = (mem.get(k(linkScope("user-ann"))) as any).token;
-    fake.tokens.get(token)!.revoked = true; // e.g. unlinked at /manage, or the secret key was rotated
+    fake.tokens.get(token)!.revoked = true; // e.g. removed from another Paperclip, or the secret key was rotated
     expect(await h.status({}, ann)).toEqual({ linked: false, expired: true });
     expect(mem.get(k(linkScope("user-ann")))).toBeUndefined();
   });
 
   it("unlink revokes at the bridge and clears local state, even if the bridge is unreachable", async () => {
-    await h.link({ code: newCode(fake) }, ann);
+    await h.link(annLogin(fake), ann);
     const token = (mem.get(k(linkScope("user-ann"))) as any).token;
     expect(await h.unlink({}, ann)).toEqual({ linked: false, revoked: true });
     expect(fake.tokens.get(token)!.revoked).toBe(true);
     expect(mem.get(k(linkScope("user-ann")))).toBeUndefined();
 
-    await h.link({ code: newCode(fake) }, ann);
+    await h.link(annLogin(fake), ann);
     const down = createHandlers({ state, fetch: async () => { throw new Error("offline"); }, bridgeUrl: async () => fake.url, allowInsecureLoopback: true });
     expect(await down.unlink({}, ann)).toEqual({ linked: false, revoked: false });
     expect(mem.get(k(linkScope("user-ann")))).toBeUndefined();
   });
 
   it("surfaces unreachable bridges without leaking the token", async () => {
-    await h.link({ code: newCode(fake) }, ann);
+    await h.link(annLogin(fake), ann);
     const down = createHandlers({ state, fetch: async () => { throw new Error("offline: Bearer pcb_pl_secret"); }, bridgeUrl: async () => fake.url, allowInsecureLoopback: true });
     const e = await down.connections({}, ann).catch((x) => x);
     expect(e).toBeInstanceOf(BridgeError);
@@ -110,6 +109,29 @@ describe("plugin actions against a fake bridge", () => {
 
   it("refuses a non-https bridge URL from config", async () => {
     const bad = createHandlers({ state, fetch: (u, i) => fetch(u, i), bridgeUrl: async () => fake.url }); // no loopback exemption: what the worker does
-    await expect(bad.link({ code: newCode(fake) }, bob)).rejects.toThrow(/https/);
+    await expect(bad.link(annLogin(fake), bob)).rejects.toThrow(/https/);
+  });
+
+  it("account actions need the secret key; a new key keeps this Paperclip linked; disconnect and delete unlink", async () => {
+    await h.link(annLogin(fake), ann);
+    expect((await h.links({}, ann)).links[0]).toMatchObject({ host: "paperclip.example.com", current: true });
+    await expect(h.rotateSecret({}, ann)).rejects.toThrow(/secret key to confirm/);
+    await expect(h.rotateSecret({ secret: "pcs_WRONG" }, ann)).rejects.toThrow(/not right/);
+    const before = (mem.get(k(linkScope("user-ann"))) as any).token;
+    const r = await h.rotateSecret({ secret: fake.secret }, ann);
+    expect(r).toEqual({ secret: "pcs_NEW1-NEW2-NEW3-NEW4" });
+    const after = (mem.get(k(linkScope("user-ann"))) as any).token;
+    expect(after).not.toBe(before);
+    expect((await h.status({}, ann)).linked).toBe(true); // still linked with the fresh token
+
+    expect(await h.disconnectPaperclip({ secret: fake.secret }, ann)).toEqual({ linked: false });
+    expect(mem.get(k(linkScope("user-ann")))).toBeUndefined();
+
+    await h.link(annLogin(fake), ann);
+    await expect(h.deleteAccount({ secret: fake.secret }, ann)).rejects.toThrow(/username to confirm/);
+    await expect(h.deleteAccount({ secret: fake.secret, confirm: "nope" }, ann)).rejects.toThrow(/username to confirm/);
+    expect(await h.deleteAccount({ secret: fake.secret, confirm: "ann.test1" }, ann)).toEqual({ linked: false });
+    expect(mem.get(k(linkScope("user-ann")))).toBeUndefined();
+    expect(fake.deleted).toBe(true);
   });
 });

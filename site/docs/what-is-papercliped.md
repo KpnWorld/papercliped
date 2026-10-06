@@ -34,4 +34,4 @@ See the [tool reference](/docs/tools) for all of them.
 - **Account**: your Papercliped username and secret key, used to sign in again and manage connections.
 - **Secret key**: a key starting with `pcs_`, shown once; Papercliped keeps only a one-way hash.
 - **Board token**: a Paperclip credential with operator rights. Papercliped stores it encrypted and only uses it within your level.
-- **Connection manager**: the [manage page](/docs/manage), where you change levels and disconnect apps.
+- **Connection manager**: the [Paperclip plugin](/docs/paperclip-plugin), where you change levels, disconnect apps and manage your account.

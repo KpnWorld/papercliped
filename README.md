@@ -21,7 +21,7 @@ ChatGPT Custom GPT ──/actions/* + /openapi.json─▶ ┘
 
 ## Two plugins, one service
 
-| | **Papercliped for AI apps** (the main one) | **Papercliped plugin for Paperclip** (beta) |
+| | **Papercliped for AI apps** (the main one) | **Papercliped plugin for Paperclip** |
 | --- | --- | --- |
 | What | Lets Claude, ChatGPT or any MCP client control and report on your Paperclip | A page inside your Paperclip to link your Papercliped account and manage connected AI apps |
 | Where it runs | Hosted at `https://papercliped.co` (connector URL `https://mcp.papercliped.co/mcp`), or self-hosted / local (this repo, npm `papercliped`) | Inside Paperclip, installed by the instance admin (npm `papercliped-paperclip-plugin`, source in `plugin/`) |
@@ -124,14 +124,14 @@ src/telemetry/    audit events, batching recorder, system sampler, timing   src/
 src/net/          SSRF-safe fetch + instance URL validation (multi-tenant egress guard)
 migrations/       Postgres schema (dedicated `bridge` schema, RLS)   Dockerfile   container image (Render free web service)   src/cli.ts  admin CLI
 .claude-plugin/ .mcp.json skills/ commands/    Claude Code plugin
-src/manage/       beta connection manager (/manage, /api/manage)   plugin/  Paperclip plugin (own package.json, tests and build)
+src/manage/       manage API for the Paperclip plugin (/api/manage)   plugin/  Paperclip plugin (own package.json, tests and build)
 site/             public pages (markdown) served by the bridge   web/  new website (React + Tailwind, in progress)   .github/workflows/  CI, CodeQL, release (npm trusted publishing)
 test/             end-to-end tests against a mock Paperclip
 ```
 
-## Paperclip plugin (beta)
+## Paperclip plugin
 
-`plugin/` is a Paperclip plugin (`papercliped-paperclip-plugin`, built on `@paperclipai/plugin-sdk`) that adds a **Papercliped** page inside Paperclip to link your account and manage connected apps. Docs: [site/docs/paperclip-plugin.md](site/docs/paperclip-plugin.md), [plugin/README.md](plugin/README.md). It has not yet been run in a live Paperclip.
+`plugin/` is a Paperclip plugin (`papercliped-paperclip-plugin`, built on `@paperclipai/plugin-sdk`) that adds a **Papercliped** page inside Paperclip: link your account, manage connected apps and levels, privacy and your account. Docs: [site/docs/paperclip-plugin.md](site/docs/paperclip-plugin.md), [plugin/README.md](plugin/README.md). It has not yet been run in a live Paperclip.
 
 ## Docs map
 

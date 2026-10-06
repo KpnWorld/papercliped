@@ -27,14 +27,14 @@ describe("worker wiring (SDK test harness)", () => {
       const auth = (init.headers as Record<string, string>)?.authorization ?? null;
       calls.push({ url, auth });
       const j = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json" } });
-      if (url.endsWith("/plugin-link/exchange")) return j({ token: "pcb_pl_abc123" });
-      if (url.endsWith("/me")) return j({ name: "ann.test1", anonymous: false, alias: null, beta: true, paperclip: null, connected: true });
+      if (url.endsWith("/plugin-link/sign-in")) return j({ token: "pcb_pl_abc123" });
+      if (url.endsWith("/me")) return j({ name: "ann.test1", anonymous: false, alias: null, paperclip: null, connected: true });
       return j({ error: "nope" }, 404);
     });
     const h = await boot({ bridgeUrl: "https://bridge.example.test" });
     const ann = { type: "user" as const, userId: "user-ann" };
     expect(await h.performAction("status", {}, { actor: ann })).toEqual({ linked: false });
-    const linked: any = await h.performAction("link", { code: "pcl_AAAAA-BBBBB", userId: "user-evil" }, { actor: ann });
+    const linked: any = await h.performAction("link", { username: "ann.test1", secret: "pcs_A-B-C-D", userId: "user-evil" }, { actor: ann });
     expect(linked.linked).toBe(true);
     expect(JSON.stringify(linked)).not.toContain("pcb_pl_");
     expect(await h.performAction("status", {}, { actor: { type: "user", userId: "user-bob" } })).toEqual({ linked: false });
@@ -47,7 +47,7 @@ describe("worker wiring (SDK test harness)", () => {
     const f = vi.fn();
     vi.stubGlobal("fetch", f);
     const h = await boot({ bridgeUrl: "http://bridge.example.test" });
-    await expect(h.performAction("link", { code: "pcl_AAAAA-BBBBB" }, { actor: { type: "user", userId: "u" } })).rejects.toThrow(/https/);
+    await expect(h.performAction("link", { username: "u", secret: "pcs_A-B-C-D" }, { actor: { type: "user", userId: "u" } })).rejects.toThrow(/https/);
     expect(f).not.toHaveBeenCalled();
   });
 });

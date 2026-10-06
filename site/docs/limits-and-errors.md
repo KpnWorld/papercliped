@@ -11,7 +11,7 @@ Limits are per minute unless noted, counted per client address (or per account o
 | New accounts | 10 per address |
 | OAuth: client registration / token / revoke | 20 / 60 / 30 per address |
 | Manage API (signed in) | 120 per account |
-| Plugin link code exchange | 20 per address |
+| Linking the Paperclip plugin | shares the sign-in limits |
 | Public API (`/api/public/v1/*`) | 60 per address; responses cached 30 s |
 
 ## Errors from tools
@@ -20,7 +20,7 @@ Tool errors come back to your AI app with a message it can read. Over HTTP (Chat
 | Status | Class | Meaning | What to do |
 | --- | --- | --- | --- |
 | `400` | `invalid_input` | The request didn't match the tool's inputs | Usually the AI retries with fixed input |
-| `403` | `insufficient_scope` | The connection's level is too low for this tool | Raise the level on the [manage page](/docs/manage) |
+| `403` | `insufficient_scope` | The connection's level is too low for this tool | Switch the app to Full control in the [Paperclip plugin](/docs/paperclip-plugin) |
 | `403` | `read_only` | The bridge runs with `PAPERCLIP_READ_ONLY` | Ask the operator |
 | `401`, `403`, `404`, `409`… | `upstream_4xx` | Paperclip refused (e.g. your Paperclip key was revoked: reconnect) | Check the message |
 | `5xx` | `upstream_5xx` | Paperclip had an error | Try again later |

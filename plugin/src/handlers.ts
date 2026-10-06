@@ -17,6 +17,13 @@ export interface Deps {
   allowInsecureLoopback?: boolean; // tests only
 }
 
+const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+function needSecret(p: Record<string, unknown>): string {
+  const s = str(p.secret, 100);
+  if (!s) throw new Error("Enter your secret key to confirm.");
+  return s;
+}
+
 /** The user this call is for. Comes from the host's verified actor, never from params. */
 function who(actor: Actor): string {
   if (actor.type !== "user" || !actor.userId) throw new Error("Sign in to Paperclip as a person to use Papercliped.");
@@ -58,12 +65,14 @@ export function createHandlers(d: Deps) {
       }
     },
 
+    /** Link with the username and secret key from signing up. The key goes to the bridge once and is never stored here. */
     async link(p: Record<string, unknown>, actor: Actor) {
       const userId = who(actor);
-      const code = typeof p.code === "string" ? p.code.trim().slice(0, 40) : "";
-      if (!code) throw new Error("Paste the code from your Papercliped /manage page.");
+      const username = str(p.username, 64);
+      const secret = str(p.secret, 100);
+      if (!username || !secret) throw new Error("Enter your Papercliped username and secret key.");
       const host = typeof p.instanceHost === "string" ? p.instanceHost.slice(0, 255) : null;
-      const token = await (await client()).exchange(code, { instanceHost: host, paperclipUserId: userId });
+      const token = await (await client()).signIn(username, secret, { instanceHost: host, paperclipUserId: userId });
       await d.state.set(linkScope(userId), { token, linkedAt: Date.now() } satisfies StoredLink);
       const me = await authed(userId, (c, t) => c.me(t));
       return { linked: true as const, me };
@@ -92,6 +101,45 @@ export function createHandlers(d: Deps) {
       if (typeof p.anonymous !== "boolean") throw new Error("anonymous must be true or false");
       const anonymous = p.anonymous;
       return authed(who(actor), (c, t) => c.setPrivacy(t, anonymous));
+    },
+
+    async links(_p: Record<string, unknown>, actor: Actor) {
+      return { links: await authed(who(actor), (c, t) => c.links(t)) };
+    },
+
+    async removeLink(p: Record<string, unknown>, actor: Actor) {
+      if (typeof p.id !== "string" || !p.id) throw new Error("Missing link id");
+      const id = p.id;
+      await authed(who(actor), (c, t) => c.removeLink(t, id));
+      return { ok: true };
+    },
+
+    /** A new secret key, shown once. The plugin stays linked (the bridge hands back a fresh token); other plugin links end. */
+    async rotateSecret(p: Record<string, unknown>, actor: Actor) {
+      const userId = who(actor);
+      const secret = needSecret(p);
+      const r = await authed(userId, (c, t) => c.rotateSecret(t, secret));
+      await d.state.set(linkScope(userId), { token: r.token, linkedAt: Date.now() } satisfies StoredLink);
+      return { secret: r.secret };
+    },
+
+    /** Forget the Paperclip key at Papercliped and cut every app. The plugin link is cut too; the account stays. */
+    async disconnectPaperclip(p: Record<string, unknown>, actor: Actor) {
+      const userId = who(actor);
+      const secret = needSecret(p);
+      await authed(userId, (c, t) => c.disconnectPaperclip(t, secret));
+      await d.state.delete(linkScope(userId));
+      return { linked: false as const };
+    },
+
+    async deleteAccount(p: Record<string, unknown>, actor: Actor) {
+      const userId = who(actor);
+      const secret = needSecret(p);
+      const confirm = str(p.confirm, 64);
+      if (!confirm) throw new Error("Type your username to confirm.");
+      await authed(userId, (c, t) => c.deleteAccount(t, secret, confirm));
+      await d.state.delete(linkScope(userId));
+      return { linked: false as const };
     },
 
     /** The Papercliped service's public status (aggregate numbers only; no account or link needed). */

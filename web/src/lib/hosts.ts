@@ -49,7 +49,7 @@ export function resolveHref(href: string): string {
     }
     return `/docs${rest ? `/${rest}` : ""}${frag}`;
   }
-  // Everything else is a marketing-site page (or a bridge page like /manage, served on every host).
+  // Everything else is a marketing-site page (or a bridge path like /api, served on every host).
   if (onDocsHost() && h.marketing) return `https://${h.marketing}${href}`;
   return href;
 }

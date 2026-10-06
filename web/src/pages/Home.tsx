@@ -44,7 +44,7 @@ const FAQ = [
   { q: "What is Paperclip?", a: "Paperclip is an open-source orchestrator for companies of AI agents. Papercliped is an independent project that connects AI apps to your Paperclip; it isn't made by the Paperclip team." },
   { q: "What can the AI do with my Paperclip?", a: <>Only what the level you pick allows: Read only by default, Full control if you choose it. Try the playground above, and see <TextLink to="/docs/permissions">Permissions</TextLink>.</> },
   { q: "Does my Paperclip need to be public?", a: <>For the hosted bridge, yes: a public https address. No domain? See <TextLink to="/docs/connect-your-paperclip">Set up your Paperclip</TextLink>. Or run Papercliped locally with <code className="font-mono">npx papercliped@latest</code>.</> },
-  { q: "Can I stop it any time?", a: <>Yes. Disconnect an app or change its level on the manage page, revoke the key in Paperclip, or delete your account.</> },
+  { q: "Can I stop it any time?", a: <>Yes. Disconnect an app or change its level in the <TextLink to="/docs/paperclip-plugin">Paperclip plugin</TextLink>, remove the connector in your AI app, or revoke the key in Paperclip.</> },
   { q: "Which AI apps work?", a: <>Claude (web, desktop, mobile, Claude Code), ChatGPT, and any app that supports MCP. See <TextLink to="/docs/other-ai-apps">Any AI app</TextLink>.</> },
 ];
 
@@ -105,7 +105,7 @@ export function Home() {
           </Card>
           <Card interactive className="p-7">
             <h3 className="text-2xl font-bold tracking-tight">Papercliped plugin for Paperclip <span className="align-middle text-xs font-bold uppercase text-muted">beta</span></h3>
-            <p className="mt-2 text-muted">A page inside your Paperclip to link your account and manage connected apps: change their level, disconnect them, go anonymous.</p>
+            <p className="mt-2 text-muted">Manage everything from inside Paperclip: connected apps and their level, privacy, and your account.</p>
             <div className="mt-5"><ButtonLink to="/docs/paperclip-plugin" size="sm" variant="secondary">Paperclip plugin</ButtonLink></div>
           </Card>
         </div>
