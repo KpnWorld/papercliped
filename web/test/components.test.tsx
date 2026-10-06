@@ -1,0 +1,123 @@
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
+import { describe, expect, it, vi } from "vitest";
+import { App } from "../src/App";
+import { Accordion } from "../src/components/Accordion";
+import { CodeBlock } from "../src/components/CodeBlock";
+import { Footer } from "../src/components/Layout";
+import { Mascot } from "../src/components/Mascot";
+import { Tabs } from "../src/components/Tabs";
+import { ThemePicker } from "../src/components/ThemePicker";
+import { Field } from "../src/components/ui";
+import { liveSocials } from "../src/config/community";
+import { applyPrefs, readPrefs } from "../src/theme/prefs";
+import { seasonalTheme } from "../src/theme/rotation";
+
+const inRouter = (ui: React.ReactNode, path = "/") => render(<MemoryRouter initialEntries={[path]}>{ui}</MemoryRouter>);
+
+describe("theme preferences", () => {
+  it("defaults to following the season and the system mode", () => {
+    expect(readPrefs()).toEqual({ theme: "season", mode: "system" });
+    applyPrefs("season", "system");
+    expect(document.documentElement.dataset.theme).toBe(seasonalTheme());
+    expect(document.documentElement.dataset.mode).toBeUndefined();
+  });
+  it("survives broken localStorage", () => {
+    const spy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    expect(readPrefs()).toEqual({ theme: "season", mode: "system" });
+    spy.mockRestore();
+  });
+  it("ignores junk stored values", () => {
+    localStorage.setItem("pcl.theme", "<script>");
+    localStorage.setItem("pcl.mode", "neon");
+    expect(readPrefs()).toEqual({ theme: "season", mode: "system" });
+  });
+  it("the picker applies and remembers a theme and mode", async () => {
+    render(<ThemePicker />);
+    await userEvent.selectOptions(screen.getByLabelText("Theme"), "sakura");
+    await userEvent.click(screen.getByLabelText("dark"));
+    expect(document.documentElement.dataset.theme).toBe("sakura");
+    expect(document.documentElement.dataset.mode).toBe("dark");
+    expect(localStorage.getItem("pcl.theme")).toBe("sakura");
+    await userEvent.click(screen.getByLabelText("system"));
+    expect(document.documentElement.dataset.mode).toBeUndefined();
+  });
+});
+
+describe("components", () => {
+  it("CodeBlock copies its code", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    render(<CodeBlock code="npx papercliped@latest" />);
+    await userEvent.click(screen.getByRole("button", { name: "Copy" }));
+    expect(writeText).toHaveBeenCalledWith("npx papercliped@latest");
+    expect(await screen.findByText("Copied")).toBeInTheDocument();
+  });
+  it("Tabs follow the ARIA pattern with arrow keys", async () => {
+    render(<Tabs label="Install" tabs={[{ id: "a", label: "A", content: "Panel A" }, { id: "b", label: "B", content: "Panel B" }]} />);
+    const [a, b] = screen.getAllByRole("tab");
+    expect(a).toHaveAttribute("aria-selected", "true");
+    a.focus();
+    fireEvent.keyDown(a, { key: "ArrowRight" });
+    expect(b).toHaveAttribute("aria-selected", "true");
+    expect(b).toHaveFocus();
+    expect(screen.getByText("Panel B")).toBeVisible();
+    fireEvent.keyDown(b, { key: "Home" });
+    expect(a).toHaveAttribute("aria-selected", "true");
+  });
+  it("Accordion uses native details", () => {
+    const { container } = render(<Accordion items={[{ q: "Free?", a: "Yes" }]} />);
+    expect(container.querySelector("details summary")).toHaveTextContent("Free?");
+  });
+  it("Field wires its label, hint and error", () => {
+    render(<Field label="Username" hint="6 to 32 characters" error="Too short" />);
+    const input = screen.getByLabelText("Username");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input.getAttribute("aria-describedby")).toMatch(/hint.*err/);
+    expect(screen.getByRole("alert")).toHaveTextContent("Too short");
+  });
+  it("Mascot is still with reduced motion, and hidden from screen readers without a title", () => {
+    const mm = vi.fn((q: string) => ({ matches: q.includes("reduce"), media: q, addEventListener() {}, removeEventListener() {} }) as unknown as MediaQueryList);
+    Object.defineProperty(window, "matchMedia", { value: mm, configurable: true });
+    vi.useFakeTimers();
+    const { container, unmount } = render(<Mascot />);
+    act(() => void vi.advanceTimersByTime(10_000));
+    expect(container.querySelector("[data-blink]")).toBeNull();
+    expect(screen.getByRole("img", { name: "Papercliped mascot" })).toBeInTheDocument();
+    unmount();
+    const { container: c2 } = render(<Mascot title="" />);
+    expect(c2.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    vi.useRealTimers();
+    Reflect.deleteProperty(window, "matchMedia");
+    expect(mm).toHaveBeenCalled();
+  });
+});
+
+describe("community links", () => {
+  it("renders only the links that are configured (no invented handles)", () => {
+    expect(liveSocials({ github: "https://github.com/OpenSourcx/papercliped", discord: "", x: "", discussions: "", forum: "" }).map((s) => s.key)).toEqual(["github"]);
+    inRouter(<Footer />);
+    expect(screen.queryByRole("link", { name: "Discord" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "X" })).toBeNull();
+    expect(screen.getByRole("link", { name: "GitHub" })).toHaveAttribute("href", "https://github.com/OpenSourcx/papercliped");
+  });
+});
+
+describe("app", () => {
+  it("renders the home page and the kit", () => {
+    inRouter(<App />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Papercliped, not Paperclipped.");
+  });
+  it("renders the design kit with every theme listed", () => {
+    inRouter(<App />, "/kit");
+    expect(screen.getByRole("heading", { level: 1, name: "Design kit" })).toBeInTheDocument();
+    for (const n of ["Clip (default)", "Cherry blossom", "Baby blue", "Citrus", "Lagoon", "Maple", "Harvest", "Frost", "Pine"]) expect(screen.getAllByText(n).length).toBeGreaterThan(0);
+  });
+  it("unknown paths show a not-found page", () => {
+    inRouter(<App />, "/nope");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Page not found");
+  });
+});

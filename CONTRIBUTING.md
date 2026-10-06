@@ -15,6 +15,12 @@ npm run build && npm run schema:sql && git diff --exit-code docs/supabase-schema
 ```
 CI runs the same checks. Never commit secrets, and never weaken a security check to make a test pass: fix the cause.
 
+## Website (`web/`)
+```sh
+npm --prefix web ci && npm --prefix web test && npm --prefix web run build && npm --prefix web run check:routes
+```
+See `web/README.md` for the CSP, contrast and theme rules.
+
 ## Docs
 User-facing pages live in `site/docs/*.md` (add new ones to `NAV` in `src/site/site.ts`; the site tests check that every internal link resolves). Keep `docs/SITEMAP.md` in step when you add a page or endpoint. Changes go in `CHANGELOG.md`.
 

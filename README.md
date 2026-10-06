@@ -125,7 +125,7 @@ src/net/          SSRF-safe fetch + instance URL validation (multi-tenant egress
 migrations/       Postgres schema (dedicated `bridge` schema, RLS)   Dockerfile   container image (Render free web service)   src/cli.ts  admin CLI
 .claude-plugin/ .mcp.json skills/ commands/    Claude Code plugin
 src/manage/       beta connection manager (/manage, /api/manage)   plugin/  Paperclip plugin (own package.json, tests and build)
-site/             public pages (markdown) served by the bridge   .github/workflows/  CI, CodeQL, release (npm trusted publishing)
+site/             public pages (markdown) served by the bridge   web/  new website (React + Tailwind, in progress)   .github/workflows/  CI, CodeQL, release (npm trusted publishing)
 test/             end-to-end tests against a mock Paperclip
 ```
 

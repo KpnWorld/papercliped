@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **New website, phase 1 (foundation):** `web/`, a static React + Tailwind site with self-hosted fonts (Bricolage Grotesque, Inter, JetBrains Mono), the mascot as an animated component (eyes follow the pointer, blinks; still with reduced motion), a component kit and a `/kit` showcase page. **Seasonal themes:** the default `clip` theme plus two palettes per season, each with light and dark, rotating on a schedule that is the same for everyone on a given day; visitors can pick a theme and light/dark/system mode. Every theme passes WCAG AA contrast (tested), every route is checked in headless Chromium under the strict CSP, and nothing is loaded from third parties. Not yet served by the bridge (phase 4).
+
 ## v2.0.0 — stable open-source build
 
 Papercliped v2 is the free, open-source foundation: the bridge, the connector for Claude and any MCP app, and the Paperclip plugin. Paid features (managed subdomains, pricing, legal) are planned for v3 (`docs/V3-SUBDOMAINS.md`).

@@ -40,6 +40,21 @@ jobs:
       - run: npm --prefix plugin test
       - run: npm --prefix plugin run build
 
+  # The website (web/): typecheck, unit + contrast tests, build, then every route in headless Chromium under the site CSP.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with: { node-version: 24, cache: npm, cache-dependency-path: "web/package-lock.json" }
+      - run: npm --prefix web ci
+      - run: npm --prefix web audit --omit=dev --audit-level=high
+      - run: npm --prefix web test
+      - run: npm --prefix web run build
+      - name: Browser for the route check
+        run: npx --prefix web playwright-core install --with-deps chromium
+      - run: npm --prefix web run check:routes
+
   # Packs both npm packages and installs them like a user would: catches publishing problems before a release tag.
   package:
     runs-on: ubuntu-latest
