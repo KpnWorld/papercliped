@@ -11,7 +11,9 @@ const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: "utf8",
 const fail = (msg) => { console.error(`check-packages: ${msg}`); process.exit(1); };
 
 function pack(dir, mustHave) {
-  const [info] = JSON.parse(run("npm", ["pack", "--json", "--pack-destination", out], dir));
+  // npm 10/11 print a list of packed packages; npm 12 prints an object keyed by package name.
+  const parsed = JSON.parse(run("npm", ["pack", "--json", "--pack-destination", out], dir));
+  const info = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0];
   const files = new Set(info.files.map((f) => f.path));
   for (const f of mustHave) if (!files.has(f)) fail(`${info.name}@${info.version} is missing ${f}`);
   for (const f of files) if (/(^|\/)(\.env|.*\.pem|.*\.key)$/.test(f) || f.startsWith("test/") || f.startsWith("node_modules/") || f.startsWith("dist/panel/") || f.startsWith("web/")) fail(`${info.name} would publish ${f}`);
