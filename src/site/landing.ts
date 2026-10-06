@@ -60,7 +60,7 @@ export function landingBody(): string {
   <p class="sub2">Pick what you would let Claude do, then see what happens when it tries.</p>
   <div class="seg" role="group" aria-label="Access level">
     <button type="button" data-l="read" aria-pressed="true">Read only</button>
-    <button type="button" data-l="control" aria-pressed="false">Full control (beta)</button>
+    <button type="button" data-l="control" aria-pressed="false">Full control</button>
   </div>
   <div class="chat" id="chat" aria-live="polite"></div>
 </section>
@@ -68,7 +68,7 @@ export function landingBody(): string {
 <section class="band"><div class="big">Papercliped, not Paperclipped.<small>The little clip that connects your AI to the Paperclip you already run. No lock-in, and you can disconnect in one click.</small></div></section>
 
 <section class="cards" style="margin-top:34px">
-  <div class="card"><h2>You choose the access</h2><p>Read only by default. Full control (beta) is opt-in, every time you connect.</p></div>
+  <div class="card"><h2>You choose the access</h2><p>Read only by default. Full control is opt-in, every time you connect.</p></div>
   <div class="card"><h2>Your keys stay sealed</h2><p>Your Paperclip key is stored encrypted and is never shown to the AI app.</p></div>
   <div class="card"><h2>Optionally anonymous</h2><p>Appear as an alias like Ann02 in the operator's logs instead of your username.</p></div>
   <div class="card"><h2>Manage it yourself</h2><p>Beta users get a page to see every connected app, change its access and disconnect it.</p></div>
@@ -140,7 +140,7 @@ const SCRIPT_TEXT = `
       ["me", "Pause the Web Engineer."],
       ["ai", "Done. The Web Engineer is paused. I will tell you before I do anything destructive.", "Change agents", true],
       ["me", "Terminate the Mail Officer."],
-      ["ai", "That needs Admin access, which you did not give me. I can pause it instead.", "Terminate agents", false]
+      ["ai", "Terminating can't be undone, so I will check first: do you want me to terminate the Mail Officer?", "Terminate agents", true]
     ]
   };
   function show(l) {

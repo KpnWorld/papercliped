@@ -19,16 +19,15 @@ describe("landing", () => {
     at("/");
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
-  it("the permission playground counts the real tools per level", async () => {
+  it("the permission playground has two levels, and Full control is every tool", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     at("/");
     const read = tools.filter((t) => t.scope === "paperclip:read").length;
-    const control = read + tools.filter((t) => t.scope === "paperclip:control").length;
     const status = () => screen.getByText(/tools available at this level/).textContent!;
+    expect(screen.getAllByRole("radio", { name: /Read only|Full control/ })).toHaveLength(2);
+    expect(screen.queryByRole("radio", { name: /Admin/ })).toBeNull();
     expect(status()).toContain(`${read} of ${tools.length}`);
     await userEvent.click(screen.getByRole("radio", { name: /Full control/ }));
-    expect(status()).toContain(`${control} of ${tools.length}`);
-    await userEvent.click(screen.getByRole("radio", { name: /Admin/ }));
     expect(status()).toContain(`${tools.length} of ${tools.length}`);
   });
 });

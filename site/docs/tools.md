@@ -1,8 +1,8 @@
 # Tool reference
 
-Every tool Papercliped gives your AI app, generated from the code (`src/tools.ts`). 30 tools in total. Each needs a level: a connection can use the tools of its level and every level below.
+Every tool Papercliped gives your AI app, generated from the code (`src/tools.ts`). 30 tools in total. There are two levels: **Read only** can use the read tools; **Full control** can use every tool.
 
-Raw API calls (`paperclip_api_request`) need Read only for GET and Admin for anything else.
+Raw API calls (`paperclip_api_request`) need Read only for GET and Full control for anything else.
 
 ## Read only (17)
 
@@ -26,7 +26,7 @@ Raw API calls (`paperclip_api_request`) need Read only for GET and Admin for any
 | **Activity digest** `paperclip_report_activity` | Digest of audit-log activity, optionally since an ISO timestamp (e.g. start of day). | No |
 | **Papercliped service status** `papercliped_service_status` | Is the hosted Papercliped service working? Returns its status (ok, degraded, down), version and aggregate 24-hour numbers (requests, success rate, latency, sign-ins). Public data only; does not touch Paperclip. | No |
 
-## Full control (beta) (9)
+## Full control (13)
 
 | Tool | What it does | Changes anything? |
 | --- | --- | --- |
@@ -34,18 +34,13 @@ Raw API calls (`paperclip_api_request`) need Read only for GET and Admin for any
 | **Resume agent** `paperclip_resume_agent` | Resume a paused agent so heartbeats start again. | Yes |
 | **Clear agent error** `paperclip_clear_agent_error` | Move an agent from `error` back to `idle`. Keeps run history. Only valid for agents in error. | Yes |
 | **Wake agent now** `paperclip_wake_agent` | Manually trigger a heartbeat so the agent starts working immediately. | Yes |
+| **Set agent budget** `paperclip_set_agent_budget` | Set an agent's monthly budget in US cents (e.g. 5000 = $50). Agents auto-pause at 100%. | Yes |
+| **Terminate agent** `paperclip_terminate_agent` | PERMANENTLY deactivate an agent. Irreversible. Requires confirm=true; ask the human first and prefer pause. | Yes, can't be undone |
 | **Create goal** `paperclip_create_goal` | Create a goal. level is one of company/team/agent/task (default task). | Yes |
 | **Update goal** `paperclip_update_goal` | Update a goal's title, description or status (planned/active/achieved/cancelled). | Yes |
 | **Create issue** `paperclip_create_issue` | Create a task. Assigning it to an agent (assigneeAgentId) with status 'todo' is how you hand work to that agent. | Yes |
 | **Update issue** `paperclip_update_issue` | Change an issue's status, priority, assignee, title etc. Optional `comment` is added in the same call. | Yes |
 | **Comment on issue** `paperclip_comment_issue` | Add a markdown comment to an issue. Can wake the current assignee. | Yes |
-
-## Admin (4)
-
-| Tool | What it does | Changes anything? |
-| --- | --- | --- |
-| **Set agent budget** `paperclip_set_agent_budget` | Set an agent's monthly budget in US cents (e.g. 5000 = $50). Agents auto-pause at 100%. | Yes |
-| **Terminate agent** `paperclip_terminate_agent` | PERMANENTLY deactivate an agent. Irreversible. Requires confirm=true; ask the human first and prefer pause. | Yes, can't be undone |
 | **Decide approval** `paperclip_decide_approval` | Approve, reject, or request revision on an approval. Decisions bind agents, so confirm with the human. | Yes |
 | **Raw API request** `paperclip_api_request` | Call any Paperclip REST endpoint under /api (path like '/companies/{id}/routines'). For endpoints without a dedicated tool. DELETE and any non-GET require confirm=true. | Yes |
 

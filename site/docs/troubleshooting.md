@@ -8,7 +8,7 @@
 
 **I lost my secret key.** Choose **Connect your Paperclip** on the sign-in page and approve in Paperclip. You keep your account and can create a new key.
 
-**The AI says it can't change anything.** You connected with **Read only**. Disconnect and connect again, choosing **Full control (beta)**.
+**The AI says it can't change anything.** You connected with **Read only**. Disconnect and connect again, choosing **Full control**.
 
 **My username is rejected.** It needs 6 to 32 characters including at least one number or one of `.` `#` `_`, and only letters, numbers and those symbols. It may also be taken.
 

@@ -16,7 +16,7 @@ export class BridgeError extends Error {
 export interface Connection {
   id: string;
   app: string;
-  level: "paperclip:read" | "paperclip:control" | "paperclip:admin";
+  level: "paperclip:read" | "paperclip:control";
   createdAt: number;
   lastUsedAt: number | null;
 }

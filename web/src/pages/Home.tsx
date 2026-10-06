@@ -42,7 +42,7 @@ const SECURITY = [
 const FAQ = [
   { q: "Is Papercliped free?", a: "Yes. It's free and open source (MIT). The hosted bridge at papercliped.co runs the same code you can run yourself." },
   { q: "What is Paperclip?", a: "Paperclip is an open-source orchestrator for companies of AI agents. Papercliped is an independent project that connects AI apps to your Paperclip; it isn't made by the Paperclip team." },
-  { q: "What can the AI do with my Paperclip?", a: <>Only what the level you pick allows: Read only by default, Full control (beta) if you choose it. Try the playground above, and see <TextLink to="/docs/permissions">Permissions</TextLink>.</> },
+  { q: "What can the AI do with my Paperclip?", a: <>Only what the level you pick allows: Read only by default, Full control if you choose it. Try the playground above, and see <TextLink to="/docs/permissions">Permissions</TextLink>.</> },
   { q: "Does my Paperclip need to be public?", a: <>For the hosted bridge, yes: a public https address. No domain? See <TextLink to="/docs/connect-your-paperclip">Set up your Paperclip</TextLink>. Or run Papercliped locally with <code className="font-mono">npx papercliped@latest</code>.</> },
   { q: "Can I stop it any time?", a: <>Yes. Disconnect an app or change its level on the manage page, revoke the key in Paperclip, or delete your account.</> },
   { q: "Which AI apps work?", a: <>Claude (web, desktop, mobile, Claude Code), ChatGPT, and any app that supports MCP. See <TextLink to="/docs/other-ai-apps">Any AI app</TextLink>.</> },
@@ -87,7 +87,7 @@ export function Home() {
           <Stepper steps={[
             { title: "Add the connector", body: <><p>In Claude open <strong>Settings → Connectors → Add custom connector</strong> and paste the address. ChatGPT and other MCP apps work the same way.</p><CodeBlock code={MCP_URL} /></> },
             { title: "Connect your Paperclip", body: <p>Enter your Paperclip's public address and approve the request inside your Paperclip. Pick a username and save the secret key you're shown once.</p> },
-            { title: "Choose the level, then ask", body: <p>Leave it on <strong>Read only</strong> or pick <strong>Full control (beta)</strong>. Then ask: “What are my agents working on?” or “Pause the agent that's over budget.”</p> },
+            { title: "Choose the level, then ask", body: <p>Leave it on <strong>Read only</strong> or pick <strong>Full control</strong>. Then ask: “What are my agents working on?” or “Pause the agent that's over budget.”</p> },
           ]} />
         </div>
       </Section>

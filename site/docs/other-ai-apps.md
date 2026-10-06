@@ -7,7 +7,7 @@ Most current AI apps and editors can. Add a remote (Streamable HTTP) MCP server 
 ```
 {{MCP}}/mcp
 ```
-The app opens the Papercliped sign-in page. Choose **Connect your Paperclip** (or **Log in** if you have an account), approve in your Paperclip, and pick **Read only** or **Full control (beta)**. Papercliped supports OAuth 2.1 with dynamic client registration and PKCE, which is what these apps use.
+The app opens the Papercliped sign-in page. Choose **Connect your Paperclip** (or **Log in** if you have an account), approve in your Paperclip, and pick **Read only** or **Full control**. Papercliped supports OAuth 2.1 with dynamic client registration and PKCE, which is what these apps use.
 
 Where the setting lives differs per app (often "Connectors", "MCP servers" or "Tools"). Check your app's own docs for the menu.
 

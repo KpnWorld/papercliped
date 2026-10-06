@@ -34,10 +34,9 @@ npm run start:http                                           # put TLS in front 
 | Scope | Allows |
 | --- | --- |
 | `paperclip:read` | lists, reports, sync, raw GET |
-| `paperclip:control` | + pause/resume/wake/clear-error, create/update issues & goals, comments |
-| `paperclip:admin` | + decide approvals, set budgets, terminate agents, raw non-GET |
+| `paperclip:control` | every tool: + pause/resume/wake/terminate, issues & goals, comments, approvals, budgets, raw non-GET |
 
-Each includes the lower ones. The user picks a level on the consent page (never above what the client asked for; admin is never preselected). Tools above the grant aren't even advertised to the model, and a call is refused with `403 insufficient_scope`.
+Control includes read. The user picks a level on the consent page (Read only is preselected unless the app asked for control). The retired `paperclip:admin` scope is accepted as an alias for `paperclip:control`. Tools above the grant aren't even advertised to the model, and a call is refused with `403 insufficient_scope`.
 **What scopes do not do:** limit *which company* or agent a grant can touch. The underlying Paperclip board key is user-wide, and the bridge cannot tell which company an agent/issue id belongs to. Per-company scoping needs scoped board keys upstream (Phase 3).
 
 ## Security properties (each covered by a test in `test/oauth.test.ts`)

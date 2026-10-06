@@ -11,7 +11,7 @@ import { readOAuthConfig, type BridgeConfig, type OAuthConfig } from "../src/con
 import type { AuditEvent } from "../src/execute.js";
 import { OAuthProvider } from "../src/oauth/provider.js";
 import { OAuthStore } from "../src/oauth/store.js";
-import { requiredScope, scopeAllows } from "../src/oauth/scopes.js";
+import { SCOPES, requiredScope, scopeAllows } from "../src/oauth/scopes.js";
 import { createHttpServer } from "../src/server.js";
 import { tools } from "../src/tools.js";
 
@@ -248,14 +248,11 @@ describe("authorization code + PKCE flow", () => {
     expect(seenAuth.at(-1)).toBe(`Bearer board-tok-${challengeSeq}`);
     expect(seenAuth.at(-1)).not.toContain("static-secret");
 
-    // control scope: pause ok, terminate (admin) refused with insufficient_scope and never sent
+    // Full control is every tool: pause, terminate, approvals and raw writes all pass the scope check (the fake Paperclip may 404 them)
     expect((await act(r, t.access_token, "paperclip_pause_agent", { agentId: "a1" })).status).toBe(200);
-    const term = await act(r, t.access_token, "paperclip_terminate_agent", { agentId: "a1", confirm: true });
-    expect(term.status).toBe(403);
-    expect(term.headers.get("www-authenticate")).toContain('error="insufficient_scope"');
-    expect(term.headers.get("www-authenticate")).toContain('scope="paperclip:admin"');
-    expect((await act(r, t.access_token, "paperclip_decide_approval", { approvalId: "x", decision: "approve" })).status).toBe(403);
-    expect((await act(r, t.access_token, "paperclip_api_request", { method: "POST", path: "/x", confirm: true })).status).toBe(403);
+    expect((await act(r, t.access_token, "paperclip_terminate_agent", { agentId: "a1", confirm: true })).status).not.toBe(403);
+    expect((await act(r, t.access_token, "paperclip_decide_approval", { approvalId: "x", decision: "approve" })).status).not.toBe(403);
+    expect((await act(r, t.access_token, "paperclip_api_request", { method: "POST", path: "/x", confirm: true })).status).not.toBe(403);
 
     // audit trail names the grant and client, never a token
     const ev = r.audit.filter((e) => e.tool === "paperclip_pause_agent").at(-1)!;
@@ -280,16 +277,17 @@ describe("authorization code + PKCE flow", () => {
     r.close();
   });
 
-  it("never grants more than requested, and admin is never preselected", async () => {
+  it("offers exactly two levels, preselects what the app asked for, and treats the old admin scope as Full control", async () => {
     const r = await rig();
     const reg = (await register(r)).body;
     const f = await authorizeFlow(r, reg.client_id, { scope: "paperclip:read", approveIt: false });
-    expect(f.html).toContain('value="paperclip:read"');
-    expect(f.html).not.toContain('value="paperclip:control"');
+    expect(f.html).toMatch(/value="paperclip:read" checked/);
+    expect(f.html).toContain('value="paperclip:control"');
+    expect(f.html).not.toContain("paperclip:admin");
     const g = await authorizeFlow(r, reg.client_id, { scope: "paperclip:admin", approveIt: false });
     expect(g.html).toMatch(/value="paperclip:control" checked/);
-    expect(g.html).not.toMatch(/value="paperclip:admin" checked/);
-    // forging a higher level than requested is rejected
+    expect(g.html).not.toContain("paperclip:admin");
+    // a level that doesn't exist is rejected
     approveLatest();
     const h = await authorizeFlow(r, reg.client_id, { scope: "paperclip:read", level: "paperclip:admin" });
     expect(h.dec!.status).toBe(400);
@@ -587,17 +585,19 @@ describe("scopes", () => {
     for (const x of tools) {
       const s = requiredScope(x);
       if (x.access === "read") expect(s, x.name).toBe("paperclip:read");
-      if (x.access === "write" && x.name !== "paperclip_api_request") expect(["paperclip:control", "paperclip:admin"], x.name).toContain(s);
-      if (x.access === "destructive") expect(s, x.name).toBe("paperclip:admin");
+      else if (x.name !== "paperclip_api_request") expect(s, x.name).toBe("paperclip:control");
     }
-    expect(requiredScope(t("paperclip_decide_approval"))).toBe("paperclip:admin");
-    expect(requiredScope(t("paperclip_set_agent_budget"))).toBe("paperclip:admin");
+    expect(requiredScope(t("paperclip_decide_approval"))).toBe("paperclip:control");
+    expect(requiredScope(t("paperclip_set_agent_budget"))).toBe("paperclip:control");
+    expect(requiredScope(t("paperclip_terminate_agent"))).toBe("paperclip:control");
     expect(requiredScope(t("paperclip_pause_agent"))).toBe("paperclip:control");
     expect(requiredScope(t("paperclip_api_request"), { method: "GET" })).toBe("paperclip:read");
-    expect(requiredScope(t("paperclip_api_request"), { method: "DELETE" })).toBe("paperclip:admin");
+    expect(requiredScope(t("paperclip_api_request"), { method: "DELETE" })).toBe("paperclip:control");
   });
   it("is hierarchical and ignores unknown scopes", () => {
-    expect(scopeAllows(["paperclip:admin"], "paperclip:read")).toBe(true);
+    expect(scopeAllows(["paperclip:control"], "paperclip:read")).toBe(true);
+    expect(scopeAllows(["paperclip:admin"], "paperclip:control")).toBe(true); // retired name = Full control
+    expect(SCOPES).toEqual(["paperclip:read", "paperclip:control"]);
     expect(scopeAllows(["paperclip:read"], "paperclip:control")).toBe(false);
     expect(scopeAllows(["offline_access", "bogus"], "paperclip:read")).toBe(false);
   });

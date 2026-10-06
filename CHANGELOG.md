@@ -22,6 +22,8 @@
 - **Website redesign:** a bolder homepage (a centred headline, pill buttons, a gradient pill hero with the mascot in the middle; click it for a wave), a shorter header (Product, Docs, Resources, Community, search, GitHub stars, Get started). The docs get their own header (links left, "papercliped Docs" centred, search and stars right), a sidebar grouped into Learn, Reference and Project with icons, counts and collapsible sections, and a page header with breadcrumb, tag and a Copy link menu (view the Markdown source, suggest an edit). The changelog moves into the docs layout as expandable release cards.
 - **Light and dark now follow your device automatically.** The manual System/Light/Dark switch is gone (an old saved choice is cleared); the seasonal palettes still rotate on their own.
 
+- **Two access levels: Read only and Full control.** Full control is now every tool (pause, wake, terminate, issues, goals, comments, approvals, budgets and raw API writes), so you can run your Paperclip from anywhere. The separate "Admin" level is gone; existing admin grants and apps that still ask for it get Full control (migration `006_two_levels.sql` tidies stored grants). The sign-in page, the manage page, the Paperclip plugin, the docs and the website playground all show the two levels.
+
 ## v2.0.0 — stable open-source build
 
 Papercliped v2 is the free, open-source foundation: the bridge, the connector for Claude and any MCP app, and the Paperclip plugin. Paid features (managed subdomains, pricing, legal) are planned for v3 (`docs/V3-SUBDOMAINS.md`).

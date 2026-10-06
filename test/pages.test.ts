@@ -35,7 +35,7 @@ const pages: [string, string][] = [
   ["username", usernamePage({ ...ctx, value: EVIL })],
   ["secret", secretPage({ ...ctx, username: EVIL, secret: "pcs_ABCD-EFGH-JKMN-PQRS-TVWX-YZ23-4567-89AB", rotated: false, nonce: "N0NCE" })],
   ["welcome", welcomePage({ ...ctx, username: EVIL })],
-  ["scope", scopePage({ ...ctx, requestedMax: "paperclip:admin", loopbackOnly: true, instanceHost: EVIL, username: EVIL })],
+  ["scope", scopePage({ ...ctx, requestedMax: "paperclip:control", loopbackOnly: true, instanceHost: EVIL, username: EVIL })],
   ["consent(single)", consentPage({ ...ctx, loopbackOnly: false, requestedMax: "paperclip:control", login: "paperclip", approvalUrl: "https://p.example.com/x", approved: false, nonce: "N0NCE", instanceHost: EVIL })],
   ["error", errorPage(EVIL, EVIL)],
 ];
@@ -92,25 +92,24 @@ describe("page content", () => {
     expect(html).toContain("At least 6 characters");
     expect(html).toContain(". # _");
   });
-  it("the scope page always offers read and full control, offers admin only when asked, and never preselects admin", () => {
+  it("the scope page offers exactly Read only and Full control, preselecting what the app asked for", () => {
     const ro = scopePage({ ...ctx, error: undefined, requestedMax: "paperclip:read", loopbackOnly: false, instanceHost: "p.example.com", username: "u.1234" });
     expect(ro).toContain('value="paperclip:read"');
-    expect(ro).toContain('value="paperclip:control"'); // "Full control (beta)" is the person's choice
+    expect(ro).toContain('value="paperclip:control"'); // "Full control" is the person's choice
     expect(ro).toMatch(/value="paperclip:read" checked/); // but the default stays what the app asked for
     expect(ro).not.toContain('value="paperclip:admin"');
-    expect(ro).toContain("Full control (beta)");
+    expect(ro).toContain("Full control");
     const ad = pages.find(([n]) => n === "scope")![1];
     expect(ad).toMatch(/value="paperclip:control" checked/);
-    expect(ad).not.toMatch(/value="paperclip:admin" checked/);
+    expect(ad).not.toContain("paperclip:admin");
     expect(ad).toContain("your own machine"); // loopback warning
   });
 });
 
 import { grantableScopes } from "../src/oauth/scopes.js";
 describe("grantableScopes", () => {
-  it("always includes control; includes admin only when the app asked for it", () => {
+  it("is always Read only and Full control", () => {
     expect(grantableScopes("paperclip:read")).toEqual(["paperclip:read", "paperclip:control"]);
     expect(grantableScopes("paperclip:control")).toEqual(["paperclip:read", "paperclip:control"]);
-    expect(grantableScopes("paperclip:admin")).toEqual(["paperclip:read", "paperclip:control", "paperclip:admin"]);
   });
 });

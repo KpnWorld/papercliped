@@ -46,7 +46,7 @@ claude.ai / ChatGPT ──OAuth 2.1 + PKCE──▶ bridge (AS + resource server
 ```
 
 - **Sign‑in:** reuse Paperclip's challenge/approve flow, so users authenticate to *their* Paperclip, not to us.
-- **Scopes enforced by the bridge** (Paperclip can't): `paperclip:read` (reports, sync, lists) · `paperclip:control` (pause/resume/wake, issues, comments, goals) · `paperclip:admin` (terminate, approvals, budgets, raw non‑GET). Default consent = read. The bridge already classifies tools `read|write|destructive`; map those to scopes.
+- **Scopes enforced by the bridge** (Paperclip can't): `paperclip:read` (reports, sync, lists) · `paperclip:control` (every tool: pause/resume/wake/terminate, issues, comments, goals, approvals, budgets, raw non‑GET). Default consent = read. The bridge already classifies tools `read|write|destructive`; map those to scopes.
 - **Tokens:** short‑lived access JWT (audience = bridge URL), rotating refresh tokens, per‑user revocation (and revoke the Paperclip key on disconnect via `auth revoke-current`). Tokens bound to one company if the user picks one at consent.
 - **Registration:** support CIMD first (no client sprawl), DCR as fallback.
 - **Endpoints to add:** `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`, `/register`, `/authorize`, `/token`, `/revoke`; `401` challenge on `/mcp`.

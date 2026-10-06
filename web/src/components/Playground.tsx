@@ -3,12 +3,11 @@ import tools from "../generated/tools.json";
 import { cx } from "./cx";
 import { Badge } from "./ui";
 
-type Level = "paperclip:read" | "paperclip:control" | "paperclip:admin";
-const RANK: Record<Level, number> = { "paperclip:read": 1, "paperclip:control": 2, "paperclip:admin": 3 };
+type Level = "paperclip:read" | "paperclip:control";
+const RANK: Record<Level, number> = { "paperclip:read": 1, "paperclip:control": 2 };
 const LEVELS: { id: Level; label: string; note: string }[] = [
   { id: "paperclip:read", label: "Read only", note: "The default. Reports, sync and lists. Nothing can change." },
-  { id: "paperclip:control", label: "Full control (beta)", note: "Also pause, wake and assign agents, and create or update issues and goals." },
-  { id: "paperclip:admin", label: "Admin", note: "Only offered when the app asks: terminate agents, budgets, approvals, raw writes." },
+  { id: "paperclip:control", label: "Full control", note: "Every tool: run agents, issues, goals, approvals and budgets from anywhere." },
 ];
 
 /** Pick a level and see which of the real tools the AI could use. Generated from src/tools.ts, so it can't drift. */
@@ -18,7 +17,7 @@ export function Playground() {
   const allowed = useMemo(() => tools.filter((t) => RANK[t.scope as Level] <= RANK[level]).length, [level]);
   return (
     <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6">
-      <div role="radiogroup" aria-label="Access level" className="grid gap-2 sm:grid-cols-3">
+      <div role="radiogroup" aria-label="Access level" className="grid gap-2 sm:grid-cols-2">
         {LEVELS.map((l) => (
           <label key={l.id} className={cx("cursor-pointer rounded-2xl border p-3 transition-all duration-150 hover:-translate-y-0.5", level === l.id ? "border-accent bg-bg shadow-md" : "border-line")}>
             <input type="radio" name="pcl-level" value={l.id} checked={level === l.id} onChange={() => setLevel(l.id)} className="sr-only" />
@@ -42,7 +41,7 @@ export function Playground() {
               <span className="min-w-0">
                 <span className="font-medium">{t.title}</span>
                 <span className="sr-only">{ok ? " (allowed)" : " (not allowed)"}</span>
-                {t.scope === "paperclip:admin" && <Badge tone="outline" className="ml-2">admin</Badge>}
+                {t.access === "destructive" && <Badge tone="outline" className="ml-2">can't undo</Badge>}
                 <span className="block truncate font-mono text-xs text-muted">{t.name}</span>
               </span>
             </li>
@@ -50,7 +49,7 @@ export function Playground() {
         })}
       </ul>
       {!all && <button type="button" onClick={() => setAll(true)} className="mt-3 w-full rounded-xl border border-field py-2 text-sm font-semibold sm:hidden">Show all {tools.length} tools</button>}
-      <p className="mt-3 text-xs text-muted">Raw API calls (<code className="font-mono">paperclip_api_request</code>) are read only for GET and admin for anything else.</p>
+      <p className="mt-3 text-xs text-muted">Raw API calls (<code className="font-mono">paperclip_api_request</code>) need Read only for GET and Full control for anything else.</p>
     </div>
   );
 }

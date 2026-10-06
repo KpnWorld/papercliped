@@ -98,7 +98,7 @@ Set `BRIDGE_OAUTH=1`, `BRIDGE_PUBLIC_URL`, `BRIDGE_SECRET`, `BRIDGE_DATA_FILE` (
 
 ## Safety model
 
-- OAuth connections get scoped tokens (read/control/admin), enforced in the bridge, with every call audit-logged. See [docs/oauth.md](docs/oauth.md).
+- OAuth connections get scoped tokens (Read only or Full control), enforced in the bridge, with every call audit-logged. See [docs/oauth.md](docs/oauth.md).
 - `PAPERCLIP_READ_ONLY=1` blocks every mutating tool (and non-GET `paperclip_api_request`) before anything is sent to Paperclip.
 - `paperclip_terminate_agent` needs `confirm: true`; non-GET raw API calls need it too. Tools carry MCP `destructiveHint`/`readOnlyHint`, and OpenAPI `x-openai-isConsequential`, so clients prompt before consequential calls.
 - The HTTP bridge binds to loopback by default, uses constant-time token comparison, caps bodies at 1 MB, and times out upstream calls (30 s).

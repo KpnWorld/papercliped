@@ -40,7 +40,6 @@ interface Conn { id: string; app: string; level: string; createdAt: number; last
 interface Me { name: string; anonymous: boolean; alias: string | null; beta: boolean; paperclip: string | null; connected: boolean }
 type Status = { linked: false; expired?: boolean } | { linked: true; me: Me };
 
-const LEVEL_TEXT: Record<string, string> = { "paperclip:read": "Read only", "paperclip:control": "Full control (beta)", "paperclip:admin": "Admin" };
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 function ago(ms: number | null) {
   if (!ms) return "never";
@@ -134,11 +133,10 @@ function Linked({ me, call, onUnlinked, onMe }: { me: Me; call: Record<string, (
             <strong>{c.app}</strong>
             <div style={muted}>Last used {ago(c.lastUsedAt)} · connected {ago(c.createdAt)}</div>
           </div>
-          <select aria-label={`Access level for ${c.app}`} style={field} value={c.level === "paperclip:control" ? "control" : c.level === "paperclip:admin" ? "admin" : "read"}
+          <select aria-label={`Access level for ${c.app}`} style={field} value={c.level === "paperclip:read" ? "read" : "control"}
             onChange={(e) => run(call.setLevel({ id: c.id, level: e.target.value }), load)}>
             <option value="read">Read only</option>
-            <option value="control">Full control (beta)</option>
-            {c.level === "paperclip:admin" && <option value="admin" disabled>{LEVEL_TEXT[c.level]}</option>}
+            <option value="control">Full control</option>
           </select>
           <button style={btn} onClick={() => run(call.disconnect({ id: c.id }), load)}>Disconnect</button>
         </div>

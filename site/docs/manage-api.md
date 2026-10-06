@@ -27,7 +27,7 @@ Base path: `{{URL}}/api/manage`. Responses are JSON with `Cache-Control: no-stor
 | `POST /paperclip/disconnect` `{ "secret": "..." }` | Forget your Paperclip key and disconnect every app | ✓ + key | ✕ |
 | `POST /account/delete` `{ "secret": "...", "confirm": "<username>" }` | Delete the account | ✓ + key | ✕ |
 
-"✓ + key" means the request must include your secret key again. Admin access is never granted through this API.
+"✓ + key" means the request must include your secret key again.
 
 ## Errors
 `400` bad input or missing header, `401` not signed in (or the plugin token is unknown, expired or revoked), `403` not in the beta (`code: "beta_required"`), needs the browser (`code: "browser_required"`) or wrong secret key, `404` no such connection or link (also for other people's), `429` too many requests.

@@ -1,33 +1,37 @@
 import type { ToolDef } from "../tools.js";
 
-export const SCOPES = ["paperclip:read", "paperclip:control", "paperclip:admin"] as const;
+/**
+ * Two levels: Read only and Full control. Full control is every tool, because the point of Papercliped is to run your
+ * Paperclip from anywhere, not just to watch it.
+ */
+export const SCOPES = ["paperclip:read", "paperclip:control"] as const;
 export type Scope = (typeof SCOPES)[number];
 
-const RANK: Record<Scope, number> = { "paperclip:read": 1, "paperclip:control": 2, "paperclip:admin": 3 };
+/** A retired third level. Old grants and apps that still ask for it get Full control. */
+export const LEGACY_ADMIN = "paperclip:admin";
 
-/** Tools that are `write` by access class but too consequential for the control tier. */
-const ADMIN_TOOLS = new Set(["paperclip_decide_approval", "paperclip_set_agent_budget"]);
+const RANK: Record<Scope, number> = { "paperclip:read": 1, "paperclip:control": 2 };
 
 export const isScope = (s: string): s is Scope => (SCOPES as readonly string[]).includes(s);
+export const normalizeScope = (s: string): string => (s === LEGACY_ADMIN ? "paperclip:control" : s);
+/** Known scopes only, retired names mapped, no duplicates. */
+export const normalizeScopes = (list: readonly string[]): Scope[] => [...new Set(list.map(normalizeScope).filter(isScope))];
 
-/** read < control < admin; each level includes the ones below. */
+/** read < control; control includes read. */
 export function maxRank(granted: readonly string[]): number {
-  return Math.max(0, ...granted.filter(isScope).map((s) => RANK[s]));
+  return Math.max(0, ...normalizeScopes(granted).map((s) => RANK[s]));
 }
 
+/** Reads (and raw GETs) need Read only; anything that changes something needs Full control. */
 export function requiredScope(tool: Pick<ToolDef, "name" | "access">, input: Record<string, unknown> = {}): Scope {
-  if (tool.name === "paperclip_api_request") return input.method === "GET" ? "paperclip:read" : "paperclip:admin";
-  if (tool.access === "destructive" || ADMIN_TOOLS.has(tool.name)) return "paperclip:admin";
-  return tool.access === "write" ? "paperclip:control" : "paperclip:read";
+  if (tool.name === "paperclip_api_request") return input.method === "GET" ? "paperclip:read" : "paperclip:control";
+  return tool.access === "read" ? "paperclip:read" : "paperclip:control";
 }
 
 export const scopeAllows = (granted: readonly string[], needed: Scope) => maxRank(granted) >= RANK[needed];
 
-/** Highest-level scope name for a rank, e.g. 2 → paperclip:control. */
+/** The scope list for a level, e.g. control → [read, control]. */
 export const scopesUpTo = (level: Scope): Scope[] => SCOPES.filter((s) => RANK[s] <= RANK[level]);
 
-/**
- * Levels the person may choose in the account flow. Control ("Full control (beta)") is always on offer, because the person
- * is the one granting it; Admin is only offered when the app itself asked for it.
- */
-export const grantableScopes = (requestedMax: Scope): Scope[] => scopesUpTo(RANK[requestedMax] >= RANK["paperclip:control"] ? requestedMax : "paperclip:control");
+/** Levels the person may choose: always both, because the person is the one granting it. */
+export const grantableScopes = (_requestedMax?: Scope): Scope[] => [...SCOPES];

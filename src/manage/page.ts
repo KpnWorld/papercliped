@@ -55,7 +55,7 @@ const JS = `
   }
   function note(kind, text) { return h("div", { class: kind, role: kind === "err" ? "alert" : "status" }, text); }
   function when(ms) { if (!ms) return "never"; var d = Date.now() - ms, m = Math.round(d / 60000); if (m < 1) return "just now"; if (m < 60) return m + " min ago"; if (m < 1440) return Math.round(m / 60) + " h ago"; return Math.round(m / 1440) + " days ago"; }
-  var LEVELS = { "paperclip:read": "Read only", "paperclip:control": "Full control (beta)", "paperclip:admin": "Admin" };
+  var LEVELS = { "paperclip:read": "Read only", "paperclip:control": "Full control" };
 
   function loginView(msg) {
     app.replaceChildren();
@@ -112,8 +112,7 @@ const JS = `
         if (!cs.length) list.appendChild(h("p", { class: "muted" }, "No apps connected. Add Papercliped as a connector in Claude or ChatGPT."));
         cs.forEach(function (c) {
           var sel = h("select", { "aria-label": "Access level for " + c.app });
-          [["read", "Read only"], ["control", "Full control (beta)"]].forEach(function (o) { sel.appendChild(h("option", { value: o[0], selected: LEVELS["paperclip:" + o[0]] === LEVELS[c.level] ? "selected" : false }, o[1])); });
-          if (c.level === "paperclip:admin") sel.appendChild(h("option", { value: "admin", selected: "selected", disabled: "disabled" }, "Admin"));
+          [["read", "Read only"], ["control", "Full control"]].forEach(function (o) { sel.appendChild(h("option", { value: o[0], selected: LEVELS["paperclip:" + o[0]] === LEVELS[c.level] ? "selected" : false }, o[1])); });
           var msg = h("span", { class: "muted", role: "status" });
           sel.addEventListener("change", function () {
             api("POST", "/connections/" + encodeURIComponent(c.id), { level: sel.value }).then(function (x) { msg.textContent = x.status === 200 ? "Saved." : (x.body.error || "Could not save"); });

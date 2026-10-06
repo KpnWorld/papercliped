@@ -486,7 +486,7 @@ describe.skipIf(!DB)("Postgres", () => {
 
   it("migrates once, idempotently", async () => {
     await reset();
-    expect(await migrate(opts)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql", "005_beta.sql"]);
+    expect(await migrate(opts)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql", "005_beta.sql", "006_two_levels.sql"]);
     expect(await migrate(opts)).toEqual([]);
   });
 
@@ -577,7 +577,7 @@ describe.skipIf(!DB)("Postgres", () => {
     const sql = readFileSync(new URL("../docs/supabase-schema.sql", import.meta.url), "utf8");
     await c.query(sql);
     await c.query(sql); // re-run
-    expect((await c.query("select version from bridge.schema_migrations order by 1")).rows.map((r) => r.version)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql", "005_beta.sql"]);
+    expect((await c.query("select version from bridge.schema_migrations order by 1")).rows.map((r) => r.version)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql", "005_beta.sql", "006_two_levels.sql"]);
     for (const role of ["anon", "authenticated"]) {
       await c.query(`set role ${role}`);
       for (const t of ["grants", "tokens", "codes", "pending", "clients", "rate_limits", "audit_events", "schema_migrations", "accounts", "account_links", "user_events", "heartbeat", "node_samples", "panel_accounts", "panel_grants", "panel_links"])
@@ -597,7 +597,7 @@ describe.skipIf(!DB)("Postgres", () => {
 
   it("the audit table is locked against anon/authenticated and idempotently migrated", async () => {
     await reset();
-    expect(await migrate(opts)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql", "005_beta.sql"]);
+    expect(await migrate(opts)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql", "005_beta.sql", "006_two_levels.sql"]);
     const c = new pg.Client({ connectionString: DB });
     await c.connect();
     for (const role of ["anon", "authenticated"]) {

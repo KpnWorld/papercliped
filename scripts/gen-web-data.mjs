@@ -10,9 +10,9 @@ export function toolData(list = tools, scopeOf = requiredScope) {
 
 /** The tool reference page (site/docs/tools.md), served by the bridge and the docs site. */
 export function toolsMarkdown(data = toolData()) {
-  const groups = [["paperclip:read", "Read only"], ["paperclip:control", "Full control (beta)"], ["paperclip:admin", "Admin"]];
+  const groups = [["paperclip:read", "Read only"], ["paperclip:control", "Full control"]];
   const esc = (s) => s.replace(/\|/g, "\\|").replace(/\n/g, " ");
-  let md = `# Tool reference\n\nEvery tool Papercliped gives your AI app, generated from the code (\`src/tools.ts\`). ${data.length} tools in total. Each needs a level: a connection can use the tools of its level and every level below.\n\nRaw API calls (\`paperclip_api_request\`) need Read only for GET and Admin for anything else.\n`;
+  let md = `# Tool reference\n\nEvery tool Papercliped gives your AI app, generated from the code (\`src/tools.ts\`). ${data.length} tools in total. There are two levels: **Read only** can use the read tools; **Full control** can use every tool.\n\nRaw API calls (\`paperclip_api_request\`) need Read only for GET and Full control for anything else.\n`;
   for (const [scope, title] of groups) {
     const rows = data.filter((t) => t.scope === scope);
     md += `\n## ${title} (${rows.length})\n\n| Tool | What it does | Changes anything? |\n| --- | --- | --- |\n`;

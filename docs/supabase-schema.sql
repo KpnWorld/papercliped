@@ -267,6 +267,13 @@ end $$;
 -- Beta opt-in: accounts that join the beta get the connection manager (/manage) and its management API.
 alter table bridge.accounts add column if not exists beta boolean not null default false;
 
+-- ───── 006_two_levels.sql ─────
+-- Two access levels: Read only and Full control. The old third level (paperclip:admin) is folded into Full control,
+-- which now covers every tool. Existing grants keep working; this only tidies the stored scope lists.
+update bridge.grants
+   set scopes = array(select distinct s from unnest(array_replace(scopes, 'paperclip:admin', 'paperclip:control')) as s order by s desc)
+ where 'paperclip:admin' = any(scopes);
+
 -- ───── migration bookkeeping ─────
 create table if not exists bridge.schema_migrations (version text primary key, applied_at timestamptz not null default now());
 alter table bridge.schema_migrations enable row level security;
@@ -276,6 +283,6 @@ do $$ declare r text; begin
     if exists (select 1 from pg_roles where rolname = r) then execute format('revoke all on bridge.schema_migrations from %I', r); end if;
   end loop;
 end $$;
-insert into bridge.schema_migrations (version) values ('001_init.sql'), ('002_audit.sql'), ('003_accounts.sql'), ('004_privacy_panel.sql'), ('005_beta.sql') on conflict (version) do nothing;
+insert into bridge.schema_migrations (version) values ('001_init.sql'), ('002_audit.sql'), ('003_accounts.sql'), ('004_privacy_panel.sql'), ('005_beta.sql'), ('006_two_levels.sql') on conflict (version) do nothing;
 
 commit;

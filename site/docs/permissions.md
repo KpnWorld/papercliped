@@ -1,17 +1,17 @@
 # Permissions
 
-You decide how much the AI may do each time you connect. The levels build on each other.
+You decide how much the AI may do each time you connect. There are two levels.
 
 | Level | What the AI can do |
 | --- | --- |
 | **Read only** (default) | View agents, tasks, goals, costs and reports. Cannot change anything. |
-| **Full control (beta)** | Everything above, plus pause, resume or wake agents, create and update issues and goals, and comment. |
-| **Admin (advanced)** | Everything above, plus decide approvals, change budgets, terminate agents and send arbitrary API requests. Only offered when the app asks for it. |
+| **Full control** | Every tool: everything above, plus pause, resume, wake or terminate agents, create and update issues and goals, comment, decide approvals, change budgets and send any API request. Run your Paperclip from anywhere, without opening the dashboard. |
 
 ## Good to know
 - Papercliped enforces these levels itself on every call, and refuses anything outside the level you chose.
 - Your Paperclip key has the access your Paperclip account has. The levels limit what the **AI app** can do through Papercliped; they do not shrink the key itself. That is why the key is stored encrypted and why you can revoke it at any time.
-- The AI asks for confirmation before destructive actions.
+- The AI asks for confirmation before actions that can't be undone, such as terminating an agent.
+- Apps that still ask for the old "admin" level get Full control.
 - To change a level, beta users can use the [connection manager](/docs/manage); everyone else can disconnect the app and connect it again.
 
 ## Disconnecting

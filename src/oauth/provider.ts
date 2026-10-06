@@ -11,7 +11,7 @@ import { Keyring, isValidCodeChallenge, randomToken, safeEqual, sha256Hex, verif
 import { approvePage, choosePage, consentPage, errorPage, instancePage, scopePage, secretPage, usernamePage, welcomePage } from "./pages.js";
 import { LoginError, PaperclipLogin, type Challenge } from "./paperclip-login.js";
 import { MemoryStore, type Grant, type PendingRecord, type Store } from "./store.js";
-import { SCOPES, grantableScopes, isScope, maxRank, scopeAllows, scopesUpTo, type Scope } from "./scopes.js";
+import { SCOPES, grantableScopes, isScope, maxRank, normalizeScope, normalizeScopes, scopeAllows, scopesUpTo, type Scope } from "./scopes.js";
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const PENDING_TTL_MS = 10 * 60_000;
@@ -349,11 +349,10 @@ export class OAuthProvider {
       .map((g) => ({ id: g.id, app: g.clientName, level: levelOf(g.scopes), createdAt: g.createdAt, lastUsedAt: g.lastUsedAt }));
   }
 
-  /** Change what a connected app may do. The owner may move it between read and control, or lower an admin grant; admin is never granted here. */
+  /** Change what a connected app may do: Read only or Full control. */
   async manageSetLevel(a: Account, grantId: string, level: Scope): Promise<boolean> {
     const g = await this.store.getGrant(grantId);
     if (!g || g.revoked || g.accountId !== a.id || g.clientId === "paperclip-plugin") return false;
-    if (level === "paperclip:admin" && levelOf(g.scopes) !== "paperclip:admin") return false;
     if (!(await this.store.setGrantScopes(g.id, scopesUpTo(level)))) return false;
     await this.event("updated", { accountId: a.id, username: displayName(a) }, `level_${level.split(":")[1]}`);
     return true;
@@ -651,7 +650,7 @@ export class OAuthProvider {
     if (!(await this.limit(`authz:${this.ip(req)}`, 30))) return this.html(res, 429, errorPage("Too many requests", "Please wait a minute and try again."));
     if ((await this.store.countPending()) >= MAX_PENDING) return this.html(res, 503, errorPage("Busy", "Too many sign-ins in progress. Try again shortly."));
 
-    const asked = (q.get("scope") ?? "").split(/\s+/).filter(isScope);
+    const asked = (q.get("scope") ?? "").split(/\s+/).map(normalizeScope).filter(isScope);
     const requestedMax = asked.length ? levelOf(asked) : "paperclip:read";
     const rid = randomToken(24);
     const p: PendingRecord = { clientId: client.id, clientName: client.name, redirectUri, state, codeChallenge: challenge, requestedMax, csrf: randomToken(24), attempts: 0, expiresAt: this.now() + PENDING_TTL_MS };
@@ -692,7 +691,7 @@ export class OAuthProvider {
         clientName: p.clientName,
         redirectHost: u.host,
         loopbackOnly: u.protocol === "http:" && LOOPBACK.has(u.hostname),
-        requestedMax: p.requestedMax as Scope,
+        requestedMax: normalizeScope(p.requestedMax) as Scope,
         login: this.deps.oauth.login,
         approvalUrl: ch?.approvalUrl,
         approved,
@@ -732,7 +731,7 @@ export class OAuthProvider {
       await this.event("connect_failed", null, "denied");
       return this.redirectWith(res, p.redirectUri, { error: "access_denied", error_description: "The user denied the request", state: p.state });
     }
-    const allowed = scopesUpTo(p.requestedMax as Scope);
+    const allowed = grantableScopes();
     const level = (f.get("level") ?? "") as Scope;
     if (!allowed.includes(level)) return this.renderConsent(res, rid, p, false, "Choose an access level.");
 
@@ -820,7 +819,7 @@ export class OAuthProvider {
         const link = p.accountId ? await this.store.getLink(p.accountId) : undefined;
         const u = new URL(p.redirectUri);
         const acct = p.accountId ? await this.store.getAccount(p.accountId) : undefined;
-        return this.page(res, status, scopePage({ ...c, requestedMax: p.requestedMax as Scope, loopbackOnly: u.protocol === "http:" && LOOPBACK.has(u.hostname), instanceHost: link ? new URL(link.instanceUrl).host : "your Paperclip", username: p.username ?? "", anonymous: !!acct?.anonymous, alias: acct?.alias ?? null, beta: !!acct?.beta }), p);
+        return this.page(res, status, scopePage({ ...c, requestedMax: normalizeScope(p.requestedMax) as Scope, loopbackOnly: u.protocol === "http:" && LOOPBACK.has(u.hostname), instanceHost: link ? new URL(link.instanceUrl).host : "your Paperclip", username: p.username ?? "", anonymous: !!acct?.anonymous, alias: acct?.alias ?? null, beta: !!acct?.beta }), p);
       }
       default:
         return this.page(res, status, choosePage(c), p);
@@ -1139,7 +1138,7 @@ export class OAuthProvider {
     const s = await this.loadStep(req, res, ["consent"]);
     if (!s) return true;
     const { f, p, rid } = s;
-    const allowed = grantableScopes(p.requestedMax as Scope);
+    const allowed = grantableScopes();
     const level = (f.get("level") ?? "") as Scope;
     if (!allowed.includes(level)) return this.renderStage(res, rid, p, "Choose an access level.");
     const link = p.accountId ? await this.store.getLink(p.accountId) : undefined;
@@ -1240,7 +1239,7 @@ export class OAuthProvider {
       throw new OAuthError("invalid_grant", "Refresh token already used");
     }
     if (f.get("client_id") !== grant.clientId) throw new OAuthError("invalid_grant", "client_id mismatch");
-    const asked = (f.get("scope") ?? "").split(/\s+/).filter(Boolean);
+    const asked = (f.get("scope") ?? "").split(/\s+/).filter(Boolean).map(normalizeScope);
     if (asked.some((s) => !isScope(s) || !scopeAllows(grant.scopes, s))) throw new OAuthError("invalid_scope", "Requested scope exceeds the original grant");
     return this.issue(grant);
   }
@@ -1251,7 +1250,7 @@ export class OAuthProvider {
     const refresh = `pcb_rt_${randomToken(32)}`;
     await this.store.putAccess(sha256Hex(access), { grantId: grant.id, expiresAt: t + this.deps.oauth.accessTtlSec * 1000 });
     await this.store.putRefresh(sha256Hex(refresh), { grantId: grant.id, expiresAt: t + this.deps.oauth.refreshTtlSec * 1000 });
-    return { access_token: access, token_type: "Bearer", expires_in: this.deps.oauth.accessTtlSec, refresh_token: refresh, scope: grant.scopes.join(" ") };
+    return { access_token: access, token_type: "Bearer", expires_in: this.deps.oauth.accessTtlSec, refresh_token: refresh, scope: normalizeScopes(grant.scopes).join(" ") };
   }
 
   // ───────────── POST /revoke (RFC 7009) ─────────────

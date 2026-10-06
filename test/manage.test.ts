@@ -94,7 +94,7 @@ describe("connection manager (beta)", () => {
     expect((await store.getAccount(a.id))!.beta).toBe(true);
   });
 
-  it("lists only your own connections and changes access immediately, but never grants admin", async () => {
+  it("lists only your own connections and changes access immediately, with two levels", async () => {
     const a = await account("levels.test1");
     const other = await account("levels.other1");
     const mine = await grant(a.id, ["paperclip:read"], "Claude");
@@ -106,7 +106,7 @@ describe("connection manager (beta)", () => {
     const list: any = await (await call("GET", "/api/manage/connections", undefined, cookie)).json();
     expect(list.connections.map((c: any) => c.app).sort()).toEqual(["Claude", "Claude Code"]);
     expect(JSON.stringify(list)).not.toMatch(/sealed|credential|pcb_/);
-    expect(list.connections.find((c: any) => c.id === admin.id).level).toBe("paperclip:admin");
+    expect(list.connections.find((c: any) => c.id === admin.id).level).toBe("paperclip:control"); // an old admin grant shows as Full control
 
     // someone else's connection is "not found", not "forbidden": it does not even confirm it exists
     expect((await call("POST", `/api/manage/connections/${theirs.id}`, { level: "control" }, cookie)).status).toBe(404);
@@ -119,7 +119,7 @@ describe("connection manager (beta)", () => {
     expect((await call("POST", `/api/manage/connections/${mine.id}`, { level: "read" }, cookie)).status).toBe(200);
     expect((await provider.authenticate(`pcb_at_${mine.id}`))!.scopes).toEqual(["paperclip:read"]);
 
-    // admin can be lowered, never raised, and the API cannot name it
+    // only "read" and "control" exist; an old admin grant can be lowered like any other
     expect((await call("POST", `/api/manage/connections/${mine.id}`, { level: "admin" }, cookie)).status).toBe(400);
     expect((await call("POST", `/api/manage/connections/${admin.id}`, { level: "read" }, cookie)).status).toBe(200);
     expect((await call("POST", `/api/manage/connections/${admin.id}`, { level: "bogus" }, cookie)).status).toBe(400);

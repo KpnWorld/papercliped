@@ -1,6 +1,6 @@
 # Paperclip plugin (beta)
 
-The Papercliped plugin puts the connection manager inside Paperclip: a **Papercliped** entry in the sidebar and a page where you can see connected apps, switch each between **Read only** and **Full control (beta)**, disconnect them, and turn anonymity on or off.
+The Papercliped plugin puts the connection manager inside Paperclip: a **Papercliped** entry in the sidebar and a page where you can see connected apps, switch each between **Read only** and **Full control**, disconnect them, and turn anonymity on or off.
 
 It manages your connections only. It never reads or controls your Paperclip, and the AI apps still connect through Papercliped as before.
 

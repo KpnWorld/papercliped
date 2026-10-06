@@ -60,14 +60,14 @@
     "title": "Set agent budget",
     "description": "Set an agent's monthly budget in US cents (e.g. 5000 = $50). Agents auto-pause at 100%.",
     "access": "write",
-    "scope": "paperclip:admin"
+    "scope": "paperclip:control"
   },
   {
     "name": "paperclip_terminate_agent",
     "title": "Terminate agent",
     "description": "PERMANENTLY deactivate an agent. Irreversible. Requires confirm=true; ask the human first and prefer pause.",
     "access": "destructive",
-    "scope": "paperclip:admin"
+    "scope": "paperclip:control"
   },
   {
     "name": "paperclip_list_goals",
@@ -144,7 +144,7 @@
     "title": "Decide approval",
     "description": "Approve, reject, or request revision on an approval. Decisions bind agents, so confirm with the human.",
     "access": "write",
-    "scope": "paperclip:admin"
+    "scope": "paperclip:control"
   },
   {
     "name": "paperclip_sync_snapshot",
@@ -207,6 +207,6 @@
     "title": "Raw API request",
     "description": "Call any Paperclip REST endpoint under /api (path like '/companies/{id}/routines'). For endpoints without a dedicated tool. DELETE and any non-GET require confirm=true.",
     "access": "write",
-    "scope": "paperclip:admin"
+    "scope": "paperclip:control"
   }
 ]

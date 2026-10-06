@@ -30,7 +30,7 @@ See the [tool reference](/docs/tools) for all of them.
 - **Connector**: how an AI app adds Papercliped (in Claude: Settings → Connectors).
 - **MCP**: the Model Context Protocol, the standard AI apps use to call tools.
 - **Tool**: one action the AI can take, such as `paperclip_pause_agent`.
-- **Level**: what a connection may do: Read only (default), Full control (beta), or Admin (only when the app asks).
+- **Level**: what a connection may do: Read only (default) or Full control (every tool).
 - **Account**: your Papercliped username and secret key, used to sign in again and manage connections.
 - **Secret key**: a key starting with `pcs_`, shown once; Papercliped keeps only a one-way hash.
 - **Board token**: a Paperclip credential with operator rights. Papercliped stores it encrypted and only uses it within your level.
