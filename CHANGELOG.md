@@ -7,6 +7,7 @@
 - **Plugin tokens** are accepted as `Authorization: Bearer` on the manage API (no CSRF header needed). They hold no scopes, so they cannot call any Paperclip tool or the MCP endpoint, and they cannot mint codes, change the beta, sign out, or reach any action that needs the secret key (rotate key, disconnect Paperclip, delete account); those return 403 and need the browser. A token can remove only itself.
 - **Making a new secret key now also revokes every plugin link.**
 - New docs page: Paperclip plugin.
+- New docs page: **Set up your Paperclip**, a step-by-step guide to getting a public https address (Cloudflare Tunnel with your own domain, or Tailscale Funnel, ngrok or a Cloudflare quick tunnel without one).
 
 Not tested: the plugin has never run inside a live Paperclip. It is covered by unit tests against a fake bridge and the SDK's test harness only.
 

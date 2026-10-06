@@ -3,7 +3,7 @@
 Creating a Papercliped account takes about a minute. You do it the first time you connect Claude (or ChatGPT).
 
 ## Before you start
-- Your Paperclip must be reachable at a public `https://` address, for example `https://workforce.example.com`.
+- Your Paperclip must be reachable at a public `https://` address, for example `https://workforce.example.com`. Need one? Follow [Set up your Paperclip](/docs/connect-your-paperclip), with or without your own domain.
 - You must be able to sign in to that Paperclip, because you approve the connection there.
 
 ## Steps

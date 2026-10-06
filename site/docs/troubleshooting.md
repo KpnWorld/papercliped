@@ -1,6 +1,6 @@
 # Troubleshooting
 
-**"Could not reach your Paperclip."** The address must be a public `https://` address on port 443 that answers over the internet. Test it with `curl https://your-paperclip/api/health`. A challenge page from a firewall or bot protection in front of Paperclip will block Papercliped; exempt `/api/*`.
+**"Could not reach your Paperclip."** The address must be a public `https://` address on port 443 that answers over the internet. Test it with `curl https://your-paperclip/api/health`. A challenge page from a firewall or bot protection in front of Paperclip will block Papercliped; exempt `/api/*`. Step-by-step help with tunnels and domains: [Set up your Paperclip](/docs/connect-your-paperclip).
 
 **The first request is slow.** The hosted service runs on a free tier and may need up to a minute to wake after a restart. Retry once.
 

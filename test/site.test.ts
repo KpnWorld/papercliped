@@ -61,6 +61,14 @@ describe("public site", () => {
     expect(priv).toContain("2026-10-06");
     expect(priv).toContain("https://papercliped.example.com");
   });
+  it("has a step-by-step page for exposing Paperclip, linked from the other guides", async () => {
+    const html = await (await fetch(`${base}/docs/connect-your-paperclip`)).text();
+    for (const h of ["Set up your Paperclip for Papercliped", "What Papercliped needs from your Paperclip", "Path A: you own a domain", "Path B: you don&#39;t have a domain yet", "Connect to Papercliped", "Keep it safe", "Troubleshooting"]) expect(html, h).toContain(h);
+    expect(html).toContain("cloudflared tunnel route dns");
+    expect(html).toContain("tailscale funnel");
+    expect(html).not.toMatch(/subdomain (provided|from) papercliped/i); // no such feature exists
+    for (const p of ["/docs/getting-started", "/docs/signup", "/docs/troubleshooting"]) expect(await (await fetch(`${base}${p}`)).text(), p).toContain('href="/docs/connect-your-paperclip"');
+  });
   it("every internal link on every page points at a page that exists", async () => {
     const known = new Set(site.paths());
     for (const p of site.paths()) {
