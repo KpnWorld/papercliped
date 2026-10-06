@@ -36,7 +36,8 @@ const state = { get: async (s: any) => mem.get(k(s)) ?? null, set: async (s: any
 
 beforeAll(async () => {
   fake = await startFakeBridge();
-  const h = createHandlers({ state, fetch: (u, i) => fetch(u, i), bridgeUrl: async () => fake.url, allowInsecureLoopback: true });
+  // The worker runs in plain Node; here it shares jsdom's globals, and Node 24's fetch rejects jsdom's AbortSignal.
+  const h = createHandlers({ state, fetch: (u, i) => fetch(u, { ...i, signal: undefined }), bridgeUrl: async () => fake.url, allowInsecureLoopback: true });
   const ann = { type: "user", userId: "user-ann" };
   actions = Object.fromEntries(Object.entries(h).map(([name, fn]) => [name, (p: Record<string, unknown> = {}) => (fn as any)(p, ann)]));
 });
