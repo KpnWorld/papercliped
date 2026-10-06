@@ -22,7 +22,7 @@ ChatGPT Custom GPT ──/actions/* + /openapi.json─▶ ┘
 ## Install
 
 ```sh
-git clone https://github.com/OpenSourced/papercliped && cd papercliped
+git clone https://github.com/OpenSourcx/papercliped && cd papercliped
 npm install        # also builds (prepare script)
 npm test
 ```
@@ -42,7 +42,7 @@ export PAPERCLIP_READ_ONLY=1                # optional: reports + sync only, no 
 ## Claude Code (plugin)
 
 ```
-/plugin marketplace add OpenSourced/papercliped
+/plugin marketplace add OpenSourcx/papercliped
 /plugin install paperclip@papercliped
 ```
 

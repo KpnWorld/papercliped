@@ -12,4 +12,4 @@
 
 **My username is rejected.** It needs 6 to 32 characters including at least one number or one of `.` `#` `_`, and only letters, numbers and those symbols. It may also be taken.
 
-**Still stuck?** Open an issue at https://github.com/OpenSourced/papercliped/issues. Never include your secret key or Paperclip keys.
+**Still stuck?** Open an issue at https://github.com/OpenSourcx/papercliped/issues. Never include your secret key or Paperclip keys.
