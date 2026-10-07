@@ -45,8 +45,9 @@ jobs:
       - uses: actions/setup-node@v6
         if: steps.v.outputs.release == 'true'
         with:
+          # No registry-url: it would write an .npmrc with a placeholder NODE_AUTH_TOKEN that npm falls back to (and gets a
+          # 404) whenever the trusted-publishing exchange fails. npm's default registry is registry.npmjs.org anyway.
           node-version: "24"   # trusted publishing needs npm >= 11.5.1 and Node >= 22.14
-          registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
       - name: Make sure npm supports trusted publishing
         if: steps.v.outputs.release == 'true'
@@ -59,6 +60,19 @@ jobs:
           npm --prefix plugin ci && npm --prefix plugin run typecheck && npm --prefix plugin test && npm --prefix plugin run build
           node scripts/check-packages.mjs
 
+      # Explains a failed publish: what GitHub's identity token says, and npm's answer to the trusted-publishing exchange for each
+      # package (the exchanged token itself is never printed). npm compares the token's repository and workflow file with the
+      # trusted publisher configured on npmjs.com.
+      - name: Check npm trusted publishing
+        if: steps.v.outputs.release == 'true'
+        run: |
+          oidc="$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=npm:registry.npmjs.org" | jq -r .value)"
+          echo "GitHub identity: $(cut -d. -f2 <<<"$oidc" | tr '_-' '/+' | base64 -d 2>/dev/null | jq -c '{repository, repository_owner, workflow_ref, ref, environment}' 2>/dev/null)"
+          for p in papercliped papercliped-paperclip-plugin; do
+            code="$(curl -sS -o "$RUNNER_TEMP/x.json" -w '%{http_code}' -X POST -H "Authorization: Bearer $oidc" "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/$p")"
+            echo "npm exchange for $p: HTTP $code $(jq -c 'del(.token)' "$RUNNER_TEMP/x.json" 2>/dev/null || head -c 300 "$RUNNER_TEMP/x.json")"
+          done
+
       # Publishing comes before the tag, and each step skips a version that's already on npm, so a failed run can simply be
       # re-run (from the Actions tab) once the cause is fixed.
       - name: Publish papercliped
@@ -66,14 +80,14 @@ jobs:
         run: |
           ver="${{ steps.v.outputs.version }}"
           if npm view "papercliped@$ver" version >/dev/null 2>&1; then echo "papercliped@$ver is already on npm; skipping."; exit 0; fi
-          if [[ "$ver" == *-* ]]; then npm publish --tag beta; else npm publish; fi
+          if [[ "$ver" == *-* ]]; then npm publish --tag beta --loglevel verbose; else npm publish --loglevel verbose; fi
       - name: Publish papercliped-paperclip-plugin
         if: steps.v.outputs.release == 'true'
         working-directory: plugin
         run: |
           ver="${{ steps.v.outputs.version }}"
           if npm view "papercliped-paperclip-plugin@$ver" version >/dev/null 2>&1; then echo "papercliped-paperclip-plugin@$ver is already on npm; skipping."; exit 0; fi
-          if [[ "$ver" == *-* ]]; then npm publish --tag beta; else npm publish; fi
+          if [[ "$ver" == *-* ]]; then npm publish --tag beta --loglevel verbose; else npm publish --loglevel verbose; fi
 
       - name: Release notes from CHANGELOG.md
         if: steps.v.outputs.release == 'true'
