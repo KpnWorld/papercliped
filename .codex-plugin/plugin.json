@@ -1,0 +1,19 @@
+{
+  "name": "papercliped",
+  "version": "2.1.0",
+  "description": "Run your Paperclip from Codex: control agents, sync with them and get reports, at the access level you choose.",
+  "keywords": ["paperclip", "agents", "orchestration", "mcp"],
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Papercliped",
+    "shortDescription": "Your Paperclip, in Codex",
+    "longDescription": "Connect Codex to your Paperclip (the open-source orchestrator for companies of AI agents). Check on agents, pause or wake them, assign issues, decide approvals and get status, cost and activity reports. You sign in through your own Paperclip and choose Read only or Full control.",
+    "developerName": "OpenSourcx",
+    "category": "Productivity",
+    "websiteUrl": "https://papercliped.co",
+    "privacyPolicyUrl": "https://papercliped.co/privacy",
+    "termsOfServiceUrl": "https://papercliped.co/terms",
+    "defaultPrompt": "What are my Paperclip agents working on?"
+  }
+}

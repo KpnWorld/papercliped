@@ -27,7 +27,7 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
           echo "tag=v$ver" >> "$GITHUB_OUTPUT"
           if git ls-remote --exit-code --tags origin "refs/tags/v$ver" >/dev/null; then
-            echo "v$ver is already tagged; nothing to release."
+            echo "::warning title=No new version::v$ver is already released, so this push ships nothing. Every push to main should bump the version (node scripts/version.mjs patch|minor|major; see .agents/skills/release/SKILL.md)."
             echo "release=false" >> "$GITHUB_OUTPUT"
           else
             echo "release=true" >> "$GITHUB_OUTPUT"
@@ -89,13 +89,20 @@ jobs:
           if npm view "papercliped-paperclip-plugin@$ver" version >/dev/null 2>&1; then echo "papercliped-paperclip-plugin@$ver is already on npm; skipping."; exit 0; fi
           if [[ "$ver" == *-* ]]; then npm publish --tag beta --loglevel verbose; else npm publish --loglevel verbose; fi
 
-      - name: Release notes from CHANGELOG.md
+      # The notes are the changelog section for this version, then every commit description pushed since the last release.
+      - name: Release notes
         if: steps.v.outputs.release == 'true'
         run: |
-          awk -v tag="${{ steps.v.outputs.tag }}" '
-            /^## / { if (found) exit; if (index($0, "## " tag) == 1) found = 1 }
+          tag="${{ steps.v.outputs.tag }}"
+          awk -v tag="$tag" '
+            /^## / { if (found) exit; if (index($0, "## " tag) == 1) { found = 1; next } }
             found { print }
           ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          prev="$(git describe --tags --abbrev=0 --match 'v*' HEAD 2>/dev/null || true)"
+          {
+            echo; echo "## Commits"; echo
+            { git log --no-merges --format='### %s%n%n%b' ${prev:+$prev..}HEAD | grep -v -E '^(Co-Authored-By|Claude-Session|Signed-off-by):' || true; } | head -c 50000
+          } >> "$RUNNER_TEMP/notes.md"
       - name: Tag this commit and create the GitHub release
         if: steps.v.outputs.release == 'true'
         env:

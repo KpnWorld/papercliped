@@ -1,11 +1,14 @@
 {
   "name": "papercliped",
-  "owner": { "name": "KpnWorld" },
+  "owner": {
+    "name": "KpnWorld"
+  },
   "plugins": [
     {
       "name": "papercliped",
       "source": "./",
-      "description": "Control Paperclip agents, sync with them, and pull reports from Claude."
+      "description": "Run your Paperclip from Claude: control agents, sync with them and get reports, at the access level you choose."
     }
-  ]
+  ],
+  "description": "Papercliped: run your Paperclip from Claude Code."
 }

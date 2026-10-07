@@ -1,7 +1,7 @@
 {
   "name": "papercliped",
   "version": "2.1.0",
-  "description": "Control Paperclip agents, sync with them, and pull reports from Claude.",
+  "description": "Run your Paperclip from Claude: control agents, sync with them and get reports, at the access level you choose.",
   "author": {
     "name": "KpnWorld"
   },
@@ -11,5 +11,7 @@
     "agents",
     "orchestration",
     "mcp"
-  ]
+  ],
+  "homepage": "https://papercliped.co",
+  "repository": "https://github.com/OpenSourcx/papercliped"
 }

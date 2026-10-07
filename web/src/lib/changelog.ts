@@ -50,7 +50,8 @@ export function parseChangelog(md: string, dates: Record<string, string> = {}): 
     } else flush();
   }
   flush();
-  return releases;
+  // An empty "## Unreleased" (right after a release) isn't shown.
+  return releases.filter((r) => !(r.unreleased && !r.entries.length && !r.intro.length));
 }
 
 const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

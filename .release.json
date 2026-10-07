@@ -1,0 +1,32 @@
+{
+  "$comment": "Read by scripts/version.mjs (see .agents/skills/release/SKILL.md). Every file that carries the version, the changelog, and an optional dates file.",
+  "versionFiles": [
+    {
+      "path": "package.json",
+      "kind": "json"
+    },
+    {
+      "path": "plugin/package.json",
+      "kind": "json"
+    },
+    {
+      "path": ".claude-plugin/plugin.json",
+      "kind": "json"
+    },
+    {
+      "path": ".codex-plugin/plugin.json",
+      "kind": "json"
+    },
+    {
+      "path": "plugin/src/manifest.ts",
+      "kind": "regex",
+      "pattern": "version: \"([^\"]+)\""
+    }
+  ],
+  "lockFiles": [
+    "package-lock.json",
+    "plugin/package-lock.json"
+  ],
+  "changelog": "CHANGELOG.md",
+  "datesFile": "web/src/content/release-dates.json"
+}

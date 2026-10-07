@@ -30,3 +30,10 @@ describe("changelog", () => {
     expect(feed).not.toMatch(/<(script|a )/);
   });
 });
+
+describe("empty Unreleased", () => {
+  it("is hidden right after a release", () => {
+    const r = parseChangelog("# Changelog\n\n## Unreleased\n\n## v2.1.1 — Fix\n\n- **Fixed:** a thing.\n", {});
+    expect(r.map((x) => x.version)).toEqual(["v2.1.1"]);
+  });
+});
