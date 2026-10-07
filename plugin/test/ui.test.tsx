@@ -45,6 +45,17 @@ afterEach(() => cleanup());
 afterAll(() => fake.server.close());
 
 describe("the Papercliped page inside Paperclip", () => {
+  it("never invites the browser to fill in the user's Paperclip login", async () => {
+    // The page lives on the same address as Paperclip's own sign-in, so "username" / "current-password" would make Chrome
+    // offer the saved Paperclip email and password here, one click from sending that password to Papercliped.
+    render(<PapercliedPage />);
+    const username = await screen.findByLabelText("Username");
+    const secret = screen.getByLabelText("Secret key");
+    expect(username).toHaveAttribute("autocomplete", "off");
+    expect(secret).toHaveAttribute("autocomplete", "new-password");
+    for (const el of [username, secret]) expect(el.getAttribute("autocomplete")).not.toMatch(/^(username|current-password)$/);
+  });
+
   it("shows the service status, links with username + secret key, and never shows the token", async () => {
     render(<PapercliedPage />);
     expect(await screen.findByText("All systems normal")).toBeInTheDocument();

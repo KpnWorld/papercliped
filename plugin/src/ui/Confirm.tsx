@@ -34,8 +34,8 @@ export function Confirm({ label, detail, needName, destructive, onRun }: { label
             onRun(secret.trim(), name.trim()).then(close).catch((err) => setMsg(errText(err))).finally(() => setBusy(false));
           }}
         >
-          <input aria-label={`Secret key to confirm: ${label}`} type="password" autoFocus style={{ ...field, flex: "2 1 220px" }} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Your secret key" autoComplete="current-password" />
-          {needName && <input aria-label="Type your username to confirm" style={{ ...field, flex: "1 1 160px" }} value={name} onChange={(e) => setName(e.target.value)} placeholder="Type your username" autoComplete="off" />}
+          <input aria-label={`Secret key to confirm: ${label}`} name="papercliped-confirm-secret-key" type="password" autoComplete="new-password" autoFocus style={{ ...field, flex: "2 1 220px" }} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Your secret key" />
+          {needName && <input aria-label="Type your username to confirm" name="papercliped-confirm-username" autoComplete="off" style={{ ...field, flex: "1 1 160px" }} value={name} onChange={(e) => setName(e.target.value)} placeholder="Type your username" />}
           <button type="submit" style={destructive ? danger : button} disabled={busy || !secret.trim() || (!!needName && !name.trim())}>{busy ? "Working…" : "Confirm"}</button>
           <button type="button" style={button} onClick={close}>Cancel</button>
           {msg && <p role="alert" style={{ width: "100%", margin: "6px 0 0" }}>{msg}</p>}

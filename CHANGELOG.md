@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v2.2.2 — the plugin no longer invites autofill of your Paperclip login
+
+- **Fixed: the Papercliped page inside Paperclip no longer invites your browser to fill in your Paperclip login.** The page shares an address with Paperclip’s own sign-in, so browsers offered your saved Paperclip email and password in the "Link your Papercliped account" fields, one click from sending that password to Papercliped as a "secret key". Those fields (and the confirm boxes) now tell the browser not to autofill. If you linked an account on 2.2.1, nothing needs doing; if a saved login was ever filled in, do not press Link.
+
 ## v2.2.1 — the Papercliped plugin now installs in Paperclip
 
 - **Fixed: the Papercliped plugin could not be installed in Paperclip.** Paperclip rejected it with a bare "400" because the sidebar entry declared a page route, which Paperclip only allows on pages. Installing it, automatically while connecting or by hand from Settings → Plugins, now works. The plugin’s tests now run Paperclip’s own manifest check so this can’t come back. If you ticked the box while connecting on 2.2.0, nothing was installed: connect again, or install it from Settings → Plugins.
