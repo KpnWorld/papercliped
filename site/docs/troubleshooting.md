@@ -1,6 +1,12 @@
 # Troubleshooting
 
-**"Could not reach your Paperclip."** The address must be a public `https://` address on port 443 that answers over the internet. Test it with `curl https://your-paperclip/api/health`. A challenge page from a firewall or bot protection in front of Paperclip will block Papercliped; exempt `/api/*`. Step-by-step help with tunnels and domains: [Set up your Paperclip](/docs/connect-your-paperclip).
+**"Could not reach your Paperclip."** The address must be a public `https://` address on port 443 that answers over the internet. Test it with `curl https://your-paperclip/api/health`. A challenge page from a firewall or bot protection in front of Paperclip will block Papercliped; exempt `/api/*`. Step-by-step setup for every host: [Host your Paperclip](/docs/hosting).
+
+**"This hostname is not allowed for this Paperclip instance."** Paperclip doesn't recognise the address. Set `PAPERCLIP_DEPLOYMENT_EXPOSURE=public` and `PAPERCLIP_PUBLIC_URL` to exactly the address you use, then restart Paperclip. See [What every option needs](/docs/hosting#what-every-option-needs).
+
+**It stopped working after about a month.** Newer Paperclip versions make keys approved through the sign-in prompt expire after 30 days. When the AI says the Paperclip credential was rejected, disconnect and connect again from your AI app, then approve in Paperclip.
+
+**Agents stop mid-task now and then.** Something restarted Paperclip: an update, a redeploy, or a host that sleeps. Runs in progress end on every restart. Use an always-on host and update when agents are idle.
 
 **The first request is slow.** The hosted service runs on a free tier and may need up to a minute to wake after a restart. Retry once.
 

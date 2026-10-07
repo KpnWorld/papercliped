@@ -4,6 +4,8 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
 import tools from "../src/generated/tools.json";
+import gallery from "../src/content/prompts.json";
+import { levelOf, type Prompt } from "../src/pages/Prompts";
 
 const at = (path: string) => render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
 afterEach(() => vi.unstubAllGlobals());
@@ -41,6 +43,43 @@ describe("changelog page", () => {
     expect(screen.getByText("October 5, 2026")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Fixed" }));
     expect(screen.queryAllByText("New").filter((n) => n.tagName === "SPAN").length).toBe(0);
+  });
+});
+
+describe("prompt gallery", () => {
+  it("every prompt uses real tools, belongs to a category, and has a unique title", () => {
+    const names = new Set(tools.map((t) => t.name));
+    const cats = new Set(gallery.categories.map((c) => c.id));
+    for (const p of gallery.prompts as Prompt[]) {
+      expect(cats.has(p.category), p.title).toBe(true);
+      expect(p.tools.length, p.title).toBeGreaterThan(0);
+      for (const t of p.tools) expect(names.has(t), `${p.title} → ${t}`).toBe(true);
+    }
+    expect(new Set(gallery.prompts.map((p) => p.title)).size).toBe(gallery.prompts.length);
+    for (const c of gallery.categories) expect(gallery.prompts.some((p) => p.category === c.id), c.id).toBe(true);
+  });
+  it("a prompt needs Full control only when one of its tools changes something", () => {
+    expect(levelOf({ category: "x", title: "x", prompt: "x", tools: ["paperclip_report_costs"] })).toBe("Read only");
+    expect(levelOf({ category: "x", title: "x", prompt: "x", tools: ["paperclip_list_agents", "paperclip_pause_agent"] })).toBe("Full control");
+  });
+  it("filters by category, level and search, and copies a prompt", async () => {
+    const writeText = vi.fn(async () => {});
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    at("/prompts");
+    expect(screen.getByRole("heading", { level: 1, name: "Prompt gallery" })).toBeInTheDocument();
+    expect(screen.getByText(`${gallery.prompts.length} prompts`)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Approvals" }));
+    expect(screen.getByRole("heading", { level: 2, name: "Approvals" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: "Reports" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Read only" }));
+    expect(screen.getByText("1 prompt")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "All" }));
+    await userEvent.click(screen.getByRole("button", { name: "Any level" }));
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search prompts" }), "stand-up");
+    expect(screen.getByText("1 prompt")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Copy prompt: Daily stand-up" }));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Run a stand-up"));
+    vi.unstubAllGlobals();
   });
 });
 

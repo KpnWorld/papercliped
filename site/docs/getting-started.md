@@ -3,7 +3,7 @@
 Papercliped connects Claude (and ChatGPT) to **your** Paperclip. You keep control: you choose how much the AI may do, and you can cut access at any time.
 
 ## What you need
-- A Paperclip that is reachable over the internet at an `https://` address (for example `https://workforce.example.com`). Private, local and `http://` addresses are refused on purpose. No public address yet? See [Set up your Paperclip](/docs/connect-your-paperclip).
+- A Paperclip that is reachable over the internet at an `https://` address (for example `https://workforce.example.com`). Private, local and `http://` addresses are refused on purpose. No public address yet? See [Host your Paperclip](/docs/hosting).
 - A Claude account that can add connectors, or Claude Code.
 
 ## Connect from Claude

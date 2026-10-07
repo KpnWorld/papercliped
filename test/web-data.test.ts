@@ -15,4 +15,12 @@ describe("website data", () => {
     for (const t of tools) expect(md, t.name).toContain(`\`${t.name}\``);
     expect(md).toContain(`${tools.length} tools in total`);
   });
+  it("site/docs/prompts.md has every prompt in the gallery", () => {
+    const md = readFileSync(new URL("../site/docs/prompts.md", import.meta.url), "utf8");
+    const gallery = JSON.parse(readFileSync(new URL("../web/src/content/prompts.json", import.meta.url), "utf8")) as { prompts: { title: string; prompt: string }[] };
+    for (const p of gallery.prompts) {
+      expect(md, p.title).toContain(`### ${p.title}\n`);
+      expect(md, p.title).toContain(`> ${p.prompt.split("\n")[0]}`);
+    }
+  });
 });
