@@ -12,7 +12,7 @@ Free and open source. Website: [papercliped.co](https://papercliped.co) · Docs:
 
 ## Add it to your AI app
 
-You need a Paperclip with a public `https` address ([no domain? see this](https://docs.papercliped.co/connect-your-paperclip)). The first time you connect, you approve the request inside your own Paperclip, pick a username, save the secret key you're shown once, and choose **Read only** or **Full control**.
+You need a Paperclip with a public `https` address. Don't have one yet? [Host your Paperclip](https://docs.papercliped.co/hosting) has step-by-step guides for your own computer (free tunnel), a VPS, Railway, Render, Fly.io and Coolify. The first time you connect, you approve the request inside your own Paperclip, pick a username, save the secret key you're shown once, and choose **Read only** or **Full control**.
 
 The connector address for every app is:
 
@@ -80,9 +80,13 @@ Add `--env PAPERCLIP_READ_ONLY=1` for reports and sync only.
 
 ## What you can ask
 
-- "What are my agents working on?" · "Which agents are over budget?"
-- "Pause the Web Engineer." · "Wake the CEO and assign it the onboarding issue."
-- "Approve the hire request." · "Weekly cost report, please."
+Talk to your AI app instead of clicking through the dashboard:
+
+- "Catch me up on my Paperclip." · "Which agents are over budget?"
+- "Give the Web Engineer an issue to fix the signup page, and wake them." · "Wake the CEO, wait until they finish, then summarise."
+- "Approve the hire request." · "Weekly report, please."
+
+More than 40 ready-to-copy prompts: [prompt gallery](https://papercliped.co/prompts).
 
 There are 30 tools ([full list](https://docs.papercliped.co/tools)). **Read only** can look at agents, issues, goals, costs and reports. **Full control** can use every tool. The AI asks before anything that can't be undone, and you can change the level or disconnect at any time.
 
