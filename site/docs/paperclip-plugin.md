@@ -5,7 +5,11 @@ The Papercliped plugin is where you manage Papercliped, right inside Paperclip: 
 It manages your Papercliped account only. It never reads or controls your Paperclip itself, and AI apps still connect through Papercliped as before.
 
 ## Install (Paperclip admin)
-Install the npm package `papercliped-paperclip-plugin` from **Settings → Plugins** in Paperclip. Installing is done by the person who runs the Paperclip instance, never remotely. The plugin asks for these capabilities: store its own data, make outbound web requests (to Papercliped), and add a sidebar entry and a page.
+**Automatic (recommended).** When you connect your Paperclip from an AI app, the address step has a box, ticked by default: **Also install the Papercliped plugin in my Paperclip**. After you approve the sign-in, Papercliped asks your Paperclip to install it using Paperclip's own installer and your own approved key. It installs one fixed package, `papercliped-paperclip-plugin`, at the exact version that matches the service, and only when you are the Paperclip's instance admin. If you are not an admin, if it is already installed, or if your Paperclip can't install plugins, nothing happens and your connection works as usual. Untick the box to skip it.
+
+**By hand.** Install the npm package `papercliped-paperclip-plugin` from **Settings → Plugins** in Paperclip (instance admin only). You can remove it there at any time, whichever way it was installed.
+
+The plugin asks for these capabilities: store its own data, make outbound web requests (to Papercliped), and add a sidebar entry and a page.
 
 The bridge address defaults to `https://papercliped.co`. If you host your own bridge, change **Papercliped bridge URL** in the plugin's settings. It must be `https`.
 
@@ -27,6 +31,6 @@ Lost your secret key? Connect from your AI app again and choose **Connect your P
   - **Delete my account.** Removes your username, stored key and every connection. Type your username to confirm.
 
 ## Good to know
-- The plugin runs as trusted code inside Paperclip, so install it only from the official package.
+- The plugin runs as trusted code inside Paperclip, so install it only from the official package. The automatic install is limited to that one package and to the version that matches the service, and it is always your choice on the connect screen.
 - The link token stays on your Paperclip server and is never shown on the page. It can only manage your account: it can't call any Paperclip tool.
 - There is no separate website page for this any more; the old `/manage` address points here.

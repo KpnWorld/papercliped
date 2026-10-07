@@ -49,6 +49,8 @@ export interface PendingRecord {
   instanceUrl?: string;
   /** Sealed JSON of the Paperclip login challenge (contains the pending board token). */
   sealedChallenge?: string;
+  /** The user's choice on the instance step: also install the Papercliped plugin into their Paperclip. Unset = never asked (shown ticked). */
+  installPlugin?: boolean;
   /** Instance-step attempts, to bound probing through the bridge. */
   attempts: number;
   /** Account flow: where the user is in the sign-in. */

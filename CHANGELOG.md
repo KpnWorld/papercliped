@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **The Papercliped plugin can install itself while you connect.** The "Connect your Paperclip" step has a new box, ticked by default: *Also install the Papercliped plugin in my Paperclip*. After you approve the sign-in, Papercliped asks your Paperclip to install `papercliped-paperclip-plugin` through Paperclip's own installer, using your own approved key. It installs one fixed package at the exact version that matches the service, only if you are the instance admin, and does nothing if the plugin is already there, you are not an admin, or your Paperclip has no plugin support. It never delays or fails your connection, and the outcome is logged as a short `plugin` event (installed, already, denied, unsupported or failed). Untick the box to skip it; installing by hand from Settings → Plugins still works.
+
 ## v2.1.0 — two access levels, manage in Paperclip, new website
 
 - **Dependencies up to date:** Zod 4 (tool schemas and the ChatGPT Actions OpenAPI now come from Zod's built-in JSON Schema; the published contract is unchanged), the latest MCP SDK, undici 8, TypeScript 7, Vitest 5, React 19 and esbuild 0.28 in the plugin, and GitHub Actions v7. No known vulnerabilities in either package. Dependabot now also watches the website and groups minor and patch updates into one pull request per package.

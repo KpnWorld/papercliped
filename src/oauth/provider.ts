@@ -10,6 +10,7 @@ import { UnsafeUrlError, createSafeFetch, parseInstanceUrl } from "../net/safe-f
 import { Keyring, isValidCodeChallenge, randomToken, safeEqual, sha256Hex, verifyPkce } from "./crypto.js";
 import { approvePage, choosePage, consentPage, errorPage, instancePage, scopePage, secretPage, usernamePage, welcomePage } from "./pages.js";
 import { LoginError, PaperclipLogin, type Challenge } from "./paperclip-login.js";
+import { VERSION } from "../version.js";
 import { MemoryStore, type Grant, type PendingRecord, type Store } from "./store.js";
 import { SCOPES, grantableScopes, isScope, maxRank, normalizeScope, normalizeScopes, scopeAllows, scopesUpTo, type Scope } from "./scopes.js";
 
@@ -18,6 +19,12 @@ const PENDING_TTL_MS = 10 * 60_000;
 const CODE_TTL_MS = 60_000;
 const MAX_PENDING = 5000;
 const MAX_INSTANCE_ATTEMPTS = 5;
+/** The plugin offered on the instance step: one fixed package, pinned to this bridge's own version (both are released together). */
+const PLUGIN_PACKAGE = "papercliped-paperclip-plugin";
+/** Its id inside Paperclip (the manifest id), used to see whether it is already installed. */
+const PLUGIN_KEY = "papercliped.remote-control";
+/** Paperclip runs npm on its side for an install; allow it more time than ordinary calls. */
+const PLUGIN_INSTALL_MS = 120_000;
 const MAX_FORM_BYTES = 16 * 1024;
 const DAY_MS = 24 * 3600 * 1000;
 
@@ -77,6 +84,10 @@ export class OAuthProvider {
   private keyring: Keyring;
   private now: () => number;
   private safeFetch: typeof fetch;
+  /** Longer-lived egress-guarded fetch for the plugin install, which makes Paperclip run npm. */
+  private installFetch: typeof fetch;
+  /** Plugin installs running after a sign-in finished, so tests (and shutdown) can wait for them. */
+  private background = new Set<Promise<void>>();
   private multi: boolean;
   private accounts: boolean;
 
@@ -87,6 +98,7 @@ export class OAuthProvider {
     this.multi = deps.oauth.mode === "multi";
     this.accounts = deps.oauth.accounts && this.multi;
     this.safeFetch = deps.safeFetch ?? createSafeFetch({ timeoutMs: deps.config.timeoutMs, maxBytes: 2_000_000 });
+    this.installFetch = deps.safeFetch ?? createSafeFetch({ timeoutMs: PLUGIN_INSTALL_MS, maxBytes: 200_000 });
     this.resource = `${deps.oauth.issuer}/mcp`;
     this.metadataUrl = `${deps.oauth.issuer}/.well-known/oauth-protected-resource`;
   }
@@ -409,6 +421,43 @@ export class OAuthProvider {
     const u = parseInstanceUrl(raw, this.deps.oauth.instance);
     if (!hostAllowed(u.hostname, this.deps.oauth.instance.allowHosts)) throw new UnsafeUrlError("This service is not open to that host yet.");
     return u;
+  }
+
+  /** Wait for plugin installs that are still running (tests and graceful shutdown). */
+  async drainBackground(): Promise<void> {
+    await Promise.allSettled([...this.background]);
+  }
+
+  /**
+   * Install the Papercliped plugin into the user's Paperclip after they approved the sign-in and ticked the box.
+   * Runs after the page has been answered: npm can take a while on their side, and the connection must not wait for it
+   * or fail because of it. The outcome is recorded as a "plugin" event and never carries anything but a short word.
+   */
+  private installPluginLater(p: PendingRecord, token: string): void {
+    const instanceUrl = p.instanceUrl;
+    if (!instanceUrl) return;
+    const accountId = p.accountId ?? null;
+    const run = (async () => {
+      let outcome = "failed";
+      try {
+        const login = this.pluginLoginFor(instanceUrl);
+        const now = await login.pluginState(token, PLUGIN_KEY);
+        if (now.state === "unsupported") outcome = "unsupported";
+        else if (now.state === "installed") outcome = "already";
+        else outcome = await login.installPlugin(token, PLUGIN_PACKAGE, VERSION);
+      } catch {
+        outcome = "failed";
+      }
+      await this.event("plugin", await this.who(accountId), outcome);
+    })();
+    const tracked = run.finally(() => this.background.delete(tracked));
+    this.background.add(tracked);
+  }
+
+  private pluginLoginFor(instanceUrl: string): PaperclipLogin {
+    if (this.deps.loginFor) return this.deps.loginFor(instanceUrl);
+    const origin = this.checkedInstance(instanceUrl).origin; // re-validated: policy can tighten between steps
+    return new PaperclipLogin({ apiUrl: `${origin}/api`, publicOrigin: origin, fetch: this.installFetch, timeoutMs: PLUGIN_INSTALL_MS });
   }
 
   private loginFor(instanceUrl: string | null): PaperclipLogin {
@@ -764,7 +813,7 @@ export class OAuthProvider {
     const c = this.ctx(rid, p, error);
     switch (p.stage) {
       case "instance":
-        return this.page(res, status, instancePage({ ...c, value: extra.value, notice: extra.notice }), p);
+        return this.page(res, status, instancePage({ ...c, value: extra.value, notice: extra.notice, installPlugin: p.installPlugin }), p);
       case "approve": {
         const ch = this.unsealChallenge(p);
         if (!ch || !p.instanceUrl) {
@@ -921,6 +970,7 @@ export class OAuthProvider {
       return this.html(res, 429, errorPage("Too many attempts", "Too many addresses tried. Start again from the app."));
     }
     p.attempts += 1;
+    p.installPlugin = f.get("install_plugin") === "on";
     const typed = (f.get("instance") ?? "").slice(0, 300);
     const fail = async (why: string, detail: string) => {
       await this.store.putPending(rid, p);
@@ -981,6 +1031,7 @@ export class OAuthProvider {
       return this.renderStage(res, rid, p, `Paperclip did not accept the approved credential: ${(e as Error).message}`);
     }
     if (!userId) return this.renderStage(res, rid, p, "Paperclip did not say who you are, so we can't link a username to it.");
+    if (p.installPlugin) this.installPluginLater(p, ch.boardApiToken);
 
     const owner = await this.store.getLinkByIdentity(p.instanceUrl, userId);
     if (p.accountId) {

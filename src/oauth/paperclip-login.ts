@@ -27,6 +27,8 @@ export interface LoginTarget {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const APPROVAL_PATH = /^\/cli-auth\/[0-9a-f-]{36}\?token=[A-Za-z0-9_\-.~%]{8,300}$/i;
+/** Paperclip runs npm install server-side, which can take a while. */
+const PLUGIN_INSTALL_TIMEOUT_MS = 120_000;
 const TOKENISH = /^[\x21-\x7e]{8,600}$/; // printable ASCII, no whitespace
 
 export class LoginError extends Error {
@@ -102,6 +104,38 @@ export class PaperclipLogin {
   async whoami(token: string): Promise<{ userId: string | null }> {
     const r = await json(await this.t.fetch(`${this.t.apiUrl}/cli-auth/me`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, ...this.sig() }));
     return { userId: typeof r?.userId === "string" ? r.userId.slice(0, 200) : null };
+  }
+
+  /**
+   * The Papercliped plugin's state in this Paperclip: absent, or installed with its version.
+   * `unsupported` = no plugin system there (older Paperclip) or the key may not manage plugins.
+   */
+  async pluginState(token: string, pluginKey: string): Promise<{ state: "absent" } | { state: "installed"; version: string | null } | { state: "unsupported" }> {
+    const res = await this.t.fetch(`${this.t.apiUrl}/plugins`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, ...this.sig() });
+    if (res.status === 403 || res.status === 404) return { state: "unsupported" };
+    const list = await json(res);
+    if (!Array.isArray(list)) throw new LoginError("Paperclip returned an unexpected plugin list");
+    const hit = list.find((x) => x && typeof x === "object" && x.pluginKey === pluginKey);
+    if (!hit) return { state: "absent" };
+    return { state: "installed", version: typeof hit.version === "string" ? hit.version.slice(0, 40) : null };
+  }
+
+  /**
+   * Install one fixed npm package at one exact version through Paperclip's own installer. Only an instance
+   * admin's key is accepted there; anyone else gets a 403, reported as "denied". Nothing user-supplied reaches this call.
+   */
+  async installPlugin(token: string, packageName: string, version: string): Promise<"installed" | "denied" | "unsupported"> {
+    const res = await this.t.fetch(`${this.t.apiUrl}/plugins/install`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ packageName, version }),
+      signal: AbortSignal.timeout(Math.max(this.t.timeoutMs, PLUGIN_INSTALL_TIMEOUT_MS)),
+    });
+    if (res.status === 403) return "denied";
+    if (res.status === 404) return "unsupported";
+    const out = await json(res);
+    if (out?.packageName !== packageName) throw new LoginError("Paperclip installed something other than the Papercliped plugin");
+    return "installed";
   }
 
   /** Best effort: invalidate the board key we were issued when a grant is revoked. */

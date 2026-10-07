@@ -11,6 +11,7 @@ import { OAuthProvider, clientIp } from "../src/oauth/provider.js";
 import { MemoryStore, type Store } from "../src/oauth/store.js";
 import type { AuditEvent } from "../src/execute.js";
 import { createHttpServer } from "../src/server.js";
+import { VERSION } from "../src/version.js";
 
 const DB = process.env.TEST_DATABASE_URL;
 const CB = "https://claude.ai/api/mcp/auth_callback";
@@ -25,6 +26,8 @@ const challengeNames: string[] = [];
 const deadTokens = new Set<string>(); // credentials that Paperclip no longer accepts
 const identity = new Map<string, string>(); // host → the Paperclip user id whoami reports (default user@host)
 const unreachable = new Set<string>(); // hosts the egress cannot connect to
+const plugins = new Map<string, string>(); // host → installed Papercliped plugin version
+const pluginCalls: { method: string; host: string; auth?: string; body?: any }[] = []; // every plugin API call Paperclip received
 let seq = 0;
 
 function fleet(): Server {
@@ -64,6 +67,19 @@ function fleet(): Server {
       return send(200, { userId: identity.get(ch.host) ?? `user@${ch.host}` });
     }
     if (p === "/api/cli-auth/revoke-current") return (revokedBy.push(`${host}|${auth}`), send(200, { revoked: true }));
+    if (p === "/api/plugins" || p === "/api/plugins/install") {
+      pluginCalls.push({ method: req.method!, host, auth, body: raw ? JSON.parse(raw) : undefined });
+      if (host.includes("noplugins")) return send(404, { error: "no such route" });
+      if (p === "/api/plugins") {
+        const v = plugins.get(host);
+        return send(200, v ? [{ id: "p1", pluginKey: "papercliped.remote-control", packageName: "papercliped-paperclip-plugin", version: v, status: "ready" }] : []);
+      }
+      if (host.includes("notadmin")) return send(403, { error: "Instance admin access required" });
+      if (host.includes("installfail")) return send(400, { error: "npm install failed" });
+      const body = JSON.parse(raw);
+      plugins.set(host, body.version);
+      return send(200, { id: "p1", pluginKey: "papercliped.remote-control", packageName: body.packageName, version: body.version, status: "ready" });
+    }
     if (deadTokens.has(auth?.replace(/^Bearer /, "") ?? "")) return send(401, { error: "auth" });
     seen.push({ host, path: p, auth });
     if (p === `/api/companies/${CID}/agents`) return send(200, [{ id: "a1", name: `agent-of-${host}`, status: "idle" }]);
@@ -754,6 +770,83 @@ describe("tenant isolation", () => {
     expect(codes).toEqual([200, 200, 200, 429, 429]);
     r.clock.t += 61_000;
     expect((await act(r, tokens.access_token, "paperclip_list_companies")).status).toBe(200);
+    r.close();
+  });
+});
+
+/** Connect a brand-new user, optionally ticking the "install the plugin" box, and wait for the background install to finish. */
+async function connectWithPlugin(r: Rig, host: string, username: string, tick: boolean) {
+  plugins.delete(host);
+  const s = await start(r);
+  await toInstance(r, s);
+  await step(r, s, "instance", { instance: host, ...(tick ? { install_plugin: "on" } : {}) });
+  approve(host);
+  await step(r, s, "approved");
+  await step(r, s, "username", { username });
+  await step(r, s, "continue");
+  const tokens = await exchange(r, s, await step(r, s, "decision", { level: "paperclip:control" }));
+  await r.provider.drainBackground();
+  return { s, tokens };
+}
+
+describe("installing the Papercliped plugin during setup", () => {
+  it("offers the checkbox, ticked by default", async () => {
+    const r = await rig();
+    const s = await start(r);
+    const html = await toInstance(r, s);
+    expect(html).toMatch(/name="install_plugin"[^>]* checked/);
+    r.close();
+  });
+
+  it("installs the pinned package once, with the user's own approved key, and records one short event", async () => {
+    const r = await rig();
+    pluginCalls.length = 0;
+    const { tokens } = await connectWithPlugin(r, "plug-a.example.com", "plug.user1", true);
+    expect(tokens.access_token).toBeTruthy(); // the connection itself is unaffected
+    const installs = pluginCalls.filter((c) => c.method === "POST");
+    expect(installs).toHaveLength(1);
+    expect(installs[0].body).toEqual({ packageName: "papercliped-paperclip-plugin", version: VERSION }); // fixed name, exact version, nothing user-supplied
+    expect(installs[0].auth).toMatch(/^Bearer board-plug-a\.example\.com-/);
+    expect(plugins.get("plug-a.example.com")).toBe(VERSION);
+    expect(await kinds(r)).toContain("plugin/installed");
+    r.close();
+  });
+
+  it("does nothing when the box is not ticked", async () => {
+    const r = await rig();
+    pluginCalls.length = 0;
+    const { tokens } = await connectWithPlugin(r, "plug-b.example.com", "plug.user2", false);
+    expect(tokens.access_token).toBeTruthy();
+    expect(pluginCalls).toHaveLength(0);
+    expect((await kinds(r)).some((k) => k.startsWith("plugin"))).toBe(false);
+    r.close();
+  });
+
+  it("leaves an existing install alone", async () => {
+    const r = await rig();
+    pluginCalls.length = 0;
+    const s = await start(r);
+    await toInstance(r, s);
+    await step(r, s, "instance", { instance: "plug-c.example.com", install_plugin: "on" });
+    approve("plug-c.example.com");
+    plugins.set("plug-c.example.com", "9.9.9");
+    await step(r, s, "approved");
+    await r.provider.drainBackground();
+    expect(pluginCalls.filter((c) => c.method === "POST")).toHaveLength(0);
+    expect(plugins.get("plug-c.example.com")).toBe("9.9.9");
+    expect(await kinds(r)).toContain("plugin/already");
+    r.close();
+  });
+
+  it.each([
+    ["notadmin.example.com", "denied"],
+    ["noplugins.example.com", "unsupported"],
+    ["installfail.example.com", "failed"],
+  ])("never blocks the connection when the install can't happen (%s)", async (host, outcome) => {
+    const r = await rig();
+    const { tokens } = await connectWithPlugin(r, host, "plug.user3", true);
+    expect(tokens.access_token).toBeTruthy();
+    expect(await kinds(r)).toContain(`plugin/${outcome}`);
     r.close();
   });
 });

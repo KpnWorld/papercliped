@@ -39,6 +39,7 @@ export type UserEventKind =
   | "login_failed" //   wrong username/secret, or rate-limited
   | "updated" //        reconnected (key replaced) or secret key rotated
   | "left" //           disconnected, expired for inactivity, or deleted
+  | "plugin" //         the Papercliped plugin install ran in their Paperclip (detail: installed | already | denied | unsupported | failed)
   | "connect_failed"; // flow ended without a connection (detail: denied | expired | unreachable | invalid_instance | …)
 
 export interface UserEvent {
