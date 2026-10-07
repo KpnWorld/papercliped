@@ -2,7 +2,7 @@
 export const DOCS_NAV: { title: string; slugs: string[] }[] = [
   { title: "Get started", slugs: ["what-is-papercliped", "getting-started", "signup", "connect-your-paperclip"] },
   { title: "Connect your AI app", slugs: ["other-ai-apps", "chatgpt"] },
-  { title: "Guides", slugs: ["permissions", "manage", "paperclip-plugin", "anonymous-mode", "self-hosting"] },
+  { title: "Guides", slugs: ["permissions", "control-room", "access-modes", "manage", "paperclip-plugin", "anonymous-mode", "self-hosting"] },
   { title: "Reference", slugs: ["tools", "manage-api", "public-api", "environment", "cli", "limits-and-errors", "security"] },
   { title: "Help", slugs: ["faq", "troubleshooting"] },
 ];

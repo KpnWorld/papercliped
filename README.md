@@ -88,7 +88,7 @@ There are 30 tools ([full list](https://docs.papercliped.co/tools)). **Read only
 
 ## Manage your connections in Paperclip
 
-Install the **Papercliped plugin for Paperclip** (npm `papercliped-paperclip-plugin`, from **Settings → Plugins** in Paperclip). It adds a Papercliped page where you see every connected app, switch its level, disconnect it, go anonymous, and look after your account. [Plugin guide](https://docs.papercliped.co/paperclip-plugin).
+Install the **Papercliped plugin for Paperclip** (npm `papercliped-paperclip-plugin`, from **Settings → Plugins** in Paperclip). It adds a **control room**: see every connected app, choose which tools each may use and which agents it applies to, set **API only / Full / Agent only** for every agent or one at a time (or turn an agent off), read what was blocked, go anonymous, and look after your account. [Plugin guide](https://docs.papercliped.co/paperclip-plugin) · [The control room](https://docs.papercliped.co/control-room) · [API only, Full or Agent only](https://docs.papercliped.co/access-modes).
 
 ## Security and privacy
 

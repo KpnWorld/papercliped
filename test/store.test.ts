@@ -283,6 +283,39 @@ function accountContract(name: string, make: () => Promise<Store>) {
       expect(await s.getAccount("nope")).toBeUndefined();
     });
 
+    it("an account's access policy and a session's limits round-trip, replace, and clear", async () => {
+      await s.createAccount(acct("pol1", "policy.user1"));
+      expect((await s.getAccount("pol1"))?.policy ?? null).toBeNull(); // untouched = Full for every agent
+      expect(await s.setAccountPolicy("pol1", { mode: "agent", agents: { a1: "off", a2: "api" } })).toBe(true);
+      expect((await s.getAccount("pol1"))?.policy).toEqual({ mode: "agent", agents: { a1: "off", a2: "api" } });
+      expect(await s.setAccountPolicy("pol1", { mode: "full", agents: {} })).toBe(true);
+      expect((await s.getAccount("pol1"))?.policy).toEqual({ mode: "full", agents: {} });
+      expect(await s.setAccountPolicy("nobody", { mode: "api", agents: {} })).toBe(false);
+
+      await s.putGrant(grant("gp1", { accountId: "pol1", scopes: ["paperclip:control"] }));
+      expect((await s.getGrant("gp1"))?.policy ?? null).toBeNull();
+      expect(await s.setGrantPolicy("gp1", { label: "Phone", tools: ["paperclip_list_agents"], agents: ["a1"] })).toBe(true);
+      expect((await s.getGrant("gp1"))?.policy).toEqual({ label: "Phone", tools: ["paperclip_list_agents"], agents: ["a1"] });
+      expect((await s.listAccountGrants("pol1")).find((g) => g.id === "gp1")?.policy).toEqual({ label: "Phone", tools: ["paperclip_list_agents"], agents: ["a1"] });
+      expect(await s.setGrantPolicy("gp1", null)).toBe(true);
+      expect((await s.getGrant("gp1"))?.policy ?? null).toBeNull();
+      expect(await s.setGrantPolicy("missing", { label: null, tools: null, agents: null })).toBe(false);
+      await s.revokeGrant("gp1");
+      expect(await s.setGrantPolicy("gp1", { label: "x", tools: null, agents: null })).toBe(false); // a revoked session can't be edited
+    });
+
+    it("recent calls are found by session, newest first, and only for the sessions asked about", async () => {
+      const row = (at: number, grantId: string | null, name: string, over: Partial<AuditRow> = {}): AuditRow => ({ at, node: "n", kind: "tool", name, mutation: false, ok: true, status: null, errorClass: null, totalMs: 5, upstreamMs: null, upstreamCalls: null, scope: null, grantId, client: "Claude", instance: null, userId: null, username: null, ...over });
+      await s.insertAudit([row(T0 + 1, "rc_a", "first"), row(T0 + 2, "rc_b", "other"), row(T0 + 3, "rc_a", "second", { ok: false, status: 403, errorClass: "policy_blocked" }), row(T0 + 4, null, "nobody"), row(T0 + 5, "rc_a", "http", { kind: "http" })]);
+      const calls = await s.recentCallsForGrants(["rc_a"], 10);
+      expect(calls.map((r) => r.name)).toEqual(["second", "first"]); // newest first; other sessions, no-session rows and http rows excluded
+      expect(calls[0]).toMatchObject({ ok: false, errorClass: "policy_blocked", status: 403 });
+      expect((await s.recentCallsForGrants(["rc_a"], 1)).map((r) => r.name)).toEqual(["second"]);
+      expect((await s.recentCallsForGrants(["rc_a", "rc_b"], 10)).map((r) => r.name)).toEqual(["second", "other", "first"]);
+      expect(await s.recentCallsForGrants([], 10)).toEqual([]);
+      expect(await s.recentCallsForGrants(["unknown"], 10)).toEqual([]);
+    });
+
     it("one link per account; a Paperclip identity can belong to only one account", async () => {
       await s.createAccount(acct("a2", "second.user2"));
       expect(await s.putLink(link("a1", { paperclipUserId: "pu-shared" }))).toBe(true);
@@ -493,7 +526,7 @@ describe.skipIf(!DB)("Postgres", () => {
 
   it("migrates once, idempotently", async () => {
     await reset();
-    expect(await migrate(opts)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql", "005_beta.sql", "006_two_levels.sql"]);
+    expect(await migrate(opts)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql", "005_beta.sql", "006_two_levels.sql", "007_control_room.sql"]);
     expect(await migrate(opts)).toEqual([]);
   });
 
@@ -584,7 +617,7 @@ describe.skipIf(!DB)("Postgres", () => {
     const sql = readFileSync(new URL("../docs/supabase-schema.sql", import.meta.url), "utf8");
     await c.query(sql);
     await c.query(sql); // re-run
-    expect((await c.query("select version from bridge.schema_migrations order by 1")).rows.map((r) => r.version)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql", "005_beta.sql", "006_two_levels.sql"]);
+    expect((await c.query("select version from bridge.schema_migrations order by 1")).rows.map((r) => r.version)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql", "005_beta.sql", "006_two_levels.sql", "007_control_room.sql"]);
     for (const role of ["anon", "authenticated"]) {
       await c.query(`set role ${role}`);
       for (const t of ["grants", "tokens", "codes", "pending", "clients", "rate_limits", "audit_events", "schema_migrations", "accounts", "account_links", "user_events", "heartbeat", "node_samples", "panel_accounts", "panel_grants", "panel_links"])
@@ -604,7 +637,7 @@ describe.skipIf(!DB)("Postgres", () => {
 
   it("the audit table is locked against anon/authenticated and idempotently migrated", async () => {
     await reset();
-    expect(await migrate(opts)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql", "005_beta.sql", "006_two_levels.sql"]);
+    expect(await migrate(opts)).toEqual(["001_init.sql", "002_audit.sql", "003_accounts.sql", "004_privacy_panel.sql", "005_beta.sql", "006_two_levels.sql", "007_control_room.sql"]);
     const c = new pg.Client({ connectionString: DB });
     await c.connect();
     for (const role of ["anon", "authenticated"]) {

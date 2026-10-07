@@ -1,3 +1,5 @@
+import type { AccountPolicy } from "../access/policy.js";
+
 export interface Account {
   id: string;
   /** As the user typed it (shown only in the operator's logs). */
@@ -14,6 +16,8 @@ export interface Account {
   alias?: string | null;
   /** Joined the beta: gets the connection manager and its API. */
   beta?: boolean;
+  /** The access switch and per-agent overrides. Absent = Full for every agent. */
+  policy?: AccountPolicy | null;
 }
 
 /** The account's connection to its Paperclip (one per account). The credential is sealed in the app. */

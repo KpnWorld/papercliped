@@ -30,7 +30,7 @@ This starts a local server for one Paperclip, using `PAPERCLIP_API_URL` and `PAP
 Any app that supports MCP can use Papercliped. See [Any AI app (MCP)](/docs/other-ai-apps).
 
 ## Inside your Paperclip
-The Papercliped plugin for Paperclip is where you manage everything: connected apps, levels, privacy and your account. See [Paperclip plugin](/docs/paperclip-plugin).
+The Papercliped plugin for Paperclip is where you manage everything: the [control room](/docs/control-room) for connected apps, what each may do and which agents it applies to, plus privacy and your account. See [Paperclip plugin](/docs/paperclip-plugin).
 
 ## ChatGPT
 Papercliped publishes an OpenAPI description at `{{MCP}}/openapi.json` for GPT Actions. See [ChatGPT setup](/docs/chatgpt).

@@ -18,6 +18,12 @@ Yes: run it locally with `npx papercliped@latest`. The hosted bridge needs a pub
 ## Why does pausing an agent fail with 403?
 Pause, resume, wake and approve need a Paperclip **board** token, and a connection at **Full control**. Check your level in the [Paperclip plugin](/docs/paperclip-plugin).
 
+## Why was a call blocked, or a tool missing?
+Your own settings. Open **Papercliped** in Paperclip: the switch (API only, Full, Agent only), an agent's setting, or the session's tool and agent lists decide what an AI app may do, and **Activity** shows each blocked call and the reason. See [API only, Full or Agent only](/docs/access-modes).
+
+## Can I keep an agent away from AI apps?
+Yes. In the [control room](/docs/control-room), open **Agents** and set it to **Off**: AI apps can't see it, touch it, or see what's assigned to it.
+
 ## How do I stop it?
 Disconnect the app on the manage page, revoke the key in your Paperclip, or delete your account. It stops at once.
 

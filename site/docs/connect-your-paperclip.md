@@ -99,7 +99,7 @@ It prints a random `https://something.trycloudflare.com` address. **The address 
 ## Connect to Papercliped
 1. Make sure `curl https://your-address/api/health` works (see above).
 2. Go to [Create your account]({{URL}}/docs/signup), add Papercliped as a connector in Claude, and choose **Connect your Paperclip**.
-3. Enter your public address (just the address, no path), then approve the request in your Paperclip.
+3. Enter your public address (just the address, no path). The box **Also install the Papercliped plugin in my Paperclip** is ticked by default; it installs the [Paperclip plugin](/docs/paperclip-plugin) and its [control room](/docs/control-room) for you if you are your Paperclip's instance admin. Then approve the request in your Paperclip.
 
 ## Keep it safe
 - **Expose only Paperclip.** Point the tunnel at Paperclip's port and nothing else on your computer.

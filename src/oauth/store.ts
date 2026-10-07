@@ -1,5 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import type { AccountPolicy, SessionPolicy } from "../access/policy.js";
 import { AliasTakenError, type Account, type AccountLink, type NodeSample, type PrivacyChange, type UserEvent, type UserEventBucket } from "../accounts/types.js";
 import { HIST_EDGES, isFault, type AuditReader, type AuditRow, type AuditStore, type BreakdownRow, type SeriesBucket, type Totals } from "../telemetry/types.js";
 
@@ -28,6 +29,8 @@ export interface Grant {
   createdAt: number;
   lastUsedAt: number;
   revoked: boolean;
+  /** Per-session limits: a name, which tools, which agents. Absent = no limits beyond the access level. */
+  policy?: SessionPolicy | null;
 }
 
 export interface TokenRecord {
@@ -101,6 +104,12 @@ export interface AccountStore {
   listAccountGrants(accountId: string): Promise<Grant[]>;
   /** Replace a LIVE grant's scopes (takes effect on the next call). False if it is missing or revoked. */
   setGrantScopes(id: string, scopes: string[]): Promise<boolean>;
+  /** Replace a LIVE grant's per-session limits (null = none). False if it is missing or revoked. */
+  setGrantPolicy(id: string, policy: SessionPolicy | null): Promise<boolean>;
+  /** Replace the account's access switch and per-agent overrides. False if the account is missing. */
+  setAccountPolicy(id: string, policy: AccountPolicy): Promise<boolean>;
+  /** The newest tool calls made through these sessions, newest first. */
+  recentCallsForGrants(grantIds: readonly string[], limit: number): Promise<AuditRow[]>;
   /** Turn anonymity on/off: updates the account and rewrites what logs, grants and audit rows show. */
   setAccountPrivacy(id: string, change: PrivacyChange): Promise<"ok" | "alias_taken" | "missing">;
   getAccountByKey(usernameKey: string): Promise<Account | undefined>;
@@ -413,6 +422,24 @@ export class MemoryStore implements Store {
     g.scopes = [...scopes];
     this.save();
     return true;
+  }
+  async setGrantPolicy(id: string, policy: SessionPolicy | null) {
+    const g = this.d.grants[id];
+    if (!g || g.revoked) return false;
+    g.policy = policy ? { ...policy, tools: policy.tools && [...policy.tools], agents: policy.agents && [...policy.agents] } : null;
+    this.save();
+    return true;
+  }
+  async setAccountPolicy(id: string, policy: AccountPolicy) {
+    const a = this.accts[id];
+    if (!a) return false;
+    a.policy = { mode: policy.mode, agents: { ...policy.agents } };
+    this.save();
+    return true;
+  }
+  async recentCallsForGrants(grantIds: readonly string[], limit: number) {
+    const ids = new Set(grantIds);
+    return this.audit.filter((r) => r.kind === "tool" && r.grantId !== null && ids.has(r.grantId)).slice(-limit).reverse();
   }
   async setAccountPrivacy(id: string, c: PrivacyChange) {
     const a = this.accts[id];

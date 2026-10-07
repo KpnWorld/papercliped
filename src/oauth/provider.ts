@@ -10,6 +10,8 @@ import { UnsafeUrlError, createSafeFetch, parseInstanceUrl } from "../net/safe-f
 import { Keyring, isValidCodeChallenge, randomToken, safeEqual, sha256Hex, verifyPkce } from "./crypto.js";
 import { approvePage, choosePage, consentPage, errorPage, instancePage, scopePage, secretPage, usernamePage, welcomePage } from "./pages.js";
 import { LoginError, PaperclipLogin, type Challenge } from "./paperclip-login.js";
+import { parseAccountPolicy, parseSessionPolicy, readAccountPolicy, readSessionPolicy, surfaceOfTool, type AccountPolicy, type ExecPolicy, type SessionPolicy } from "../access/policy.js";
+import { tools as ALL_TOOLS } from "../tools.js";
 import { VERSION } from "../version.js";
 import { MemoryStore, type Grant, type PendingRecord, type Store } from "./store.js";
 import { SCOPES, grantableScopes, isScope, maxRank, normalizeScope, normalizeScopes, scopeAllows, scopesUpTo, type Scope } from "./scopes.js";
@@ -19,6 +21,8 @@ const PENDING_TTL_MS = 10 * 60_000;
 const CODE_TTL_MS = 60_000;
 const MAX_PENDING = 5000;
 const MAX_INSTANCE_ATTEMPTS = 5;
+/** Every tool name, for checking a session's tool list. */
+const KNOWN_TOOLS: ReadonlySet<string> = new Set(ALL_TOOLS.map((t) => t.name));
 /** The plugin offered on the instance step: one fixed package, pinned to this bridge's own version (both are released together). */
 const PLUGIN_PACKAGE = "papercliped-paperclip-plugin";
 /** Its id inside Paperclip (the manifest id), used to see whether it is already installed. */
@@ -326,7 +330,54 @@ export class OAuthProvider {
   async manageConnections(accountId: string) {
     return (await this.store.listAccountGrants(accountId))
       .filter((g) => !g.revoked && g.clientId !== "paperclip-plugin")
-      .map((g) => ({ id: g.id, app: g.clientName, level: levelOf(g.scopes), createdAt: g.createdAt, lastUsedAt: g.lastUsedAt }));
+      .map((g) => {
+        const p = readSessionPolicy(g.policy, KNOWN_TOOLS);
+        return { id: g.id, app: g.clientName, label: p.label, level: levelOf(g.scopes), tools: p.tools, agents: p.agents, createdAt: g.createdAt, lastUsedAt: g.lastUsedAt };
+      });
+  }
+
+  /** What the policy engine checks on every call for this grant: the account's switch plus this session's limits. */
+  async policyFor(grant: Grant): Promise<ExecPolicy> {
+    const account = grant.accountId ? await this.store.getAccount(grant.accountId) : undefined;
+    return { account: readAccountPolicy(account?.policy), session: readSessionPolicy(grant.policy, KNOWN_TOOLS) };
+  }
+
+  async manageGetPolicy(a: Account): Promise<AccountPolicy> {
+    return readAccountPolicy((await this.store.getAccount(a.id))?.policy);
+  }
+
+  /** Replace the access switch and per-agent overrides. Throws PolicyInputError on anything invalid. Takes effect on the next call. */
+  async manageSetPolicy(a: Account, raw: unknown): Promise<AccountPolicy> {
+    const next = parseAccountPolicy(raw);
+    if (!(await this.store.setAccountPolicy(a.id, next))) throw new Error("No such account");
+    await this.event("updated", { accountId: a.id, username: displayName(a) }, `mode_${next.mode}`);
+    return next;
+  }
+
+  /** Change one session: its name, tools, agents and (optionally) its access level. False if it isn't this account's live session. */
+  async manageSetSession(a: Account, grantId: string, change: { label?: unknown; tools?: unknown; agents?: unknown; level?: Scope | null }): Promise<SessionPolicy | null> {
+    const g = await this.store.getGrant(grantId);
+    if (!g || g.revoked || g.accountId !== a.id || g.clientId === "paperclip-plugin") return null;
+    const before = readSessionPolicy(g.policy, KNOWN_TOOLS);
+    const next = parseSessionPolicy({ label: change.label === undefined ? before.label : change.label, tools: change.tools === undefined ? before.tools : change.tools, agents: change.agents === undefined ? before.agents : change.agents }, KNOWN_TOOLS);
+    if (!(await this.store.setGrantPolicy(g.id, next))) return null;
+    if (change.level) await this.store.setGrantScopes(g.id, scopesUpTo(change.level));
+    await this.event("updated", { accountId: a.id, username: displayName(a) }, "session_limits");
+    return next;
+  }
+
+  /** The tools, as the control room lists them: what each does and which surface it is on. */
+  manageTools() {
+    return ALL_TOOLS.map((t) => ({ name: t.name, title: t.title, description: t.description.slice(0, 240), access: t.access, surface: surfaceOfTool(t) }));
+  }
+
+  /** The newest tool calls through this account's sessions (names and outcomes only; never arguments or results). */
+  async manageActivity(a: Account, opts: { session?: string; limit: number }) {
+    const grants = (await this.store.listAccountGrants(a.id)).filter((g) => g.clientId !== "paperclip-plugin");
+    const ids = opts.session ? grants.filter((g) => g.id === opts.session).map((g) => g.id) : grants.map((g) => g.id);
+    const byId = new Map(grants.map((g) => [g.id, readSessionPolicy(g.policy, KNOWN_TOOLS).label ?? g.clientName]));
+    const rows = await this.store.recentCallsForGrants(ids, Math.min(Math.max(1, opts.limit), 200));
+    return rows.map((r) => ({ at: r.at, tool: r.name, ok: r.ok, blocked: r.errorClass === "policy_blocked", status: r.status, error: r.errorClass, ms: r.totalMs, session: r.grantId, app: (r.grantId && byId.get(r.grantId)) || r.client }));
   }
 
   /** Change what a connected app may do: Read only or Full control. */

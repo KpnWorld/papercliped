@@ -8,10 +8,12 @@ const plugin = definePlugin({
       state: ctx.state,
       fetch: (url, init) => ctx.http.fetch(url, init),
       bridgeUrl: async () => (await ctx.config.get()).bridgeUrl,
+      listAgents: async (companyId) =>
+        (await ctx.agents.list({ companyId, limit: 500 })).map((a) => ({ id: a.id, name: a.name, role: a.role ?? null, title: a.title ?? null, status: String(a.status) })),
     });
     // Actions, not data handlers: only actions receive the host-verified actor, and everything here is per user.
     for (const key of Object.keys(h) as (keyof typeof h)[]) {
-      ctx.actions.register(key, (params, { actor }) => h[key](params, { type: actor.type, userId: actor.userId }));
+      ctx.actions.register(key, (params, { actor, companyId }) => h[key](params, { type: actor.type, userId: actor.userId, companyId }));
     }
   },
   async onValidateConfig(config) {

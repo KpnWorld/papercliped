@@ -10,6 +10,10 @@
 
 **The AI says it can't change anything.** You connected with **Read only**. Disconnect and connect again, choosing **Full control**.
 
+**The AI says a tool isn't available, or a call was blocked.** Check the access switch, the agent's setting and the session's limits in the [control room](/docs/control-room). The message the AI gets says which one. **Activity** lists blocked calls with the reason.
+
+**The control room shows no agents.** Open a company first: agents are listed for the company you're in. If you installed an older version of the plugin, remove it in **Settings → Plugins** and install it again so it can read agents.
+
 **My username is rejected.** It needs 6 to 32 characters including at least one number or one of `.` `#` `_`, and only letters, numbers and those symbols. It may also be taken.
 
 **Still stuck?** Open an issue at https://github.com/OpenSourcx/papercliped/issues. Never include your secret key or Paperclip keys.

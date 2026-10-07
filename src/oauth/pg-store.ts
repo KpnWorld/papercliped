@@ -1,4 +1,5 @@
 import pg from "pg";
+import type { AccountPolicy, SessionPolicy } from "../access/policy.js";
 import { AliasTakenError, type Account, type AccountLink, type NodeSample, type PrivacyChange, type UserEvent, type UserEventBucket } from "../accounts/types.js";
 import { FAULT_CLASSES, HIST_EDGES, type AuditRow, type BreakdownRow, type SeriesBucket, type Totals } from "../telemetry/types.js";
 import type { CodeRecord, CodeTake, Grant, OAuthClient, PendingRecord, Store, TokenRecord, UserCounts } from "./store.js";
@@ -40,6 +41,7 @@ const toGrant = (r: any): Grant => ({
   createdAt: num(r.created_at),
   lastUsedAt: num(r.last_used_at),
   revoked: r.revoked,
+  policy: r.policy ?? null,
 });
 
 /**
@@ -210,7 +212,7 @@ export class PgStore implements Store {
   // ───────────── accounts ─────────────
 
   private static toAccount(x: any): Account {
-    return { id: x.id, username: x.username, usernameKey: x.username_key, secretHash: x.secret_hash, createdAt: num(x.created_at), lastLoginAt: x.last_login_at == null ? null : num(x.last_login_at), disabled: x.disabled, anonymous: !!x.anonymous, alias: x.alias ?? null, beta: !!x.beta };
+    return { id: x.id, username: x.username, usernameKey: x.username_key, secretHash: x.secret_hash, createdAt: num(x.created_at), lastLoginAt: x.last_login_at == null ? null : num(x.last_login_at), disabled: x.disabled, anonymous: !!x.anonymous, alias: x.alias ?? null, beta: !!x.beta, policy: x.policy ?? null };
   }
   private static toLink(x: any): AccountLink {
     return { accountId: x.account_id, instanceUrl: x.instance_url, paperclipUserId: x.paperclip_user_id, sealedCredential: x.sealed_credential, createdAt: num(x.created_at), connectedAt: num(x.connected_at), lastUsedAt: num(x.last_used_at), instanceLabel: x.instance_label ?? null };
@@ -236,6 +238,16 @@ export class PgStore implements Store {
   }
   async setGrantScopes(id: string, scopes: string[]) {
     return ((await this.q("update bridge.grants set scopes = $2 where id = $1 and not revoked", [id, scopes])).rowCount ?? 0) === 1;
+  }
+  async setGrantPolicy(id: string, policy: SessionPolicy | null) {
+    return ((await this.q("update bridge.grants set policy = $2 where id = $1 and not revoked", [id, policy === null ? null : JSON.stringify(policy)])).rowCount ?? 0) === 1;
+  }
+  async setAccountPolicy(id: string, policy: AccountPolicy) {
+    return ((await this.q("update bridge.accounts set policy = $2 where id = $1", [id, JSON.stringify(policy)])).rowCount ?? 0) === 1;
+  }
+  async recentCallsForGrants(grantIds: readonly string[], limit: number) {
+    if (grantIds.length === 0) return [];
+    return (await this.q("select * from bridge.audit_events where kind = 'tool' and grant_id = any($1) order by id desc limit $2", [[...grantIds], limit])).rows.map(PgStore.toRow);
   }
   async setAccountPrivacy(id: string, c: PrivacyChange) {
     const cl = await this.pool.connect();

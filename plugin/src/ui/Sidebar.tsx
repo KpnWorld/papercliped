@@ -2,12 +2,12 @@ import { useHostLocation, useHostNavigation } from "@paperclipai/plugin-sdk/ui";
 
 // The same classes Paperclip puts on its own sidebar links (Tasks, Artifacts, Cases ...), so this entry gets the same spacing,
 // type, colours, hover and active look in every theme, light or dark. They are the host's classes, not ours.
-const ITEM = "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium transition-colors";
-const IDLE = "text-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground";
-const ACTIVE = "bg-sidebar-accent text-sidebar-accent-foreground";
+export const ITEM = "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium transition-colors";
+export const IDLE = "text-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground";
+export const ACTIVE = "bg-sidebar-accent text-sidebar-accent-foreground";
 
 /** The Lucide "paperclip" icon (ISC licence), drawn like Paperclip's other sidebar icons: 16px, 2px line, current colour. */
-function PaperclipIcon() {
+export function PaperclipIcon() {
   return (
     <span data-slot="sidebar-nav-icon" className="relative shrink-0">
       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-paperclip h-4 w-4" aria-hidden="true">
