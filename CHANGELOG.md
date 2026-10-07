@@ -4,6 +4,8 @@
 
 ## v2.1.0 — two access levels, manage in Paperclip, new website
 
+- **Dependencies up to date:** Zod 4 (tool schemas and the ChatGPT Actions OpenAPI now come from Zod's built-in JSON Schema; the published contract is unchanged), the latest MCP SDK, undici 8, TypeScript 7, Vitest 5, React 19 and esbuild 0.28 in the plugin, and GitHub Actions v7. No known vulnerabilities in either package. Dependabot now also watches the website and groups minor and patch updates into one pull request per package.
+
 - **Install in one step from Claude Code and Codex.** Both plugin marketplaces live in this repository: `/plugin marketplace add OpenSourcx/papercliped` in Claude Code, `codex plugin marketplace add OpenSourcx/papercliped` in Codex. The plugin now connects to the hosted server (`https://mcp.papercliped.co/mcp`) instead of a local build that wasn't in the repository; people running Paperclip on their own machine use `npx papercliped@latest` (see the README).
 - **A README that gets you running:** what Papercliped is and copy-paste setup for Claude, Claude Code, Codex, ChatGPT, any MCP app and local Paperclips, without visiting the docs.
 - **Every push is a release.** CI publishes both npm packages, tags the commit and writes the GitHub release from the changelog and the commit descriptions. `scripts/version.mjs` bumps Major.Minor.Patch in every file, and a release skill for Claude and Codex (`.claude/skills/release`, `.agents/skills/release`) explains when to use which, and how to adopt the same flow in other repositories.

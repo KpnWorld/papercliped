@@ -462,8 +462,8 @@ export const tools: ToolDef[] = [
     schema: z.object({
       method: z.enum(["GET", "POST", "PATCH", "PUT", "DELETE"]),
       path: z.string().startsWith("/").describe("Path after /api, e.g. /companies"),
-      query: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
-      body: z.record(z.unknown()).optional(),
+      query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+      body: z.record(z.string(), z.unknown()).optional(),
       confirm: z.boolean().optional().describe("Required true for non-GET calls"),
     }),
     run: (c, i) => {

@@ -1,13 +1,27 @@
 version: 2
+# One pull request per package per week for minor and patch updates; major versions each get their own PR so they can be
+# tested on their own. Merging is a release (see .agents/skills/release/SKILL.md): bump the version in the same push.
 updates:
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly }
     open-pull-requests-limit: 5
+    groups:
+      minor-and-patch: { update-types: [minor, patch] }
   - package-ecosystem: npm
     directory: /plugin
     schedule: { interval: weekly }
     open-pull-requests-limit: 5
+    groups:
+      minor-and-patch: { update-types: [minor, patch] }
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch: { update-types: [minor, patch] }
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    groups:
+      actions: { patterns: ["*"] }
