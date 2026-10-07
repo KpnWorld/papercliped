@@ -10,11 +10,13 @@ import { ANN_SECRET, startFakeBridge, type FakeBridge } from "./fake-bridge.js";
 
 // Paperclip provides these components at runtime; here they are plain stand-ins with the same props.
 const toasts: { title: string; tone?: string }[] = [];
+let hostPath = "/BEH/dashboard";
 let actions: Record<string, (p?: Record<string, unknown>) => Promise<unknown>> = {};
 vi.mock("@paperclipai/plugin-sdk/ui", () => ({
   usePluginAction: (name: string) => actions[name],
   usePluginToast: () => (t: { title: string; tone?: string }) => (toasts.push(t), "id"),
   useHostNavigation: () => ({ linkProps: (to: string) => ({ href: to }) }),
+  useHostLocation: () => ({ pathname: hostPath, search: "", hash: "" }),
   copyTextToClipboard: vi.fn(),
   ErrorBoundary: ({ children }: { children: ReactNode }) => <>{children}</>,
   Spinner: ({ label }: { label?: string }) => <p>{label}</p>,
@@ -27,7 +29,7 @@ vi.mock("@paperclipai/plugin-sdk/ui", () => ({
     ),
 }));
 
-const { PapercliedPage } = await import("../src/ui/index.js");
+const { PapercliedPage, PapercliedSidebar } = await import("../src/ui/index.js");
 
 let fake: FakeBridge;
 const mem = new Map<string, unknown>();
@@ -43,6 +45,31 @@ beforeAll(async () => {
 });
 afterEach(() => cleanup());
 afterAll(() => fake.server.close());
+
+describe("the Papercliped sidebar entry", () => {
+  // It must look like Paperclip’s own entries: the same classes, an icon, a truncating label, and the active state on its own page.
+  it("has the host’s link classes, a paperclip icon and the label", () => {
+    hostPath = "/BEH/dashboard";
+    render(<PapercliedSidebar />);
+    const link = screen.getByRole("link", { name: "Papercliped" });
+    expect(link).toHaveAttribute("href", "/papercliped");
+    for (const c of ["flex", "items-center", "gap-2.5", "mx-2", "rounded-lg", "px-2", "py-1.5", "font-medium", "text-foreground/80", "hover:bg-sidebar-accent"]) expect(link).toHaveClass(c);
+    expect(link).not.toHaveAttribute("aria-current");
+    const icon = link.querySelector("svg");
+    expect(icon).toHaveClass("lucide-paperclip", "h-4", "w-4");
+    expect(icon).toHaveAttribute("aria-hidden", "true");
+    expect(link.querySelector("[data-slot=sidebar-nav-icon]")).toBeInTheDocument();
+  });
+
+  it("shows the active look on its own page", () => {
+    hostPath = "/BEH/papercliped";
+    render(<PapercliedSidebar />);
+    const link = screen.getByRole("link", { name: "Papercliped" });
+    expect(link).toHaveAttribute("aria-current", "page");
+    expect(link).toHaveClass("bg-sidebar-accent", "text-sidebar-accent-foreground");
+    expect(link).not.toHaveClass("text-foreground/80");
+  });
+});
 
 describe("the Papercliped page inside Paperclip", () => {
   it("never invites the browser to fill in the user's Paperclip login", async () => {

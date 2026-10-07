@@ -18,7 +18,7 @@ export function Dashboard({ me, call, onUnlinked, onMe }: { me: Me; call: Call; 
   const [t, setT] = useState<Tab>("apps");
   return (
     <div>
-      <section aria-label="Your account" style={panel}>
+      <section aria-label="Your account" className={panel}>
         <KeyValueList
           pairs={[
             { label: "Signed in as", value: <strong>{me.name}</strong> },
@@ -28,9 +28,9 @@ export function Dashboard({ me, call, onUnlinked, onMe }: { me: Me; call: Call; 
           ]}
         />
       </section>
-      <div role="tablist" aria-label="Papercliped" style={tabs}>
+      <div role="tablist" aria-label="Papercliped" className={tabs}>
         {TABS.map((x) => (
-          <button key={x.id} type="button" role="tab" id={`pcl-tab-${x.id}`} aria-selected={t === x.id} aria-controls={`pcl-panel-${x.id}`} style={tab(t === x.id)} onClick={() => setT(x.id)}>{x.label}</button>
+          <button key={x.id} type="button" role="tab" id={`pcl-tab-${x.id}`} aria-selected={t === x.id} aria-controls={`pcl-panel-${x.id}`} className={tab(t === x.id)} onClick={() => setT(x.id)}>{x.label}</button>
         ))}
       </div>
       <div role="tabpanel" id={`pcl-panel-${t}`} aria-labelledby={`pcl-tab-${t}`}>
@@ -58,7 +58,7 @@ function Apps({ call }: { call: Call }) {
     {
       key: "level", header: "Can do",
       render: (v, c) => (
-        <select aria-label={`Access level for ${c.app}`} style={field} value={v === "paperclip:read" ? "read" : "control"}
+        <select aria-label={`Access level for ${c.app}`} className={field} value={v === "paperclip:read" ? "read" : "control"}
           onChange={(e) => run(call.setLevel({ id: c.id, level: e.target.value }), `${c.app} is now ${e.target.value === "read" ? "Read only" : "Full control"}`)}>
           <option value="read">Read only</option>
           <option value="control">Full control</option>
@@ -70,13 +70,13 @@ function Apps({ call }: { call: Call }) {
     {
       key: "id", header: "",
       render: (_v, c) => confirming === c.id
-        ? <span style={row}><button type="button" style={danger} onClick={() => { setConfirming(null); run(call.disconnect({ id: c.id }), `${c.app} disconnected`); }}>Disconnect {c.app}</button><button type="button" style={button} onClick={() => setConfirming(null)}>Keep</button></span>
-        : <button type="button" style={button} onClick={() => setConfirming(c.id)}>Disconnect</button>,
+        ? <span className={row}><button type="button" className={danger} onClick={() => { setConfirming(null); run(call.disconnect({ id: c.id }), `${c.app} disconnected`); }}>Disconnect {c.app}</button><button type="button" className={button} onClick={() => setConfirming(null)}>Keep</button></span>
+        : <button type="button" className={button} onClick={() => setConfirming(c.id)}>Disconnect</button>,
     },
   ];
   return (
-    <section style={{ marginTop: 12 }}>
-      <p style={muted}><strong>Read only</strong> can look at agents, issues, goals, costs and reports. <strong>Full control</strong> can use every tool, including pausing or terminating agents, approvals and budgets. Changes apply on the app's next request.</p>
+    <section className="mt-3">
+      <p className={muted}><strong>Read only</strong> can look at agents, issues, goals, costs and reports. <strong>Full control</strong> can use every tool, including pausing or terminating agents, approvals and budgets. Changes apply on the app's next request.</p>
       <DataTable columns={columns as unknown as DataTableColumn[]} rows={(conns ?? []) as unknown as Record<string, unknown>[]} loading={conns == null} emptyMessage="No apps connected. Add Papercliped as a connector in Claude or ChatGPT." />
     </section>
   );
@@ -97,10 +97,10 @@ function Privacy({ me, call, onMe }: { me: Me; call: Call; onMe: (m: Me) => void
       .finally(() => setBusy(false));
   };
   return (
-    <section style={panel}>
-      <h2 style={h2}>Appear anonymously</h2>
-      <p style={muted}>The service's logs and operator dashboard show an alias instead of your username. Your connections keep working either way.</p>
-      <label style={{ ...row, marginTop: 10, cursor: "pointer" }}>
+    <section className={panel}>
+      <h2 className={h2}>Appear anonymously</h2>
+      <p className={muted}>The service's logs and operator dashboard show an alias instead of your username. Your connections keep working either way.</p>
+      <label className={`${row} mt-2.5 cursor-pointer`}>
         <input type="checkbox" checked={me.anonymous} disabled={busy} onChange={(e) => set(e.target.checked)} />
         <span>{me.anonymous ? `On${me.alias ? `: you appear as ${me.alias}` : ""}` : "Off"}</span>
       </label>
@@ -122,13 +122,13 @@ function Links({ call, onUnlinked }: { call: Call; onUnlinked: () => void }) {
     {
       key: "id", header: "",
       render: (_v, l) => l.current
-        ? <button type="button" style={button} onClick={() => call.unlink().then(onUnlinked).catch((e) => toast({ title: "That didn't work", body: errText(e), tone: "error" }))}>Unlink</button>
-        : <button type="button" style={button} onClick={() => call.removeLink({ id: l.id }).then(() => { toast({ title: "Link removed", tone: "success" }); load(); }).catch((e) => toast({ title: "That didn't work", body: errText(e), tone: "error" }))}>Remove</button>,
+        ? <button type="button" className={button} onClick={() => call.unlink().then(onUnlinked).catch((e) => toast({ title: "That didn't work", body: errText(e), tone: "error" }))}>Unlink</button>
+        : <button type="button" className={button} onClick={() => call.removeLink({ id: l.id }).then(() => { toast({ title: "Link removed", tone: "success" }); load(); }).catch((e) => toast({ title: "That didn't work", body: errText(e), tone: "error" }))}>Remove</button>,
     },
   ];
   return (
-    <section style={{ marginTop: 12 }}>
-      <p style={muted}>Every Paperclip where you linked this account. Unlinking removes the token here and revokes it at Papercliped; your account and apps are not touched.</p>
+    <section className="mt-3">
+      <p className={muted}>Every Paperclip where you linked this account. Unlinking removes the token here and revokes it at Papercliped; your account and apps are not touched.</p>
       <DataTable columns={columns as unknown as DataTableColumn[]} rows={(links ?? []) as unknown as Record<string, unknown>[]} loading={links == null} emptyMessage="No linked Paperclips." />
     </section>
   );
@@ -138,17 +138,17 @@ function Account({ call, onUnlinked }: { call: Call; onUnlinked: () => void }) {
   const toast = usePluginToast();
   const [fresh, setFresh] = useState<string | null>(null);
   return (
-    <section style={{ marginTop: 12 }}>
-      <p style={muted}>These ask for your secret key every time.</p>
+    <section className="mt-3">
+      <p className={muted}>These ask for your secret key every time.</p>
       {fresh && (
-        <div role="status" style={panel}>
+        <div role="status" className={panel}>
           <strong>Your new secret key (shown once)</strong>
-          <p style={{ ...row, margin: "8px 0" }}>
-            <code style={code}>{fresh}</code>
-            <button type="button" style={button} onClick={() => { copyTextToClipboard(fresh); toast({ title: "Copied", tone: "success" }); }}>Copy</button>
+          <p className={`${row} my-2`}>
+            <code className={code}>{fresh}</code>
+            <button type="button" className={button} onClick={() => { copyTextToClipboard(fresh); toast({ title: "Copied", tone: "success" }); }}>Copy</button>
           </p>
-          <p style={muted}>Save it in your password manager now. The old key no longer works, and other linked Paperclips have to link again. This one stays linked.</p>
-          <button type="button" style={button} onClick={() => setFresh(null)}>I saved it</button>
+          <p className={muted}>Save it in your password manager now. The old key no longer works, and other linked Paperclips have to link again. This one stays linked.</p>
+          <button type="button" className={button} onClick={() => setFresh(null)}>I saved it</button>
         </div>
       )}
       <Confirm label="Make a new secret key" detail="Use this if your key may have leaked. Every other linked Paperclip is unlinked." onRun={(secret) => call.rotateSecret({ secret }).then((r) => setFresh((r as { secret: string }).secret))} />

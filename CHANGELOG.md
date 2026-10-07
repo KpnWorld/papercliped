@@ -4,6 +4,7 @@
 
 ## v2.2.2 — the plugin no longer invites autofill of your Paperclip login
 
+- **The Papercliped plugin now looks like part of Paperclip.** Its sidebar entry has the same paperclip icon, spacing, type, hover and highlighted-when-open look as Tasks, Artifacts and Cases, and the page uses Paperclip’s own cards, inputs, buttons, tabs and text styles, so it follows your theme (light, dark, seasonal) instead of imitating it.
 - **Fixed: the Papercliped page inside Paperclip no longer invites your browser to fill in your Paperclip login.** The page shares an address with Paperclip’s own sign-in, so browsers offered your saved Paperclip email and password in the "Link your Papercliped account" fields, one click from sending that password to Papercliped as a "secret key". Those fields (and the confirm boxes) now tell the browser not to autofill. If you linked an account on 2.2.1, nothing needs doing; if a saved login was ever filled in, do not press Link.
 
 ## v2.2.1 — the Papercliped plugin now installs in Paperclip
