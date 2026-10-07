@@ -4,7 +4,7 @@ import { DEFAULT_BRIDGE_URL } from "./bridge.js";
 const manifest: PaperclipPluginManifestV1 = {
   id: "papercliped.remote-control",
   apiVersion: 1,
-  version: "2.2.0",
+  version: "2.2.1",
   displayName: "Papercliped",
   description: "Manage the AI apps connected to your Paperclip through Papercliped: link your account, change what each app may do, disconnect them.",
   author: "OpenSourcx",
@@ -24,7 +24,7 @@ const manifest: PaperclipPluginManifestV1 = {
   },
   ui: {
     slots: [
-      { type: "sidebar", id: "papercliped-nav", displayName: "Papercliped", exportName: "PapercliedSidebar", routePath: "papercliped", order: 90 },
+      { type: "sidebar", id: "papercliped-nav", displayName: "Papercliped", exportName: "PapercliedSidebar", order: 90 },
       { type: "page", id: "papercliped-page", displayName: "Papercliped", exportName: "PapercliedPage", routePath: "papercliped", order: 90 },
     ],
   },

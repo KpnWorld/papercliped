@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v2.2.1 — the Papercliped plugin now installs in Paperclip
+
+- **Fixed: the Papercliped plugin could not be installed in Paperclip.** Paperclip rejected it with a bare "400" because the sidebar entry declared a page route, which Paperclip only allows on pages. Installing it, automatically while connecting or by hand from Settings → Plugins, now works. The plugin’s tests now run Paperclip’s own manifest check so this can’t come back. If you ticked the box while connecting on 2.2.0, nothing was installed: connect again, or install it from Settings → Plugins.
+
 ## v2.2.0 — install the Papercliped plugin while connecting
 
 - **The Papercliped plugin can install itself while you connect.** The "Connect your Paperclip" step has a new box, ticked by default: *Also install the Papercliped plugin in my Paperclip*. After you approve the sign-in, Papercliped asks your Paperclip to install `papercliped-paperclip-plugin` through Paperclip's own installer, using your own approved key. It installs one fixed package at the exact version that matches the service, only if you are the instance admin, and does nothing if the plugin is already there, you are not an admin, or your Paperclip has no plugin support. It never delays or fails your connection, and the outcome is logged as a short `plugin` event (installed, already, denied, unsupported or failed). Untick the box to skip it; installing by hand from Settings → Plugins still works.
