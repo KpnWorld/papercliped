@@ -2,9 +2,11 @@
 
 ## Unreleased
 
-- **Docs tidy-up:** the OAuth flow diagram and the security notes no longer mention a third "Admin" level (there are exactly two: Read only and Full control), and the repository ignores generated files (`openapi.json`, `.wrangler/`, coverage output) so they can't be committed by accident.
+## v2.2.0 — install the Papercliped plugin while connecting
 
 - **The Papercliped plugin can install itself while you connect.** The "Connect your Paperclip" step has a new box, ticked by default: *Also install the Papercliped plugin in my Paperclip*. After you approve the sign-in, Papercliped asks your Paperclip to install `papercliped-paperclip-plugin` through Paperclip's own installer, using your own approved key. It installs one fixed package at the exact version that matches the service, only if you are the instance admin, and does nothing if the plugin is already there, you are not an admin, or your Paperclip has no plugin support. It never delays or fails your connection, and the outcome is logged as a short `plugin` event (installed, already, denied, unsupported or failed). Untick the box to skip it; installing by hand from Settings → Plugins still works.
+- **Docs tidy-up:** the OAuth flow diagram and the security notes no longer mention a third "Admin" level (there are exactly two: Read only and Full control), and the repository ignores generated files (`openapi.json`, `.wrangler/`, coverage output) so they can't be committed by accident.
+- **Fixed:** the website’s changelog date test only allowed 5–6 October 2026 and would have failed every later release; it now accepts any real date between the first release and today. The package check (`scripts/check-packages.mjs`) also runs on Windows now.
 
 ## v2.1.0 — two access levels, manage in Paperclip, new website
 
