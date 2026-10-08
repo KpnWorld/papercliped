@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v2.4.1 — Show the real error instead of [object Object]
+
+- **Fixed: the Papercliped page inside Paperclip showed "[object Object]" instead of the real error** (for example when the username or secret key didn't match). It now shows the message.
+
 ## v2.4.0 — the control room: manage every session, agent and tool inside Paperclip
 
 - **The control room.** The Papercliped plugin now opens a control room inside Paperclip, in Paperclip's own design: a left menu that replaces the company menu (Overview, Sessions, Agents, Tools, Activity, Settings), the way Paperclip's own agent page does. See every connected AI app, what each may use, which agents it applies to, and what it has done. New guides: **The control room** and **API only, Full or Agent only**.
