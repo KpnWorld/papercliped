@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePluginAction } from "@paperclipai/plugin-sdk/ui";
+import { failureOf } from "../action-error.js";
 import { errText } from "./format.js";
 import type { Call } from "./types.js";
 
 /** Every plugin action the pages use, as one stable object. */
 export function useCalls(): Call {
-  const a = {
+  const raw = {
     status: usePluginAction("status"), link: usePluginAction("link"), connections: usePluginAction("connections"),
     setLevel: usePluginAction("setLevel"), disconnect: usePluginAction("disconnect"), privacy: usePluginAction("privacy"),
     links: usePluginAction("links"), removeLink: usePluginAction("removeLink"), unlink: usePluginAction("unlink"),
@@ -15,7 +16,17 @@ export function useCalls(): Call {
     tools: usePluginAction("tools"), activity: usePluginAction("activity"), agents: usePluginAction("agents"),
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(() => a, Object.values(a));
+  return useMemo(() => Object.fromEntries(Object.entries(raw).map(([k, fn]) => [k, unwrap(fn)])) as unknown as Call, Object.values(raw));
+}
+
+/** The worker returns expected failures as data (see action-error.ts); throw them here so every page handles them as errors. */
+function unwrap(fn: (p?: never) => Promise<unknown>) {
+  return async (p?: never) => {
+    const r = await fn(p);
+    const msg = failureOf(r);
+    if (msg) throw new Error(msg);
+    return r;
+  };
 }
 
 export interface Loaded<T> {

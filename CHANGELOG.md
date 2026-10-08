@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v2.4.2 — Show the real reason a plugin action failed
+
+- **Fixed: the Papercliped page inside Paperclip now shows the real reason a sign-in or save failed**, such as "That username and secret key don't match." Paperclip reports every plugin failure as HTTP 502, and a proxy in front of Paperclip (Cloudflare, for one) replaces that with its own "Bad gateway" page, so the page showed only "Request failed: 502". The plugin now returns failures as ordinary answers and the page turns them back into messages.
+
 ## v2.4.1 — Show the real error instead of [object Object]
 
 - **Fixed: the Papercliped page inside Paperclip showed "[object Object]" instead of the real error** (for example when the username or secret key didn't match). It now shows the message.

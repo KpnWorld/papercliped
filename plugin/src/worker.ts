@@ -1,5 +1,6 @@
 import { definePlugin, runWorker } from "@paperclipai/plugin-sdk";
 import { normalizeBridgeUrl } from "./bridge.js";
+import { failure } from "./action-error.js";
 import { createHandlers } from "./handlers.js";
 
 const plugin = definePlugin({
@@ -11,9 +12,16 @@ const plugin = definePlugin({
       listAgents: async (companyId) =>
         (await ctx.agents.list({ companyId, limit: 500 })).map((a) => ({ id: a.id, name: a.name, role: a.role ?? null, title: a.title ?? null, status: String(a.status) })),
     });
+    // Failures go back as data (see action-error.ts).
     // Actions, not data handlers: only actions receive the host-verified actor, and everything here is per user.
     for (const key of Object.keys(h) as (keyof typeof h)[]) {
-      ctx.actions.register(key, (params, { actor, companyId }) => h[key](params, { type: actor.type, userId: actor.userId, companyId }));
+      ctx.actions.register(key, async (params, { actor, companyId }) => {
+        try {
+          return await h[key](params, { type: actor.type, userId: actor.userId, companyId });
+        } catch (e) {
+          return failure(e);
+        }
+      });
     }
   },
   async onValidateConfig(config) {

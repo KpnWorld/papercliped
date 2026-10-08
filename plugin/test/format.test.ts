@@ -13,3 +13,14 @@ describe("errText", () => {
     expect(errText(undefined)).not.toContain("undefined");
   });
 });
+
+import { failure, failureOf } from "../src/action-error.js";
+describe("action failures travel as data", () => {
+  it("round-trips a message and ignores normal answers", () => {
+    expect(failureOf(failure(new Error("That username and secret key don't match.")))).toBe("That username and secret key don't match.");
+    expect(failureOf({ linked: true })).toBeNull();
+    expect(failureOf(null)).toBeNull();
+    expect(failureOf(failure("not an error"))).toBe("Something went wrong. Try again.");
+    expect(failureOf(failure(new Error("x".repeat(1000))))!.length).toBe(300);
+  });
+});

@@ -40,7 +40,7 @@ describe("worker wiring (SDK test harness)", () => {
     expect(await h.performAction("status", {}, { actor: { type: "user", userId: "user-bob" } })).toEqual({ linked: false });
     expect(calls.some((c) => c.auth === "Bearer pcb_pl_abc123")).toBe(true);
     expect(calls.every((c) => c.url.startsWith("https://bridge.example.test/api/manage"))).toBe(true);
-    await expect(h.performAction("status", {}, { actor: { type: "agent", userId: null } })).rejects.toThrow(/as a person/);
+    expect(await h.performAction("status", {}, { actor: { type: "agent", userId: null } })).toEqual({ papercliped_error: expect.stringMatching(/as a person/) });
   });
 
   it("lists the agents of the company the host says the call is for, and no other", async () => {
@@ -54,15 +54,15 @@ describe("worker wiring (SDK test harness)", () => {
     // a company named in the page's own parameters is not trusted
     const spoof: any = await harness.performAction("agents", { companyId: "c2" }, { actor: ann, companyId: "c1" });
     expect(spoof.agents.map((a: any) => a.id)).not.toContain("a9");
-    await expect(harness.performAction("agents", {}, { actor: ann })).rejects.toThrow(/Open a company/);
-    await expect(harness.performAction("agents", {}, { actor: { type: "agent", userId: null }, companyId: "c1" })).rejects.toThrow(/as a person/);
+    expect(await harness.performAction("agents", {}, { actor: ann })).toEqual({ papercliped_error: expect.stringMatching(/Open a company/) });
+    expect(await harness.performAction("agents", {}, { actor: { type: "agent", userId: null }, companyId: "c1" })).toEqual({ papercliped_error: expect.stringMatching(/as a person/) });
   });
 
   it("refuses to talk to a non-https bridge", async () => {
     const f = vi.fn();
     vi.stubGlobal("fetch", f);
     const h = await boot({ bridgeUrl: "http://bridge.example.test" });
-    await expect(h.performAction("link", { username: "u", secret: "pcs_A-B-C-D" }, { actor: { type: "user", userId: "u" } })).rejects.toThrow(/https/);
+    expect(await h.performAction("link", { username: "u", secret: "pcs_A-B-C-D" }, { actor: { type: "user", userId: "u" } })).toEqual({ papercliped_error: expect.stringMatching(/https/) });
     expect(f).not.toHaveBeenCalled();
   });
 });

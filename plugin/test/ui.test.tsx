@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
+import { failure } from "../src/action-error.js";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
@@ -73,7 +74,7 @@ beforeAll(async () => {
   fake = await startFakeBridge();
   // The worker runs in plain Node; here it shares jsdom's globals, and Node 24's fetch rejects jsdom's AbortSignal.
   h = createHandlers({ state, fetch: (u, i) => fetch(u, { ...i, signal: undefined }), bridgeUrl: async () => fake.url, allowInsecureLoopback: true, listAgents: async () => AGENTS });
-  host.actions = Object.fromEntries(Object.entries(h).map(([name, fn]) => [name, (p: Record<string, unknown> = {}) => (fn as any)(p, ann)]));
+  host.actions = Object.fromEntries(Object.entries(h).map(([name, fn]) => [name, async (p: Record<string, unknown> = {}) => { try { return await (fn as any)(p, ann); } catch (e) { return failure(e); } }])); // like the worker: failures come back as data
 });
 afterAll(() => fake.server.close());
 
