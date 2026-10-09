@@ -4,7 +4,7 @@
 
 **"This hostname is not allowed for this Paperclip instance."** Paperclip doesn't recognise the address. Set `PAPERCLIP_DEPLOYMENT_EXPOSURE=public` and `PAPERCLIP_PUBLIC_URL` to exactly the address you use, then restart Paperclip. See [What every option needs](/docs/hosting#what-every-option-needs).
 
-**It stopped working after about a month.** Newer Paperclip versions make keys approved through the sign-in prompt expire after 30 days. When the AI says the Paperclip credential was rejected, disconnect and connect again from your AI app, then approve in Paperclip.
+**"The Paperclip credential behind this connection was rejected."** Newer Paperclip versions expire keys after 30 days. Papercliped renews yours automatically about a week before that, so this should not happen on its own. It does if the key was revoked in Paperclip, the renewal kept failing until the key expired (for example, Paperclip was unreachable that whole week), or your Paperclip account lost access. Disconnect and connect again from your AI app, then approve in Paperclip.
 
 **Agents stop mid-task now and then.** Something restarted Paperclip: an update, a redeploy, or a host that sleeps. Runs in progress end on every restart. Use an always-on host and update when agents are idle.
 

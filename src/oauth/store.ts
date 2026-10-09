@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { dirname } from "node:path";
 import type { AccountPolicy, SessionPolicy } from "../access/policy.js";
 import { AliasTakenError, type Account, type AccountLink, type NodeSample, type PrivacyChange, type UserEvent, type UserEventBucket } from "../accounts/types.js";
+import { PAPERCLIP_KEY_TTL_MS } from "./paperclip-login.js";
 import { HIST_EDGES, isFault, type AuditReader, type AuditRow, type AuditStore, type BreakdownRow, type SeriesBucket, type Totals } from "../telemetry/types.js";
 
 export interface OAuthClient {
@@ -23,6 +24,8 @@ export interface Grant {
   instanceUrl: string | null;
   /** Sealed Paperclip credential (null when Paperclip needs none, after revocation, or when the account link holds it). */
   sealedCredential: string | null;
+  /** When Paperclip expires that credential (ms epoch). null = never (or not one Paperclip issued us); absent (old JSON stores) = createdAt + Paperclip's default TTL. */
+  credentialExpiresAt?: number | null;
   /** Papercliped account (multi-tenant mode): the credential then lives on the account's link, not here. */
   accountId?: string | null;
   username?: string | null;
@@ -31,6 +34,18 @@ export interface Grant {
   revoked: boolean;
   /** Per-session limits: a name, which tools, which agents. Absent = no limits beyond the access level. */
   policy?: SessionPolicy | null;
+}
+
+/** Where a Paperclip credential is stored: on an account's link, or (without accounts) on a grant. */
+export interface CredentialHolder {
+  kind: "link" | "grant";
+  /** The account id for a link, the grant id for a grant. */
+  id: string;
+}
+
+/** A stored credential's expiry; old rows without one are assumed to carry Paperclip's default TTL from `issuedAt`. */
+export function credentialExpiry(expiresAt: number | null | undefined, issuedAt: number): number | null {
+  return expiresAt === undefined ? issuedAt + PAPERCLIP_KEY_TTL_MS : expiresAt;
 }
 
 export interface TokenRecord {
@@ -129,6 +144,13 @@ export interface AccountStore {
   /** Forget the stored credential (keeps the account). Returns the sealed credential that was dropped. */
   dropLinkCredential(accountId: string): Promise<string | null>;
   listIdleLinks(cutoff: number): Promise<AccountLink[]>;
+  /** Links whose stored credential expires before `before`. */
+  listExpiringLinks(before: number): Promise<AccountLink[]>;
+  /**
+   * Replace a stored Paperclip credential and its expiry, but only while it still holds `expect` (compare-and-swap):
+   * false if it was rotated, replaced or dropped meanwhile. Pass `next` = `expect` to change only the expiry.
+   */
+  swapCredential(holder: CredentialHolder, expect: string, next: string, expiresAt: number | null): Promise<boolean>;
   /** Revoke every live grant (and their tokens) of an account. Returns how many. */
   revokeAccountGrants(accountId: string): Promise<number>;
   countLiveGrants(accountId: string): Promise<number>;
@@ -162,6 +184,8 @@ export interface Store extends AuditStore, AccountStore {
   listGrants(): Promise<Grant[]>;
   /** Live grants not used since `cutoff` (ms epoch). */
   listIdleGrants(cutoff: number): Promise<Grant[]>;
+  /** Live grants whose own stored credential expires before `before`. */
+  listExpiringGrants(before: number): Promise<Grant[]>;
 
   putAccess(hash: string, r: TokenRecord): Promise<void>;
   getAccess(hash: string): Promise<TokenRecord | undefined>;
@@ -320,6 +344,20 @@ export class MemoryStore implements Store {
   }
   async listIdleGrants(cutoff: number) {
     return Object.values(this.d.grants).filter((g) => !g.revoked && g.lastUsedAt < cutoff);
+  }
+  async listExpiringGrants(before: number) {
+    return Object.values(this.d.grants).filter((g) => {
+      const exp = g.sealedCredential && !g.revoked ? credentialExpiry(g.credentialExpiresAt, g.createdAt) : null;
+      return exp !== null && exp < before;
+    });
+  }
+  async swapCredential(h: CredentialHolder, expect: string, next: string, expiresAt: number | null) {
+    const row = h.kind === "link" ? this.lnks[h.id] : this.d.grants[h.id];
+    if (!row || row.sealedCredential !== expect || (h.kind === "grant" && (row as Grant).revoked)) return false;
+    row.sealedCredential = next;
+    row.credentialExpiresAt = expiresAt;
+    this.save();
+    return true;
   }
 
   async putAccess(hash: string, r: TokenRecord) {
@@ -524,6 +562,12 @@ export class MemoryStore implements Store {
   }
   async listIdleLinks(cutoff: number) {
     return Object.values(this.lnks).filter((l) => l.sealedCredential && l.lastUsedAt < cutoff);
+  }
+  async listExpiringLinks(before: number) {
+    return Object.values(this.lnks).filter((l) => {
+      const exp = l.sealedCredential ? credentialExpiry(l.credentialExpiresAt, l.connectedAt) : null;
+      return exp !== null && exp < before;
+    });
   }
   async revokeAccountGrants(accountId: string) {
     let n = 0;

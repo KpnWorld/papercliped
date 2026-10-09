@@ -30,6 +30,15 @@ const APPROVAL_PATH = /^\/cli-auth\/[0-9a-f-]{36}\?token=[A-Za-z0-9_\-.~%]{8,300
 /** Paperclip runs npm install server-side, which can take a while. */
 const PLUGIN_INSTALL_TIMEOUT_MS = 120_000;
 const TOKENISH = /^[\x21-\x7e]{8,600}$/; // printable ASCII, no whitespace
+/** How long Paperclip keeps a board key it issued without an explicit expiry (its BOARD_API_KEY_TTL_MS). */
+export const PAPERCLIP_KEY_TTL_MS = 30 * 24 * 3600 * 1000;
+
+/** null = never expires; undefined = not said. Anything unreadable counts as not said. */
+function expiryOf(v: unknown): number | null | undefined {
+  if (v === null) return null;
+  const t = typeof v === "string" ? Date.parse(v) : NaN;
+  return Number.isFinite(t) ? t : undefined;
+}
 
 export class LoginError extends Error {
   constructor(
@@ -136,6 +145,36 @@ export class PaperclipLogin {
     const out = await json(res);
     if (out?.packageName !== packageName) throw new LoginError("Paperclip installed something other than the Papercliped plugin");
     return "installed";
+  }
+
+  /**
+   * The calling key's id and expiry, from Paperclip's own key listing. `unsupported` = this Paperclip has no key
+   * listing (versions from before board keys expired). expiresAt: null = never expires, undefined = not listed.
+   */
+  async keyInfo(token: string): Promise<{ state: "unsupported" } | { state: "ok"; keyId: string | null; expiresAt: number | null | undefined }> {
+    const auth = { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } };
+    const me = await json(await this.t.fetch(`${this.t.apiUrl}/cli-auth/me`, { ...auth, ...this.sig() }));
+    const keyId = typeof me?.keyId === "string" && UUID.test(me.keyId) ? me.keyId : null;
+    const res = await this.t.fetch(`${this.t.apiUrl}/board-api-keys`, { ...auth, ...this.sig() });
+    if (res.status === 404) return { state: "unsupported" };
+    const list = await json(res);
+    if (!Array.isArray(list)) throw new LoginError("Paperclip returned an unexpected key list");
+    const mine = keyId ? list.find((k) => k && typeof k === "object" && k.id === keyId) : undefined;
+    return { state: "ok", keyId, expiresAt: mine ? expiryOf(mine.expiresAt) : undefined };
+  }
+
+  /** A new board key for the same Paperclip user, with Paperclip's default expiry. `unsupported` = no key API there. */
+  async createKey(token: string, name: string): Promise<{ state: "unsupported" } | { state: "created"; keyId: string | null; token: string; expiresAt: number | null | undefined }> {
+    const res = await this.t.fetch(`${this.t.apiUrl}/board-api-keys`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ name: name.slice(0, 120) }),
+      ...this.sig(),
+    });
+    if (res.status === 404) return { state: "unsupported" };
+    const k = await json(res);
+    if (typeof k?.token !== "string" || !TOKENISH.test(k.token)) throw new LoginError("Paperclip returned an invalid credential");
+    return { state: "created", keyId: typeof k.id === "string" && UUID.test(k.id) ? k.id : null, token: k.token, expiresAt: expiryOf(k.expiresAt) };
   }
 
   /** Best effort: invalidate the board key we were issued when a grant is revoked. */

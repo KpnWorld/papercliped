@@ -9,11 +9,11 @@ import { hostAllowed, type BridgeConfig, type OAuthConfig } from "../config.js";
 import { UnsafeUrlError, createSafeFetch, parseInstanceUrl } from "../net/safe-fetch.js";
 import { Keyring, isValidCodeChallenge, randomToken, safeEqual, sha256Hex, verifyPkce } from "./crypto.js";
 import { approvePage, choosePage, consentPage, errorPage, instancePage, scopePage, secretPage, usernamePage, welcomePage } from "./pages.js";
-import { LoginError, PaperclipLogin, type Challenge } from "./paperclip-login.js";
+import { LoginError, PAPERCLIP_KEY_TTL_MS, PaperclipLogin, type Challenge } from "./paperclip-login.js";
 import { parseAccountPolicy, parseSessionPolicy, readAccountPolicy, readSessionPolicy, surfaceOfTool, type AccountPolicy, type ExecPolicy, type SessionPolicy } from "../access/policy.js";
 import { tools as ALL_TOOLS } from "../tools.js";
 import { VERSION } from "../version.js";
-import { MemoryStore, type Grant, type PendingRecord, type Store } from "./store.js";
+import { MemoryStore, credentialExpiry, type CredentialHolder, type Grant, type PendingRecord, type Store } from "./store.js";
 import { SCOPES, grantableScopes, isScope, maxRank, normalizeScope, normalizeScopes, scopeAllows, scopesUpTo, type Scope } from "./scopes.js";
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -31,6 +31,19 @@ const PLUGIN_KEY = "papercliped.remote-control";
 const PLUGIN_INSTALL_MS = 120_000;
 const MAX_FORM_BYTES = 16 * 1024;
 const DAY_MS = 24 * 3600 * 1000;
+/** Renew a stored Paperclip key this long before Paperclip expires it. */
+const ROTATE_BEFORE_MS = 7 * DAY_MS;
+/** After a rotation attempt, wait this long before trying that key again (shared across processes). */
+const ROTATE_RETRY_MS = 10 * 60_000;
+/** Revoke the replaced key only after this, so calls already under way with it (here or in another process) finish. */
+const ROTATE_GRACE_MS = 60_000;
+
+/** A stored Paperclip credential that may need renewing. */
+interface HeldKey extends CredentialHolder {
+  instanceUrl: string | null;
+  sealed: string;
+  expiresAt: number | null;
+}
 
 export interface OAuthDeps {
   config: BridgeConfig;
@@ -42,6 +55,8 @@ export interface OAuthDeps {
   loginFor?: (instanceUrl: string | null) => PaperclipLogin;
   /** Egress-guarded fetch used for tenant Paperclip instances. */
   safeFetch?: typeof fetch;
+  /** How long a replaced Paperclip key stays valid after a rotation (tests pass 0). */
+  rotationGraceMs?: number;
 }
 
 class OAuthError extends Error {
@@ -94,6 +109,10 @@ export class OAuthProvider {
   private background = new Set<Promise<void>>();
   private multi: boolean;
   private accounts: boolean;
+  /** Key rotations under way in this process, by holder: callers wait for one instead of starting another. */
+  private rotations = new Map<string, Promise<string | null>>();
+  /** Holder → when this process may try a failed rotation again. */
+  private rotateRetryAt = new Map<string, number>();
 
   constructor(private deps: OAuthDeps) {
     this.now = deps.now ?? Date.now;
@@ -180,7 +199,8 @@ export class OAuthProvider {
   /** The Paperclip client for a grant. In account mode the credential and instance come from the account's link. */
   async resolveClient(grant: Grant): Promise<{ client: PaperclipClient; instanceHost?: string }> {
     if (!this.accounts || !grant.accountId) {
-      const apiKey = grant.sealedCredential ? this.keyring.unseal(grant.sealedCredential) : null;
+      const sealed = grant.sealedCredential ? await this.currentKey(this.heldOnGrant(grant, grant.sealedCredential)) : null;
+      const apiKey = sealed ? this.keyring.unseal(sealed) : null;
       if (!this.multi) return { client: new PaperclipClient({ ...this.deps.config, apiKey }) };
       if (!grant.instanceUrl) throw new Error("Grant has no Paperclip instance");
       const origin = this.checkedInstance(grant.instanceUrl).origin;
@@ -190,7 +210,7 @@ export class OAuthProvider {
     if (!link?.sealedCredential) throw new ReconnectRequired("This account's Paperclip connection has expired; reconnect to continue.");
     const origin = this.checkedInstance(link.instanceUrl).origin; // re-validated on every use (policy can tighten)
     await this.store.touchLink(grant.accountId);
-    const apiKey = this.keyring.unseal(link.sealedCredential);
+    const apiKey = this.keyring.unseal(await this.currentKey(this.heldOnLink(link, link.sealedCredential)));
     return { client: new PaperclipClient({ ...this.deps.config, apiUrl: `${origin}/api`, apiKey, companyId: null }, this.safeFetch), instanceHost: link.instanceLabel ?? new URL(origin).host };
   }
 
@@ -220,20 +240,22 @@ export class OAuthProvider {
     }
   }
 
-  /** Revoke idle grants and idle account connections, delete their stored credentials, prune telemetry. Run periodically. */
+  /** Revoke idle grants and idle account connections, delete their stored credentials, renew Paperclip keys close to expiry, prune telemetry. Run periodically. */
   async sweep(): Promise<number> {
     const days = this.deps.oauth.idleRevokeDays;
     await this.store.prune();
-    if (!days) return 0;
-    const cutoff = this.now() - days * DAY_MS;
     let n = 0;
-    const idle = await this.store.listIdleGrants(cutoff);
-    for (const g of idle) await this.revokeGrant(g.id);
-    n += idle.length;
-    for (const l of await this.store.listIdleLinks(cutoff)) {
-      await this.dropConnection(l, "idle");
-      n += 1;
+    if (days) {
+      const cutoff = this.now() - days * DAY_MS;
+      const idle = await this.store.listIdleGrants(cutoff);
+      for (const g of idle) await this.revokeGrant(g.id);
+      n += idle.length;
+      for (const l of await this.store.listIdleLinks(cutoff)) {
+        await this.dropConnection(l, "idle");
+        n += 1;
+      }
     }
+    await this.rotateExpiring();
     return n;
   }
 
@@ -253,6 +275,119 @@ export class OAuthProvider {
     } catch {
       /* best effort */
     }
+  }
+
+  // ───────────── Paperclip key rotation ─────────────
+  // Paperclip expires the board keys it issues (30 days by default). Each stored key is renewed about a week before
+  // that: the old key asks Paperclip for a new one, the new one is swapped in only if the old one is still stored
+  // (compare-and-swap), and only then is the old one revoked. Any failure leaves the working key in place.
+
+  private heldOnLink(l: AccountLink, sealed: string): HeldKey {
+    return { kind: "link", id: l.accountId, instanceUrl: l.instanceUrl, sealed, expiresAt: credentialExpiry(l.credentialExpiresAt, l.connectedAt) };
+  }
+
+  private heldOnGrant(g: Grant, sealed: string): HeldKey {
+    return { kind: "grant", id: g.id, instanceUrl: g.instanceUrl, sealed, expiresAt: credentialExpiry(g.credentialExpiresAt, g.createdAt) };
+  }
+
+  /** The sealed key to call Paperclip with: the stored one, or its replacement when it was due and got renewed. */
+  private async currentKey(k: HeldKey): Promise<string> {
+    if (k.expiresAt === null || k.expiresAt - this.now() > ROTATE_BEFORE_MS) return k.sealed;
+    const slot = `${k.kind}:${k.id}`;
+    let run = this.rotations.get(slot);
+    if (!run) {
+      if ((this.rotateRetryAt.get(slot) ?? 0) > this.now()) return k.sealed;
+      run = this.rotate(k, slot).finally(() => this.rotations.delete(slot));
+      this.rotations.set(slot, run);
+    }
+    return (await run) ?? k.sealed;
+  }
+
+  /** Renew every stored key that expires within the rotation window, so keys of people who rarely call get renewed too. */
+  private async rotateExpiring(): Promise<void> {
+    const before = this.now() + ROTATE_BEFORE_MS;
+    for (const l of await this.store.listExpiringLinks(before)) if (l.sealedCredential) await this.currentKey(this.heldOnLink(l, l.sealedCredential));
+    for (const g of await this.store.listExpiringGrants(before)) if (g.sealedCredential) await this.currentKey(this.heldOnGrant(g, g.sealedCredential));
+  }
+
+  /** One rotation. Resolves to the new sealed key, or null to keep using the stored one. Never throws. */
+  private async rotate(k: HeldKey, slot: string): Promise<string | null> {
+    let outcome: "rotated" | "failed" | null = null;
+    let who: { accountId?: string | null; username?: string | null } | null = null;
+    try {
+      // One rotation per key across every process: whoever takes the claim does it; the others keep the old key, which still works.
+      if (!(await this.store.hit(`rotate:${slot}`, 1, ROTATE_RETRY_MS))) {
+        this.rotateRetryAt.set(slot, this.now() + ROTATE_RETRY_MS);
+        return null;
+      }
+      const token = this.keyring.unseal(k.sealed);
+      if (k.kind === "grant" && token === this.deps.config.apiKey) {
+        // The operator's own PAPERCLIP_API_KEY (bridge admin token sign-in): not ours to replace.
+        await this.store.swapCredential(k, k.sealed, k.sealed, null);
+        return null;
+      }
+      let name = "Papercliped";
+      if (k.kind === "link") {
+        const a = await this.store.getAccount(k.id);
+        if (a) name = `Papercliped (${a.username})`;
+        who = a ? { accountId: a.id, username: displayName(a) } : { accountId: k.id, username: "" };
+      } else {
+        const g = await this.store.getGrant(k.id);
+        if (g) name = `Papercliped (${g.username ?? g.clientName})`;
+        who = g ? { accountId: g.accountId ?? null, username: g.username ?? null } : null;
+      }
+      const login = this.loginFor(k.instanceUrl);
+      outcome = "failed";
+      const info = await login.keyInfo(token);
+      if (info.state === "unsupported" || info.expiresAt === null) {
+        // Older Paperclip, or a key that never expires: nothing to renew, now or later.
+        outcome = null;
+        await this.store.swapCredential(k, k.sealed, k.sealed, null);
+        return null;
+      }
+      if (info.expiresAt !== undefined && info.expiresAt - this.now() > ROTATE_BEFORE_MS) {
+        outcome = null; // the stored expiry was an estimate; Paperclip's own is later
+        await this.store.swapCredential(k, k.sealed, k.sealed, info.expiresAt);
+        return null;
+      }
+      const made = await login.createKey(token, name);
+      if (made.state === "unsupported") {
+        outcome = null;
+        await this.store.swapCredential(k, k.sealed, k.sealed, null);
+        return null;
+      }
+      const next = this.keyring.seal(made.token);
+      if (!(await this.store.swapCredential(k, k.sealed, next, made.expiresAt === undefined ? this.now() + PAPERCLIP_KEY_TTL_MS : made.expiresAt))) {
+        // Reconnected, rotated elsewhere or disconnected meanwhile: what is stored now wins; drop the key we just made.
+        outcome = null;
+        await login.revoke(made.token);
+        return null;
+      }
+      outcome = "rotated";
+      this.revokeReplaced(login, token);
+      return next;
+    } catch (e) {
+      outcome = "failed";
+      this.rotateRetryAt.set(slot, this.now() + ROTATE_RETRY_MS);
+      // Paperclip no longer accepts this key (expired or revoked): it can never be renewed, so stop trying. Using it
+      // still gets the reconnect hint, and reconnecting stores a fresh key with a fresh expiry.
+      if (e instanceof LoginError && e.status === 401) await this.store.swapCredential(k, k.sealed, k.sealed, null).catch(() => false);
+      return null;
+    } finally {
+      if (outcome) await this.event("key", who, outcome);
+    }
+  }
+
+  /** Revoke a key that rotation replaced, after a grace period for calls still using it. Best effort: it expires on its own anyway. */
+  private revokeReplaced(login: PaperclipLogin, token: string): void {
+    const grace = this.deps.rotationGraceMs ?? ROTATE_GRACE_MS;
+    if (grace <= 0) {
+      const run = login.revoke(token);
+      const tracked = run.finally(() => this.background.delete(tracked));
+      this.background.add(tracked);
+      return;
+    }
+    setTimeout(() => void login.revoke(token), grace).unref();
   }
 
   // ───────────── account management (the Paperclip plugin's connection manager) ─────────────
@@ -930,7 +1065,7 @@ export class OAuthProvider {
     const t = this.now();
     const acct = await this.store.getAccount(accountId);
     const instanceLabel = acct ? this.instanceLabelFor(acct, instanceUrl, old) : new URL(instanceUrl).host;
-    const ok = await this.store.putLink({ accountId, instanceUrl, paperclipUserId, sealedCredential: this.keyring.seal(credential), createdAt: old?.createdAt ?? t, connectedAt: t, lastUsedAt: t, instanceLabel });
+    const ok = await this.store.putLink({ accountId, instanceUrl, paperclipUserId, sealedCredential: this.keyring.seal(credential), credentialExpiresAt: t + PAPERCLIP_KEY_TTL_MS, createdAt: old?.createdAt ?? t, connectedAt: t, lastUsedAt: t, instanceLabel });
     if (ok && old?.sealedCredential) {
       let same = false;
       try {
@@ -1156,7 +1291,7 @@ export class OAuthProvider {
       if (!created) return this.renderStage(res, rid, p, "That username is taken. Please choose another.", { value: typed });
     }
     if (!created) return this.renderStage(res, rid, p, "Could not reserve an anonymous name right now. Please try again.", { value: typed });
-    const linked = await this.store.putLink({ accountId: account.id, instanceUrl: p.instanceUrl, paperclipUserId: p.paperclipUserId, sealedCredential: this.keyring.seal(ch.boardApiToken), createdAt: t, connectedAt: t, lastUsedAt: t, instanceLabel: this.instanceLabelFor(account, p.instanceUrl) });
+    const linked = await this.store.putLink({ accountId: account.id, instanceUrl: p.instanceUrl, paperclipUserId: p.paperclipUserId, sealedCredential: this.keyring.seal(ch.boardApiToken), credentialExpiresAt: t + PAPERCLIP_KEY_TTL_MS, createdAt: t, connectedAt: t, lastUsedAt: t, instanceLabel: this.instanceLabelFor(account, p.instanceUrl) });
     if (!linked) {
       await this.store.deleteAccount(account.id); // lost a race for this Paperclip identity
       p.stage = "choose";
@@ -1280,6 +1415,8 @@ export class OAuthProvider {
       resource: this.resource,
       instanceUrl: entry.instanceUrl,
       sealedCredential: entry.sealedCredential,
+      // A key from an approved sign-in expires with Paperclip's default; the operator's own PAPERCLIP_API_KEY is never rotated.
+      credentialExpiresAt: entry.sealedCredential && this.keyring.unseal(entry.sealedCredential) !== this.deps.config.apiKey ? t + PAPERCLIP_KEY_TTL_MS : null,
       accountId: entry.accountId ?? null,
       username: entry.username ?? null,
       createdAt: t,
