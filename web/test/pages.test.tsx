@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -104,6 +106,16 @@ describe("brand and legal", () => {
     at("/brand");
     const main = screen.getByRole("main");
     for (const f of ["mascot-light.svg", "mascot-dark.svg", "wordmark-light.png", "wordmark-dark.png"]) expect(within(main).getAllByRole("link").some((a) => a.getAttribute("href") === `/brand/${f}`)).toBe(true);
+    // Every download link points at a file that's really in public/ (the icon pack is built by scripts/icon-pack.mjs).
+    const hrefs = within(main).getAllByRole("link").map((a) => a.getAttribute("href") ?? "").filter((h) => h.startsWith("/brand/"));
+    expect(hrefs).toContain("/brand/papercliped-icons.zip");
+    for (const h of hrefs) expect(existsSync(resolve(process.cwd(), `public${h}`)), h).toBe(true);
+  });
+  it("the icons, favicon and web manifest the page head links to exist", () => {
+    const head = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
+    for (const m of head.matchAll(/<link rel="(?:icon|apple-touch-icon|manifest)"[^>]*href="([^"]+)"/g)) expect(existsSync(resolve(process.cwd(), `public${m[1]}`)), m[1]).toBe(true);
+    const manifest = JSON.parse(readFileSync(resolve(process.cwd(), "public/site.webmanifest"), "utf8")) as { icons: { src: string }[] };
+    for (const i of manifest.icons) expect(existsSync(resolve(process.cwd(), `public${i.src}`)), i.src).toBe(true);
   });
   it("privacy and terms render with the placeholders filled", () => {
     const { unmount } = at("/privacy");

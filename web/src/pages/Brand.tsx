@@ -5,6 +5,9 @@ import { PALETTES } from "../theme/palettes";
 import { usePageTitle } from "./usePageTitle";
 
 const ASSETS = [
+  { file: "/brand/icons/avatar-light-1024.png", label: "Profile picture (PNG)" },
+  { file: "/brand/icons/x-header-light-1500x500.png", label: "X header (PNG)" },
+  { file: "/brand/icons/banner-light-960x540.png", label: "Banner 16:9 (PNG)" },
   { file: "/brand/mascot-light.svg", label: "Mascot, light (SVG)" },
   { file: "/brand/mascot-dark.svg", label: "Mascot, dark (SVG)" },
   { file: "/brand/wordmark-light.png", label: "Wordmark, light (PNG)" },
@@ -32,6 +35,10 @@ export function Brand() {
           <Card className="flex items-center gap-4">
             <span className="font-display text-5xl font-bold lowercase">papercliped</span>
           </Card>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <a href="/brand/papercliped-icons.zip" download className="inline-flex h-11 items-center rounded-full bg-accent px-6 font-semibold text-accent-ink shadow-sm transition-transform duration-150 hover:-translate-y-0.5">Download the icon pack (ZIP)</a>
+          <span className="text-sm text-muted">App icons from 16 to 1024 px, favicon, profile pictures, X header, banners and link previews, in light and dark.</span>
         </div>
         <ul className="mt-4 flex flex-wrap gap-3">
           {ASSETS.map((a) => <li key={a.file}><a href={a.file} download className="inline-flex h-10 items-center rounded-lg border border-field px-4 text-sm font-semibold transition-transform duration-150 hover:-translate-y-0.5">{a.label}</a></li>)}

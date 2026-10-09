@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v2.5.0 — icon pack, launch-ready docs and tester feedback
+
+- **Icon pack.** papercliped.co/brand has a one-click ZIP with every Papercliped icon in light and dark: the app icon from 16 to 1024 px, a favicon, profile pictures safe for circle crops (Discord, X, GitHub, npm, MCP directories), an Android/installable-app icon, an X header, a 16:9 banner and link-preview images. They're built from the real mascot and the site's own components by `web/scripts/icon-pack.mjs`, so they always match. The website now also has a classic favicon, an Apple touch icon and a web app manifest.
+- **Docs ready for launch.** Getting started and *Any AI app* now cover Codex and Claude Code (plugin or MCP server). ChatGPT setup leads with the MCP connector in developer mode, with GPT Actions as the alternative. The glossary explains the control room, sessions and access modes. The FAQ explains which access mode a blocked pause or wake needs. Stale links to the old manage page now point to the control room.
+- **Tester feedback form.** GitHub → New issue → *Tester feedback* asks testers which app and host they used, where they got stuck and what they asked. A launch kit for maintainers (`docs/LAUNCH-KIT.md`) covers the pre-launch checklist, a founding-tester program, where to promote, ready-to-paste posts and the demo script.
+
 ## v2.4.2 — Show the real reason a plugin action failed
 
 - **Fixed: the Papercliped page inside Paperclip now shows the real reason a sign-in or save failed**, such as "That username and secret key don't match." Paperclip reports every plugin failure as HTTP 502, and a proxy in front of Paperclip (Cloudflare, for one) replaces that with its own "Bad gateway" page, so the page showed only "Request failed: 502". The plugin now returns failures as ordinary answers and the page turns them back into messages.
