@@ -1,5 +1,5 @@
 // Builds the community cards in public/brand/community/ (Reddit, X and Discord posts), light and dark, 1600x900, and the
-// r/OpenSourcedd banners (desktop and app), and the OpenSourcedd icon set and Discord banner (public/brand/opensourcedd/),
+// r/OpenSourcedd banners (desktop and app), and the OpenSourcedd icon set, Discord banner and X header (public/brand/opensourcedd/),
 // with the same mascot, palette and fonts as the site:  node scripts/community-cards.mjs
 // Browser: CHROME_PATH, or Playwright's own Chromium.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -130,6 +130,29 @@ h1 span{background:var(--accent);color:var(--accentInk);padding:0 28px 10px;bord
 };
 mkdirSync(osOut, { recursive: true });
 
+/** X header, 1500x500. X covers the bottom-left with the profile picture and crops the top and bottom a little on some
+ *  screens, so the mark and name sit right of centre and away from the edges. */
+const xHeader = (mode) => {
+  const p = PALETTE[mode];
+  const c = OS_COLOURS[mode];
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:Brico;src:url(${font("bricolage-grotesque-latin-wght-normal.woff2")});font-weight:200 800}
+@font-face{font-family:Mono;src:url(${font("jetbrains-mono-latin-400-normal.woff2")})}
+:root{${Object.entries(p).map(([k, v]) => `--${k}:${v}`).join(";")}}
+html,body{margin:0}
+#frame{width:1500px;height:500px;background:var(--bg);color:var(--ink);position:relative;overflow:hidden}
+.dots{position:absolute;inset:0;background-image:radial-gradient(var(--line) 2.5px,transparent 2.5px);background-size:36px 36px;mask-image:linear-gradient(90deg,#000 0,transparent 45%)}
+.row{position:absolute;right:120px;top:50%;transform:translateY(-55%);display:flex;align-items:center;gap:40px}
+.mark{width:200px;height:200px;flex:none;border-radius:50px;background:var(--surface);border:3px solid var(--line);display:grid;place-items:center;transform:rotate(-4deg)}
+.mark svg{width:180px;height:180px}
+h1{font-family:Brico;font-weight:800;font-size:112px;line-height:1;letter-spacing:-.025em;margin:0;white-space:nowrap}
+h1 span{background:var(--accent);color:var(--accentInk);padding:0 18px 8px;border-radius:24px;margin-left:4px}
+.sub{font-family:Mono;font-size:26px;color:var(--muted);margin-top:22px}
+</style></head><body><div id="frame"><div class="dots"></div><div class="row">
+<div class="mark"><svg viewBox="0 0 64 64">${osMark(c)}</svg></div>
+<div><h1>Open<span>Sourcedd</span></h1><div class="sub">open-source tools for AI agents, built together</div></div></div></div></body></html>`;
+};
+
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
 for (const [name, card] of Object.entries(CARDS)) {
   for (const mode of ["dark", "light"]) {
@@ -167,6 +190,13 @@ for (const mode of ["dark", "light"]) {
   await p.setContent(discordBanner(mode));
   await p.evaluate(() => document.fonts.ready);
   await p.locator("#frame").screenshot({ path: join(osOut, `opensourcedd-discord-banner-${mode}.png`) });
+  await p.close();
+}
+for (const mode of ["dark", "light"]) {
+  const p = await browser.newPage({ viewport: { width: 1500, height: 500 } });
+  await p.setContent(xHeader(mode));
+  await p.evaluate(() => document.fonts.ready);
+  await p.locator("#frame").screenshot({ path: join(osOut, `opensourcedd-x-header-${mode}.png`) });
   await p.close();
 }
 await browser.close();
