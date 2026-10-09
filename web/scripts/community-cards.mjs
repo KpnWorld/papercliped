@@ -1,5 +1,5 @@
 // Builds the community cards in public/brand/community/ (Reddit, X and Discord posts), light and dark, 1600x900, and the
-// r/OpenSourcedd banners (desktop and app), and the OpenSourcedd icon set (public/brand/opensourcedd/),
+// r/OpenSourcedd banners (desktop and app), and the OpenSourcedd icon set and Discord banner (public/brand/opensourcedd/),
 // with the same mascot, palette and fonts as the site:  node scripts/community-cards.mjs
 // Browser: CHROME_PATH, or Playwright's own Chromium.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -107,6 +107,27 @@ const osIcon = (mode, avatar) => {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">${body}</svg>`;
 };
 const osOut = join(root, "public/brand/opensourcedd");
+/** Discord server banner and invite background, 1920x1080 (twice Discord's 960x540). Discord shows the banner small above the
+ *  channel list, so it carries only the mark and the name, big. */
+const discordBanner = (mode) => {
+  const p = PALETTE[mode];
+  const c = OS_COLOURS[mode];
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:Brico;src:url(${font("bricolage-grotesque-latin-wght-normal.woff2")});font-weight:200 800}
+@font-face{font-family:Mono;src:url(${font("jetbrains-mono-latin-400-normal.woff2")})}
+:root{${Object.entries(p).map(([k, v]) => `--${k}:${v}`).join(";")}}
+html,body{margin:0}
+#frame{width:1920px;height:1080px;background:var(--bg);color:var(--ink);position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:56px}
+.dots{position:absolute;inset:0;background-image:radial-gradient(var(--line) 3px,transparent 3px);background-size:48px 48px;mask-image:radial-gradient(ellipse at center,transparent 35%,#000 80%)}
+.mark{position:relative;width:340px;height:340px;border-radius:84px;background:var(--surface);border:5px solid var(--line);display:grid;place-items:center;transform:rotate(-4deg)}
+.mark svg{width:306px;height:306px}
+h1{position:relative;font-family:Brico;font-weight:800;font-size:176px;line-height:1;letter-spacing:-.025em;margin:0}
+h1 span{background:var(--accent);color:var(--accentInk);padding:0 28px 10px;border-radius:36px;margin-left:6px}
+.sub{position:relative;font-family:Mono;font-size:44px;color:var(--muted)}
+</style></head><body><div id="frame"><div class="dots"></div>
+<div class="mark"><svg viewBox="0 0 64 64">${osMark(c)}</svg></div>
+<h1>Open<span>Sourcedd</span></h1><div class="sub">open-source tools for AI agents, built together</div></div></body></html>`;
+};
 mkdirSync(osOut, { recursive: true });
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
@@ -140,6 +161,13 @@ for (const mode of ["dark", "light"]) {
       await p.close();
     }
   }
+}
+for (const mode of ["dark", "light"]) {
+  const p = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  await p.setContent(discordBanner(mode));
+  await p.evaluate(() => document.fonts.ready);
+  await p.locator("#frame").screenshot({ path: join(osOut, `opensourcedd-discord-banner-${mode}.png`) });
+  await p.close();
 }
 await browser.close();
 console.log(`wrote ${Object.keys(CARDS).length * 2} cards and ${BANNERS.length * 2} banners to public/brand/community, and the OpenSourcedd icons to public/brand/opensourcedd`);
