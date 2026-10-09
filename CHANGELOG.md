@@ -5,6 +5,7 @@
 ## v2.5.1 — Paperclip keys renew themselves
 
 - **Connections no longer break after 30 days.** Newer Paperclip versions expire the key Papercliped gets when you approve the sign-in after 30 days. Papercliped now renews it about a week before: it asks your Paperclip for a fresh key (named "Papercliped (your username)", same 30-day expiry), stores it encrypted and revokes the old one. Keys of people who rarely use their connection are renewed by the periodic sweep. If a renewal fails, the current key keeps working and it is tried again later. Older Paperclip versions, whose keys don't expire, work as before. Self-hosters on Postgres: run the database migration before starting this version (`npm run migrate`, or `BRIDGE_AUTO_MIGRATE=1`); keys stored before it are assumed to expire 30 days after they were connected, and the first renewal check reads the real date from Paperclip.
+- **Community cards.** Ready-to-post images for the launch and the new r/OpenSourcedd community, light and dark, 1600×900, in `web/public/brand/community/` (rebuilt by `web/scripts/community-cards.mjs`).
 
 ## v2.5.0 — icon pack, launch-ready docs and tester feedback
 
