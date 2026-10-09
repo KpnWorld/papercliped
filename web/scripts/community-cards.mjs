@@ -1,4 +1,5 @@
-// Builds the community cards in public/brand/community/ (Reddit, X and Discord posts), light and dark, 1600x900,
+// Builds the community cards in public/brand/community/ (Reddit, X and Discord posts), light and dark, 1600x900, and the
+// r/OpenSourcedd banner (1920x384),
 // with the same mascot, palette and fonts as the site:  node scripts/community-cards.mjs
 // Browser: CHROME_PATH, or Playwright's own Chromium.
 import { mkdirSync, readFileSync } from "node:fs";
@@ -68,6 +69,31 @@ p b{color:var(--ink);font-weight:600}
 <div class="foot"><span>${c.foot[0]}</span><span>${c.foot[1]}</span></div></div></body></html>`;
 };
 
+// Reddit community banner, 1920x384. Reddit crops the sides on narrow screens, so everything that matters sits in the middle ~1000px.
+const banner = (mode) => {
+  const p = PALETTE[mode];
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:Brico;src:url(${font("bricolage-grotesque-latin-wght-normal.woff2")});font-weight:200 800}
+@font-face{font-family:Inter;src:url(${font("inter-latin-wght-normal.woff2")});font-weight:100 900}
+@font-face{font-family:Mono;src:url(${font("jetbrains-mono-latin-400-normal.woff2")})}
+:root{${Object.entries(p).map(([k, v]) => `--${k}:${v}`).join(";")}}
+html,body{margin:0}
+#frame{width:1920px;height:384px;background:var(--bg);color:var(--ink);font-family:Inter;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;gap:48px}
+.dots{position:absolute;inset:0;background-image:radial-gradient(var(--line) 2px,transparent 2px);background-size:32px 32px;mask-image:linear-gradient(90deg,#000 0,transparent 30%,transparent 70%,#000 100%)}
+.mascot{position:relative;width:200px;height:200px;flex:none;border-radius:52px;background:var(--surface);border:3px solid var(--line);display:grid;place-items:center;transform:rotate(-4deg)}
+.mascot svg{width:176px;height:176px}
+.text{position:relative}
+.kicker{font-family:Mono;font-size:24px;color:var(--muted);margin-bottom:12px}
+h1{font-family:Brico;font-weight:800;font-size:104px;line-height:1;letter-spacing:-.025em;margin:0}
+h1 span{background:var(--accent);color:var(--accentInk);padding:0 18px 6px;border-radius:22px;margin-left:4px}
+p{font-size:28px;color:var(--muted);margin:26px 0 0}
+p b{color:var(--ink);font-weight:600}
+</style></head><body><div id="frame"><div class="dots"></div>
+<div class="mascot">${MASCOT}</div>
+<div class="text"><div class="kicker">r/OpenSourcedd</div><h1>Open<span>Sourcedd</span></h1>
+<p>Open-source tools for AI agents, built together. <b>Home of Papercliped.</b></p></div></div></body></html>`;
+};
+
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
 for (const [name, card] of Object.entries(CARDS)) {
   for (const mode of ["dark", "light"]) {
@@ -78,5 +104,12 @@ for (const [name, card] of Object.entries(CARDS)) {
     await p.close();
   }
 }
+for (const mode of ["dark", "light"]) {
+  const p = await browser.newPage({ viewport: { width: 1920, height: 384 } });
+  await p.setContent(banner(mode));
+  await p.evaluate(() => document.fonts.ready);
+  await p.locator("#frame").screenshot({ path: join(out, `opensourcedd-reddit-banner-${mode}.png`) });
+  await p.close();
+}
 await browser.close();
-console.log(`wrote ${Object.keys(CARDS).length * 2} cards to public/brand/community`);
+console.log(`wrote ${Object.keys(CARDS).length * 2} cards and 2 banners to public/brand/community`);
