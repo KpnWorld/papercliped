@@ -14,6 +14,12 @@ const ASSETS = [
   { file: "/brand/wordmark-dark.png", label: "Wordmark, dark (PNG)" },
 ];
 
+/** Ready-to-post cards for announcements and the community (built by scripts/community-cards.mjs). */
+const CARDS = [
+  { name: "papercliped-launch", label: "Launch announcement" },
+  { name: "opensourcedd-welcome", label: "r/OpenSourcedd welcome" },
+];
+
 export function Brand() {
   usePageTitle("Brand assets");
   const c = PALETTES.clip;
@@ -43,6 +49,22 @@ export function Brand() {
         <ul className="mt-4 flex flex-wrap gap-3">
           {ASSETS.map((a) => <li key={a.file}><a href={a.file} download className="inline-flex h-10 items-center rounded-lg border border-field px-4 text-sm font-semibold transition-transform duration-150 hover:-translate-y-0.5">{a.label}</a></li>)}
         </ul>
+      </section>
+
+      <section aria-labelledby="cards-h" className="mt-12">
+        <h2 id="cards-h" className="text-2xl font-bold">Community cards</h2>
+        <p className="mt-2 max-w-2xl text-muted">Ready-to-post images for Reddit, X and Discord, 1600×900. Use the dark one on dark feeds.</p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {CARDS.map((c) => (
+            <Card key={c.name}>
+              <img src={`/brand/community/${c.name}-dark.png`} alt={`${c.label} card`} width={1600} height={900} loading="lazy" className="h-auto w-full rounded-lg border border-line" />
+              <h3 className="mt-3 font-sans text-lg font-bold">{c.label}</h3>
+              <div className="mt-2 flex flex-wrap gap-3">
+                {(["dark", "light"] as const).map((m) => <a key={m} href={`/brand/community/${c.name}-${m}.png`} download className="inline-flex h-10 items-center rounded-lg border border-field px-4 text-sm font-semibold transition-transform duration-150 hover:-translate-y-0.5">{m === "dark" ? "Dark (PNG)" : "Light (PNG)"}</a>)}
+              </div>
+            </Card>
+          ))}
+        </div>
       </section>
 
       <section aria-labelledby="use-h" className="mt-12 grid gap-4 md:grid-cols-2">

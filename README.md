@@ -1,5 +1,12 @@
 # Papercliped
 
+<a href="https://papercliped.co">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/OpenSourcx/papercliped/main/web/public/brand/community/papercliped-launch-dark.png">
+    <img alt="Papercliped: run your Paperclip from any AI app. Claude, ChatGPT, Codex or any MCP app. Connector: https://mcp.papercliped.co/mcp" src="https://raw.githubusercontent.com/OpenSourcx/papercliped/main/web/public/brand/community/papercliped-launch-light.png">
+  </picture>
+</a>
+
 **Run your [Paperclip](https://github.com/paperclipai/paperclip) from any AI app.** Papercliped connects Claude, ChatGPT, Codex and any MCP app to your Paperclip, the open-source orchestrator for companies of AI agents. Check on agents, pause or wake them, assign issues, decide approvals and get status, cost and activity reports, without opening the dashboard.
 
 [![CI](https://github.com/OpenSourcx/papercliped/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenSourcx/papercliped/actions/workflows/ci.yml)
