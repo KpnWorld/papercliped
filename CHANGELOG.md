@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v2.5.3 — the OpenSourcedd brand kit
+
+- **OpenSourcedd brand kit.** OpenSourcedd, the community around Papercliped, has its own mark: an open ring with the Papercliped face. papercliped.co/brand now carries its icons (rounded and circle-safe, SVG and PNG up to 1024 px), the Discord server banner, the X header and the r/OpenSourcedd banners for desktop and the Reddit app, all in light and dark, in `web/public/brand/opensourcedd/` and `web/public/brand/community/`. Everything is rebuilt by `web/scripts/community-cards.mjs`.
+
 ## v2.5.2 — join the OpenSourcedd community
 
 - **Join the community.** Papercliped's community is now live as **OpenSourcedd**: the [Discord server](https://discord.gg/cAECU68jSA) and [r/OpenSourcedd](https://www.reddit.com/r/OpenSourcedd) on Reddit. Both are linked from the website footer and community page, GitHub's "New issue" page, the README and the contributing guide.

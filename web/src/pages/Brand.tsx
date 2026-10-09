@@ -20,6 +20,16 @@ const CARDS = [
   { name: "opensourcedd-welcome", label: "r/OpenSourcedd welcome" },
 ];
 
+/** The OpenSourcedd community kit (also built by scripts/community-cards.mjs). Light and dark of each. */
+const OPENSOURCEDD = [
+  { file: "opensourcedd/opensourcedd-avatar", size: "-1024", label: "Profile picture (Reddit, Discord, X, GitHub)" },
+  { file: "opensourcedd/opensourcedd-icon", size: "-1024", label: "Rounded icon" },
+  { file: "opensourcedd/opensourcedd-discord-banner", size: "", label: "Discord banner" },
+  { file: "opensourcedd/opensourcedd-x-header", size: "", label: "X header" },
+  { file: "community/opensourcedd-reddit-banner", size: "", label: "Reddit banner (desktop)" },
+  { file: "community/opensourcedd-reddit-banner-mobile", size: "", label: "Reddit banner (app)" },
+];
+
 export function Brand() {
   usePageTitle("Brand assets");
   const c = PALETTES.clip;
@@ -65,6 +75,23 @@ export function Brand() {
             </Card>
           ))}
         </div>
+      </section>
+
+      <section aria-labelledby="os-h" className="mt-12">
+        <h2 id="os-h" className="text-2xl font-bold">OpenSourcedd</h2>
+        <p className="mt-2 max-w-2xl text-muted">The community around Papercliped has its own mark: an open ring with the same face. Use these for OpenSourcedd on Reddit, Discord, X and GitHub.</p>
+        <div className="mt-4 flex items-center gap-4">
+          <img src="/brand/opensourcedd/opensourcedd-icon-light.svg" alt="OpenSourcedd mark" width={88} height={88} className="rounded-2xl border border-line" />
+          <img src="/brand/opensourcedd/opensourcedd-icon-dark.svg" alt="" width={88} height={88} className="rounded-2xl border border-line" />
+        </div>
+        <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+          {OPENSOURCEDD.map((a) => (
+            <li key={a.file} className="flex flex-wrap items-center gap-3">
+              <span className="min-w-48 text-sm font-semibold">{a.label}</span>
+              {(["light", "dark"] as const).map((m) => <a key={m} href={`/brand/${a.file}-${m}${a.size}.png`} download className="inline-flex h-9 items-center rounded-lg border border-field px-3 text-sm font-semibold transition-transform duration-150 hover:-translate-y-0.5">{m === "light" ? "Light" : "Dark"}</a>)}
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section aria-labelledby="use-h" className="mt-12 grid gap-4 md:grid-cols-2">
