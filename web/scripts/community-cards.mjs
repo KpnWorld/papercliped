@@ -1,8 +1,8 @@
 // Builds the community cards in public/brand/community/ (Reddit, X and Discord posts), light and dark, 1600x900, and the
-// r/OpenSourcedd banners (desktop and app),
+// r/OpenSourcedd banners (desktop and app), and the OpenSourcedd icon set (public/brand/opensourcedd/),
 // with the same mascot, palette and fonts as the site:  node scripts/community-cards.mjs
 // Browser: CHROME_PATH, or Playwright's own Chromium.
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
 
@@ -97,6 +97,18 @@ p b{color:var(--ink);font-weight:600}
 <div class="text"><h1>Open<span>Sourcedd</span></h1>${b.tagline ? "<p>Open-source tools for AI agents, built together. <b>Home of Papercliped.</b></p>" : ""}</div></div></body></html>`;
 };
 
+// The OpenSourcedd mark: an open ring (open source) with the Papercliped face, and a dot leaving the gap (sharing).
+const OS_COLOURS = { dark: { bg: "#16150f", ink: "#e9e4b0" }, light: { bg: "#fffddc", ink: "#47463c" } };
+const osMark = (c) => `<path d="M47.97 26.19A17 17 0 1 1 34.95 15.26" fill="none" stroke="${c.ink}" stroke-width="7" stroke-linecap="round"/><circle cx="50" cy="13" r="3.6" fill="${c.ink}"/><circle cx="27" cy="33" r="2.4" fill="${c.ink}"/><circle cx="37" cy="33" r="2.4" fill="${c.ink}"/><path d="M28.5 38.6q3.5 3 7 0" fill="none" stroke="${c.ink}" stroke-width="2" stroke-linecap="round"/><circle cx="22.8" cy="37.6" r="2.1" fill="#e98a7a" opacity=".85"/><circle cx="41.2" cy="37.6" r="2.1" fill="#e98a7a" opacity=".85"/>`;
+/** Rounded tile (app icon) or full-bleed square scaled into the circle-crop safe zone (profile pictures). */
+const osIcon = (mode, avatar) => {
+  const c = OS_COLOURS[mode];
+  const body = avatar ? `<rect width="64" height="64" fill="${c.bg}"/><g transform="translate(32 32) scale(.9) translate(-32.5 -31)">${osMark(c)}</g>` : `<rect width="64" height="64" rx="16" fill="${c.bg}"/>${osMark(c)}`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">${body}</svg>`;
+};
+const osOut = join(root, "public/brand/opensourcedd");
+mkdirSync(osOut, { recursive: true });
+
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
 for (const [name, card] of Object.entries(CARDS)) {
   for (const mode of ["dark", "light"]) {
@@ -116,5 +128,18 @@ for (const b of BANNERS) {
     await p.close();
   }
 }
+for (const mode of ["dark", "light"]) {
+  for (const avatar of [false, true]) {
+    const svg = osIcon(mode, avatar);
+    const kind = avatar ? "avatar" : "icon";
+    writeFileSync(join(osOut, `opensourcedd-${kind}-${mode}.svg`), svg);
+    for (const size of avatar ? [256, 512, 1024] : [512, 1024]) {
+      const p = await browser.newPage({ viewport: { width: size, height: size } });
+      await p.setContent(`<html><body style="margin:0;background:transparent"><img style="display:block;width:${size}px;height:${size}px" src="data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}"></body></html>`);
+      await p.screenshot({ path: join(osOut, `opensourcedd-${kind}-${mode}-${size}.png`), omitBackground: true, clip: { x: 0, y: 0, width: size, height: size } });
+      await p.close();
+    }
+  }
+}
 await browser.close();
-console.log(`wrote ${Object.keys(CARDS).length * 2} cards and ${BANNERS.length * 2} banners to public/brand/community`);
+console.log(`wrote ${Object.keys(CARDS).length * 2} cards and ${BANNERS.length * 2} banners to public/brand/community, and the OpenSourcedd icons to public/brand/opensourcedd`);
