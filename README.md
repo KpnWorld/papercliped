@@ -122,7 +122,8 @@ npm install && npm test
 
 ## Community and contributing
 
-- Questions and ideas: [GitHub Discussions](https://github.com/OpenSourcx/papercliped/discussions) and Discord ([papercliped.co/community](https://papercliped.co/community))
+- Questions and chat: the OpenSourcedd [Discord](https://discord.gg/cAECU68jSA) and [GitHub Discussions](https://github.com/OpenSourcx/papercliped/discussions)
+- Ideas, project shares and feedback: [r/OpenSourcedd](https://www.reddit.com/r/OpenSourcedd)
 - Bugs and feature requests: [issues](https://github.com/OpenSourcx/papercliped/issues/new/choose)
 - Contributing (setup, checks, the path from first PR to maintainer): [CONTRIBUTING.md](CONTRIBUTING.md)
 - Code of conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)

@@ -208,7 +208,7 @@ function SocialIcons() {
   const items = [
     { key: "x" as const, label: "Papercliped on X", href: community.x },
     { key: "github" as const, label: "Papercliped on GitHub", href: community.github },
-    { key: "discord" as const, label: "Papercliped on Discord", href: community.discord },
+    { key: "discord" as const, label: "OpenSourcedd on Discord", href: community.discord },
   ];
   return (
     <ul aria-label="Social" className="mt-5 flex gap-2">
