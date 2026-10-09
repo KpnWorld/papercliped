@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v2.5.1 — Paperclip keys renew themselves
+
+- **Connections no longer break after 30 days.** Newer Paperclip versions expire the key Papercliped gets when you approve the sign-in after 30 days. Papercliped now renews it about a week before: it asks your Paperclip for a fresh key (named "Papercliped (your username)", same 30-day expiry), stores it encrypted and revokes the old one. Keys of people who rarely use their connection are renewed by the periodic sweep. If a renewal fails, the current key keeps working and it is tried again later. Older Paperclip versions, whose keys don't expire, work as before. Self-hosters on Postgres: run the database migration before starting this version (`npm run migrate`, or `BRIDGE_AUTO_MIGRATE=1`); keys stored before it are assumed to expire 30 days after they were connected, and the first renewal check reads the real date from Paperclip.
+
 ## v2.5.0 — icon pack, launch-ready docs and tester feedback
 
 - **Icon pack.** papercliped.co/brand has a one-click ZIP with every Papercliped icon in light and dark: the app icon from 16 to 1024 px, a favicon, profile pictures safe for circle crops (Discord, X, GitHub, npm, MCP directories), an Android/installable-app icon, an X header, a 16:9 banner and link-preview images. They're built from the real mascot and the site's own components by `web/scripts/icon-pack.mjs`, so they always match. The website now also has a classic favicon, an Apple touch icon and a web app manifest.

@@ -7,7 +7,7 @@ Everything for the public launch: what must be true first, how to get the first 
 | | Check | How |
 | --- | --- | --- |
 | ☐ | The latest release is live | `https://mcp.papercliped.co/api/public/v1/info` shows the version in `package.json`; papercliped.co/prompts and docs.papercliped.co/hosting load. If not, Render → **Manual Deploy → Deploy latest commit**. |
-| ☐ | Connections survive past 30 days | Paperclip expires approved keys after 30 days; ship key rotation before inviting people, or every tester drops off a month later. |
+| ☐ | Connections survive past 30 days | Paperclip expires approved keys after 30 days; the bridge renews each key a week before (v2.5.1). Run the `008_key_rotation.sql` migration (`npm run migrate`) on the production database when deploying it. |
 | ☐ | A full run-through on a fresh Paperclip | Follow [Host your Paperclip](https://docs.papercliped.co/hosting) start to finish on one guide (Railway or a VPS), connect Claude **and** ChatGPT, run five prompts from the gallery, flip the access switch in the control room. Fix anything that trips you up. |
 | ☐ | Discord and X exist | Create them with the icon pack (below), then set `VITE_DISCORD_URL` / `VITE_X_URL` on Render and rebuild. Set up Discord per [COMMUNITY.md](COMMUNITY.md), plus a `#testers` channel. |
 | ☐ | GitHub is launch-ready | Turn on Discussions, set the repository social preview to `social-light-1200x630.png`, pin a "Start here" discussion, add topics: `mcp`, `paperclip`, `ai-agents`, `claude`, `chatgpt`, `codex`, `mcp-server`. |
