@@ -69,32 +69,32 @@ p b{color:var(--ink);font-weight:600}
 <div class="foot"><span>${c.foot[0]}</span><span>${c.foot[1]}</span></div></div></body></html>`;
 };
 
-// Reddit community banners at twice Reddit's sizes: desktop 1072x128 -> 2144x256, app 1080x128 -> 2160x256. The app shows the
-// banner about a third as wide as desktop, so its version drops the tagline and keeps only what reads at that size.
+// Reddit community banners at twice Reddit's sizes: desktop 1072x128 -> 2144x256, app 1080x128 -> 2160x256. The app zooms
+// into the middle ~40% of its banner and puts its back/search/share buttons on top, so the app version has no text: only the
+// pattern and a small mark in the middle, the clear spot between the back button and the search icon.
 const BANNERS = [
-  { name: "opensourcedd-reddit-banner", w: 2144, h: 256, tagline: true },
-  { name: "opensourcedd-reddit-banner-mobile", w: 2160, h: 256, tagline: false },
+  { name: "opensourcedd-reddit-banner", w: 2144, h: 256, app: false },
+  { name: "opensourcedd-reddit-banner-mobile", w: 2160, h: 256, app: true },
 ];
 const banner = (mode, b) => {
   const p = PALETTE[mode];
-  const big = !b.tagline;
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 @font-face{font-family:Brico;src:url(${font("bricolage-grotesque-latin-wght-normal.woff2")});font-weight:200 800}
 @font-face{font-family:Inter;src:url(${font("inter-latin-wght-normal.woff2")});font-weight:100 900}
 :root{${Object.entries(p).map(([k, v]) => `--${k}:${v}`).join(";")}}
 html,body{margin:0}
-#frame{width:${b.w}px;height:${b.h}px;background:var(--bg);color:var(--ink);font-family:Inter;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;gap:${big ? 44 : 36}px}
-.dots{position:absolute;inset:0;background-image:radial-gradient(var(--line) 2px,transparent 2px);background-size:28px 28px;mask-image:linear-gradient(90deg,#000 0,transparent 32%,transparent 68%,#000 100%)}
-.mascot{position:relative;width:${big ? 184 : 164}px;height:${big ? 184 : 164}px;flex:none;border-radius:44px;background:var(--surface);border:3px solid var(--line);display:grid;place-items:center;transform:rotate(-4deg)}
-.mascot svg{width:${big ? 160 : 142}px;height:${big ? 160 : 142}px}
+#frame{width:${b.w}px;height:${b.h}px;background:var(--bg);color:var(--ink);font-family:Inter;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;gap:36px}
+.dots{position:absolute;inset:0;background-image:radial-gradient(var(--line) 2px,transparent 2px);background-size:28px 28px;${b.app ? "" : "mask-image:linear-gradient(90deg,#000 0,transparent 32%,transparent 68%,#000 100%)"}}
+.mascot{position:relative;width:${b.app ? 150 : 164}px;height:${b.app ? 150 : 164}px;flex:none;border-radius:${b.app ? 40 : 44}px;background:var(--surface);border:3px solid var(--line);display:grid;place-items:center;transform:rotate(-4deg)}
+.mascot svg{width:${b.app ? 132 : 142}px;height:${b.app ? 132 : 142}px}
 .text{position:relative}
-h1{font-family:Brico;font-weight:800;font-size:${big ? 132 : 96}px;line-height:1;letter-spacing:-.025em;margin:0;white-space:nowrap}
+h1{font-family:Brico;font-weight:800;font-size:96px;line-height:1;letter-spacing:-.025em;margin:0;white-space:nowrap}
 h1 span{background:var(--accent);color:var(--accentInk);padding:0 16px 6px;border-radius:20px;margin-left:4px}
 p{font-size:30px;color:var(--muted);margin:22px 0 0;white-space:nowrap}
 p b{color:var(--ink);font-weight:600}
 </style></head><body><div id="frame"><div class="dots"></div>
-<div class="mascot">${MASCOT}</div>
-<div class="text"><h1>Open<span>Sourcedd</span></h1>${b.tagline ? "<p>Open-source tools for AI agents, built together. <b>Home of Papercliped.</b></p>" : ""}</div></div></body></html>`;
+${b.app ? `<div class="mascot"><svg viewBox="0 0 64 64">${osMark(OS_COLOURS[mode])}</svg></div>` : `<div class="mascot">${MASCOT}</div>
+<div class="text"><h1>Open<span>Sourcedd</span></h1><p>Open-source tools for AI agents, built together. <b>Home of Papercliped.</b></p></div>`}</div></body></html>`;
 };
 
 // The OpenSourcedd mark: an open ring (open source) with the Papercliped face, and a dot leaving the gap (sharing).
