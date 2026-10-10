@@ -37,6 +37,15 @@ const CARDS = {
     code: "Connector: https://mcp.papercliped.co/mcp",
     foot: ["papercliped.co", "r/OpenSourcedd"],
   },
+  "papercliped-github": {
+    badge: "⭐",
+    kicker: "open source · github.com/OpenSourcx/papercliped",
+    title: "Your AI agents,<br><span>one chat away</span>",
+    text: "An open-source MCP server for Paperclip: manage agents, issues, approvals and reports from Claude, ChatGPT or Codex.",
+    chips: ["TypeScript", "MCP", "OAuth + PKCE", "Self-host or hosted", "MIT"],
+    code: "$ npx papercliped",
+    foot: ["papercliped.co", "r/OpenSourcedd"],
+  },
 };
 
 const page = (c, mode) => {
